@@ -7,6 +7,10 @@ import os
 import time
 from pathlib import Path
 
+os.environ.setdefault("TZ", "Europe/Vienna")
+if hasattr(time, "tzset"):
+    time.tzset()
+
 from ins_ei.adapters import HomeAssistantAdapter, HomeAssistantClient, mappings_from_dict
 from ins_ei.adapters.mapping import validate_mapping_config
 from ins_ei.collector import Collector
@@ -54,6 +58,9 @@ def build_site(options, mappings):
 
 def main():
     options = load_options()
+    os.environ["TZ"] = options.get("timezone", "Europe/Vienna")
+    if hasattr(time, "tzset"):
+        time.tzset()
     logging.basicConfig(
         level=getattr(logging, options.get("log_level", "INFO")),
         format="%(asctime)s %(levelname)s %(message)s",
