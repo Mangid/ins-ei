@@ -3,7 +3,7 @@ from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from pathlib import Path
 import json
 from urllib.parse import urlparse
-from ins_ei.catalog import component_choices,point_choices,point_spec
+from ins_ei.catalog import component_choices,point_choices,point_spec,point_description
 from ins_ei.adapters.mapping import _parse_bulk_text,validate_mapping_config
 ROOT=Path("/opt/ins-ei/web"); DATA=Path("/data/ui_mappings.json"); OPTIONS=Path("/data/options.json"); DISC=Path("/data/discovery.json")
 def load(p,d):
@@ -19,7 +19,7 @@ class H(BaseHTTPRequestHandler):
         raw=json.dumps(obj,ensure_ascii=False).encode();self.send_response(status);self.send_header("Content-Type","application/json");self.send_header("Content-Length",str(len(raw)));self.end_headers();self.wfile.write(raw)
     def do_GET(self):
         p=urlparse(self.path).path
-        if p.endswith("/api/catalog"):return self.js({"components":component_choices(),"points":{c:point_choices(c) for c in component_choices()},"meta":{c:{x:{"unit":point_spec(c,x).unit,"role":point_spec(c,x).role,"freshness":point_spec(c,x).freshness} for x in point_choices(c)} for c in component_choices()}})
+        if p.endswith("/api/catalog"):return self.js({"components":component_choices(),"points":{c:point_choices(c) for c in component_choices()},"meta":{c:{x:{"unit":point_spec(c,x).unit,"role":point_spec(c,x).role,"freshness":point_spec(c,x).freshness,"description":point_description(c,x)} for x in point_choices(c)} for c in component_choices()}})
         if p.endswith("/api/mappings"):return self.js(rows())
         if p.endswith("/api/discovery"):return self.js(load(DISC,[]))
         if p.endswith("/api/entities"):
