@@ -21,7 +21,10 @@ def main():
     options=load_options(); logging.basicConfig(level=getattr(logging,options.get("log_level","INFO")),format="%(asctime)s %(levelname)s %(message)s")
     log=logging.getLogger("ins_ei"); mappings=mappings_from_dict(options)
     token=os.environ.get("SUPERVISOR_TOKEN")
-    if not token: raise RuntimeError("SUPERVISOR_TOKEN missing")
+    log.info("environment | supervisor_token=%s", "present" if token else "MISSING")
+    if not token:
+        log.error("SUPERVISOR_TOKEN missing; stopping safely")
+        return
     client=HomeAssistantClient("http://supervisor/core",token); site=build_site(options,mappings); collector=Collector(site,HomeAssistantAdapter(client))
     interval=int(options.get("interval_seconds",30))
     log.info("INS-EI Pilot starting | mode=SHADOW | installation=%s | mappings=%d",site.installation_id,len(mappings))
