@@ -14,7 +14,7 @@ def validate_mapping_config(config:dict[str,Any])->MappingValidation:
     errors=[];warnings=[];seen_entities={};seen_points={}
     for n,item in enumerate(config.get("mappings",[]),start=1):
         cid=item["component_id"].strip()
-        point=item["point"].strip().replace("\\.", ".")
+        point=item["point"].strip().replace("\\\\.", ".").replace("\\.", ".")
         entity=item["entity_id"].strip()
         logical=f"{cid}.{point}"
         if item["component_id"] != cid or item["point"] != point or item["entity_id"] != entity:
@@ -31,7 +31,7 @@ def mappings_from_dict(config:dict[str,Any])->list[EntityMapping]:
     result=[]
     for i in config.get("mappings",[]):
         cid=i["component_id"].strip()
-        point=i["point"].strip().replace("\\.", ".")
+        point=i["point"].strip().replace("\\\\.", ".").replace("\\.", ".")
         spec=point_spec(cid,point)
         default_freshness=spec.freshness if spec else "NORMAL"
         default_role=spec.role if spec else DataRole.MONITORING.value
