@@ -44,7 +44,7 @@ class HomeAssistantClient:
         try:
             with urlopen(req,timeout=self.timeout) as response: return json.loads(response.read().decode("utf-8"))
         except (HTTPError,URLError,TimeoutError) as exc: raise HomeAssistantError(str(exc)) from exc
-    def state(self,entity_id:str)->dict[str,Any]: return self._get_json(f"/api/states/{entity_id}")
+    def state(self,entity_id:str)->dict[str,Any]: return self._get_json(f"/api/states/{entity_id}")\n    def states(self)->list[dict[str,Any]]: return self._get_json("/api/states")
 
 class HomeAssistantAdapter:
     def __init__(self,client:HomeAssistantClient)->None: self.client=client
