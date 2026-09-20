@@ -1,5 +1,5 @@
 name: INS-EI Pilot
-version: "0.2.1"
+version: "0.2.2"
 slug: ins_ei
 description: Local-first energy intelligence pilot collector
 url: https://github.com/Mangid/ins-ei
@@ -28,7 +28,7 @@ schema:
       point: str
       entity_id: str
       unit: str?
-      role: list(OPTIMIZATION|MONITORING|DIAGNOSTIC)
+      role: list(OPTIMIZATION|MONITORING|DIAGNOSTIC)?
       scale: float?
       invert_sign: bool?
       freshness: list(FAST|NORMAL|SLOW|STATE)?
