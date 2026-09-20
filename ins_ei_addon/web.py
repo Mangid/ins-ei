@@ -4,7 +4,7 @@ from pathlib import Path
 import json
 from urllib.parse import urlparse
 
-from ins_ei.catalog import component_choices, point_choices
+from ins_ei.catalog import component_choices, point_choices, point_spec
 from ins_ei.adapters.mapping import _parse_bulk_text, validate_mapping_config
 
 ROOT = Path("/opt/ins-ei/web")
@@ -43,7 +43,21 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = urlparse(self.path).path
         if path.endswith("/api/catalog"):
-            return self._json({"components": component_choices(), "points": {c: point_choices(c) for c in component_choices()}})
+            return self._json({
+                "components": component_choices(),
+                "points": {c: point_choices(c) for c in component_choices()},
+                "meta": {
+                    c: {
+                        p: {
+                            "unit": getattr(point_spec(c, p), "unit", None),
+                            "role": getattr(point_spec(c, p), "role", "MONITORING"),
+                            "freshness": getattr(point_spec(c, p), "freshness", "NORMAL"),
+                        }
+                        for p in point_choices(c)
+                    }
+                    for c in component_choices()
+                },
+            })
         if path.endswith("/api/mappings"):
             return self._json(load_rows())
         raw = (ROOT / "index.html").read_bytes()
