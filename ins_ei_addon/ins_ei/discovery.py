@@ -61,7 +61,8 @@ def suggest(domain,hay,dc,kind):
     if domain=="DHW":
         if contains(hay,"soll","target"):return "target_temperature"
         if dc=="temperature":return "temperature"
-    if domain=="PELLET_BOILER":\n        if kind=="PARAMETER":return None
+    if domain=="PELLET_BOILER":
+        if kind=="PARAMETER":return None
         if contains(hay,"flammraum","flame"):return "flame_temperature"
         if contains(hay,"kesseltemperatur","boiler temperature"):return "boiler_temperature"
         if contains(hay,"vorlauf","flow temperature"):return "flow_temperature"
@@ -70,7 +71,8 @@ def suggest(domain,hay,dc,kind):
         if contains(hay,"starts","starts"):return "burner_starts"
         if contains(hay,"laufzeit","runtime"):return "runtime"
         if contains(hay,"betriebsart","status","state"):return "state"
-    if domain=="HEAT_PUMP":\n        if kind=="PARAMETER":return None
+    if domain=="HEAT_PUMP":
+        if kind=="PARAMETER":return None
         if dc=="power":return "electrical_power"
         if contains(hay,"vorlauf","flow"):return "flow_temperature"
         if contains(hay,"rücklauf","rucklauf","return"):return "return_temperature"
@@ -79,7 +81,8 @@ def suggest(domain,hay,dc,kind):
         if contains(hay,"verdichter","compressor"):return "compressor_state"
         if contains(hay,"laufzeit","runtime"):return "runtime"
         if contains(hay,"status","state"):return "state"
-    if domain=="HEATING_CIRCUIT":\n        if kind=="PARAMETER" and contains(hay,"soll","target") and contains(hay,"vorlauf","flow"):return "target_flow_temperature"
+    if domain=="HEATING_CIRCUIT":
+        if kind=="PARAMETER" and contains(hay,"soll","target") and contains(hay,"vorlauf","flow"):return "target_flow_temperature"
         if contains(hay,"soll","target") and contains(hay,"vorlauf","flow"):return "target_flow_temperature"
         if contains(hay,"vorlauf","flow"):return "flow_temperature"
         if contains(hay,"rücklauf","rucklauf","return"):return "return_temperature"
