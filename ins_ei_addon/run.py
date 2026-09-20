@@ -2,7 +2,7 @@
 from __future__ import annotations
 import json, logging, os, time
 from pathlib import Path
-from ins_ei.adapters import HomeAssistantAdapter, HomeAssistantClient, mappings_from_dict
+from ins_ei.adapters import HomeAssistantAdapter, HomeAssistantClient, mappings_from_dict\nfrom ins_ei.adapters.mapping import validate_mapping_config
 from ins_ei.collector import Collector
 from ins_ei.discovery import discover
 from ins_ei.model import Component, OperatingMode, SiteLocation, SiteModel, ThermalTopology
@@ -24,13 +24,13 @@ def build_site(options,mappings):
     return site
 def main():
     options=load_options();logging.basicConfig(level=getattr(logging,options.get("log_level","INFO")),format="%(asctime)s %(levelname)s %(message)s");log=logging.getLogger("ins_ei")
-    mappings=mappings_from_dict(options);token,source=read_supervisor_token();log.info("environment | supervisor_token=%s | source=%s","present" if token else "MISSING",source)
+    validation=validate_mapping_config(options)\n    if validation.errors:\n        for error in validation.errors: log.error("mapping | %s",error)\n        log.error("mapping validation failed; stopping safely")\n        return\n    mappings=mappings_from_dict(options);token,source=read_supervisor_token();log.info("environment | supervisor_token=%s | source=%s","present" if token else "MISSING",source)
     if not token:log.error("Supervisor token unavailable; stopping safely");return
     client=HomeAssistantClient("http://supervisor/core",token)
     if options.get("discovery_on_start",True):
-        states=client.states();candidates=discover(states);limit=int(options.get("discovery_log_limit",80))
+        states=client.states();candidates=discover(states,{m.entity_id for m in mappings});limit=int(options.get("discovery_log_limit",80))
         log.info("discovery | entities=%d candidates=%d showing=%d",len(states),len(candidates),min(limit,len(candidates)))
-        for c in candidates[:limit]:log.info("discovery | domain=%s score=%d entity=%s state=%s unit=%s device_class=%s name=%s",c.suggested_domain,c.score,c.entity_id,c.state,c.unit,c.device_class,c.name)
+        for c in candidates[:limit]:log.info("discovery | status=%s domain=%s score=%d entity=%s state=%s unit=%s device_class=%s name=%s","MAPPED" if c.mapped else "CANDIDATE",c.suggested_domain,c.score,c.entity_id,c.state,c.unit,c.device_class,c.name)
     site=build_site(options,mappings);collector=Collector(site,HomeAssistantAdapter(client));interval=int(options.get("interval_seconds",30))
     log.info("INS-EI Pilot starting | mode=SHADOW | installation=%s | mappings=%d",site.installation_id,len(mappings))
     while True:
