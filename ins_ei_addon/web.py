@@ -22,6 +22,9 @@ class H(BaseHTTPRequestHandler):
         if p.endswith("/api/catalog"):return self.js({"components":component_choices(),"points":{c:point_choices(c) for c in component_choices()},"meta":{c:{x:{"unit":point_spec(c,x).unit,"role":point_spec(c,x).role,"freshness":point_spec(c,x).freshness} for x in point_choices(c)} for c in component_choices()}})
         if p.endswith("/api/mappings"):return self.js(rows())
         if p.endswith("/api/discovery"):return self.js(load(DISC,[]))
+        if p.endswith("/api/entities"):
+            items=load(DISC,[])
+            return self.js([{"entity_id":x.get("entity_id"),"name":x.get("name"),"state":x.get("state"),"unit":x.get("unit"),"suggested_domain":x.get("suggested_domain"),"suggested_point":x.get("suggested_point")} for x in items])
         raw=(ROOT/"index.html").read_bytes();self.send_response(200);self.send_header("Content-Type","text/html");self.send_header("Content-Length",str(len(raw)));self.end_headers();self.wfile.write(raw)
     def do_POST(self):
         p=urlparse(self.path).path;n=int(self.headers.get("Content-Length","0"));body=json.loads(self.rfile.read(n) or b"{}")
