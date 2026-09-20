@@ -1,0 +1,11 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>INS-EI</title><style>
+body{font-family:system-ui;margin:24px;max-width:1200px}textarea{width:100%;min-height:180px}button{padding:8px 14px;margin:8px 4px 12px 0}table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px solid #ccc;text-align:left}select,input{width:100%;box-sizing:border-box;padding:6px}.msg{margin:8px 0}
+</style></head><body><h1>INS-EI Mapping</h1><h2>Massenimport</h2><p>Eine oder viele Zeilen im Format <code>component|point|entity_id</code> einfügen.</p><textarea id="bulk"></textarea><br><button onclick="doImport()">Importieren</button><span id="msg" class="msg"></span><h2>Mappings</h2><table><thead><tr><th>Komponente</th><th>Datenpunkt</th><th>Home Assistant Entity</th><th></th></tr></thead><tbody id="rows"></tbody></table><button onclick="save()">Änderungen speichern</button><script>
+let catalog={},rows=[];
+async function init(){catalog=await (await fetch('api/catalog')).json();rows=await (await fetch('api/mappings')).json();render()}
+function opts(vals,sel){return vals.map(v=>'<option '+(v===sel?'selected':'')+'>'+v+'</option>').join('')}
+function render(){document.getElementById('rows').innerHTML=rows.map((r,i)=>'<tr><td><select onchange="comp('+i+',this.value)">'+opts(catalog.components,r.component_id)+'</select></td><td><select onchange="rows['+i+'].point=this.value">'+opts(catalog.points[r.component_id]||[],r.point)+'</select></td><td><input value="'+r.entity_id+'" onchange="rows['+i+'].entity_id=this.value"></td><td><button onclick="rows.splice('+i+',1);render()">Löschen</button></td></tr>').join('')}
+function comp(i,v){rows[i].component_id=v;rows[i].point=(catalog.points[v]||[])[0]||'';render()}
+async function doImport(){let text=document.getElementById('bulk').value;let r=await (await fetch('api/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})})).json();rows=r.rows;document.getElementById('bulk').value='';document.getElementById('msg').textContent='Importiert: '+r.added+', übersprungen: '+r.skipped;render()}
+async function save(){await fetch('api/mappings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows})});document.getElementById('msg').textContent='Gespeichert.'}
+init()</script></body></html>
