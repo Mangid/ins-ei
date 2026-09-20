@@ -1,5 +1,5 @@
 name: INS-EI Pilot
-version: "0.5.2"
+version: "0.6.0"
 slug: ins_ei
 description: Local-first energy intelligence pilot collector
 url: https://github.com/Mangid/ins-ei
@@ -17,9 +17,6 @@ options:
   installation_id: pilot-local
   thermal_topology: BUFFER
   timezone: Europe/Vienna
-  discovery_on_start: true
-  discovery_log_limit: 80
-  bulk_mappings: []
   mappings: []
 schema:
   log_level: list(DEBUG|INFO|WARNING|ERROR)
@@ -27,10 +24,6 @@ schema:
   installation_id: str
   thermal_topology: list(DIRECT|BUFFER|COMBINED_STORAGE)
   timezone: str
-  discovery_on_start: bool
-  discovery_log_limit: int(10,500)
-  bulk_mappings:
-    - str
   mappings:
     - component_id: str
       point: str
