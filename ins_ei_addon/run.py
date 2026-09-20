@@ -29,7 +29,7 @@ def site(options,mappings):
     return s
 def snapshot(client,mappings):
     mapped={m.entity_id:f"{m.component_id}.{m.point}" for m in mappings};items=discover(client.states(),mapped)
-    DISC.write_text(json.dumps([{"entity_id":x.entity_id,"name":x.name,"state":x.state,"unit":x.unit,"suggested_domain":x.suggested_domain,"suggested_point":x.suggested_point,"score":x.score,"mapped_to":x.mapped_to} for x in items],ensure_ascii=False,indent=2))
+    DISC.write_text(json.dumps([{"entity_id":x.entity_id,"name":x.name,"state":x.state,"unit":x.unit,"suggested_domain":x.suggested_domain,"suggested_point":x.suggested_point,"score":x.score,"mapped_to":x.mapped_to,"source_kind":x.source_kind} for x in items],ensure_ascii=False,indent=2))
 def main():
     options=load(OPTIONS,{});os.environ["TZ"]=options.get("timezone","Europe/Vienna")
     if hasattr(time,"tzset"):time.tzset()
