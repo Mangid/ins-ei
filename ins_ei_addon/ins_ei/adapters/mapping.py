@@ -10,9 +10,21 @@ class MappingValidation:
     errors:list[str]
     warnings:list[str]
 
+def _expanded_items(config:dict[str,Any])->list[dict[str,Any]]:
+    items=list(config.get("mappings",[]))
+    for line in config.get("bulk_mappings",[]):
+        text=line.strip()
+        if not text or text.startswith("#"):
+            continue
+        parts=[part.strip() for part in text.split("|")]
+        if len(parts)!=3:
+            raise ValueError(f"bulk mapping must be component|point|entity_id: {line}")
+        items.append({"component_id":parts[0],"point":parts[1],"entity_id":parts[2]})
+    return items
+
 def validate_mapping_config(config:dict[str,Any])->MappingValidation:
     errors=[];warnings=[];seen_entities={};seen_points={}
-    for n,item in enumerate(config.get("mappings",[]),start=1):
+    try:\n        items=_expanded_items(config)\n    except ValueError as exc:\n        return MappingValidation([str(exc)],[])\n    for n,item in enumerate(items,start=1):
         cid=item["component_id"].strip()
         point=item["point"].strip().replace("\\\\.", ".").replace("\\.", ".")
         entity=item["entity_id"].strip()
@@ -29,7 +41,7 @@ def validate_mapping_config(config:dict[str,Any])->MappingValidation:
 
 def mappings_from_dict(config:dict[str,Any])->list[EntityMapping]:
     result=[]
-    for i in config.get("mappings",[]):
+    for i in _expanded_items(config):
         cid=i["component_id"].strip()
         point=i["point"].strip().replace("\\\\.", ".").replace("\\.", ".")
         spec=point_spec(cid,point)
