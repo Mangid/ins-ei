@@ -74,7 +74,13 @@ def main():
         log.error("mapping validation failed; stopping safely")
         return
 
-    mappings = mappings_from_dict(options)\n    log.info("mapping | loaded=%d regular=%d bulk=%d", len(mappings), len(options.get("mappings", [])), len(options.get("bulk_mappings", [])))
+    mappings = mappings_from_dict(options)
+    log.info(
+        "mapping | loaded=%d regular=%d bulk=%d",
+        len(mappings),
+        len(options.get("mappings", [])),
+        len(options.get("bulk_mappings", [])),
+    )
     token, source = read_supervisor_token()
     log.info(
         "environment | supervisor_token=%s | source=%s",
