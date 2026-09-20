@@ -53,6 +53,9 @@ def main():
     while True:
         result=collector.collect(mappings)
         log.info("collector | read=%d good=%d stale=%d unavailable=%d unknown_component=%d",result.read,result.good,result.stale,result.unavailable,result.unknown_component)
+        for component in site.components.values():
+            for point_name, point in component.points.items():
+                log.info("point | %s.%s=%s %s | quality=%s | source=%s | timestamp=%s",component.id,point_name,point.value,point.unit or "",point.quality.value,point.source,point.timestamp.isoformat() if point.timestamp else "none")
         time.sleep(interval)
 
 if __name__=="__main__":
