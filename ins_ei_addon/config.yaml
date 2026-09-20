@@ -1,5 +1,5 @@
 name: INS-EI Pilot
-version: "0.1.9"
+version: "0.2.0"
 slug: ins_ei
 description: Local-first energy intelligence pilot collector
 url: https://github.com/Mangid/ins-ei
@@ -7,21 +7,22 @@ startup: application
 boot: auto
 init: false
 homeassistant_api: true
-arch:
-  - aarch64
-  - amd64
-  - armv7
+arch: [aarch64, amd64, armv7]
 options:
   log_level: INFO
   interval_seconds: 30
   installation_id: pilot-local
   thermal_topology: BUFFER
+  discovery_on_start: true
+  discovery_log_limit: 80
   mappings: []
 schema:
   log_level: list(DEBUG|INFO|WARNING|ERROR)
   interval_seconds: int(5,3600)
   installation_id: str
   thermal_topology: list(DIRECT|BUFFER|COMBINED_STORAGE)
+  discovery_on_start: bool
+  discovery_log_limit: int(10,500)
   mappings:
     - component_id: str
       point: str
