@@ -82,7 +82,7 @@ def main():
 
     if options.get("discovery_on_start", True):
         states = client.states()
-        candidates = discover(states, {mapping.entity_id for mapping in mappings})
+        candidates = discover(states, {mapping.entity_id: f"{mapping.component_id}.{mapping.point}" for mapping in mappings})
         limit = int(options.get("discovery_log_limit", 80))
         log.info(
             "discovery | entities=%d candidates=%d showing=%d",
@@ -92,9 +92,10 @@ def main():
         )
         for candidate in candidates[:limit]:
             log.info(
-                "discovery | status=%s domain=%s score=%d entity=%s state=%s unit=%s device_class=%s name=%s",
-                "MAPPED" if candidate.mapped else "CANDIDATE",
+                "discovery | status=%s domain=%s point=%s score=%d entity=%s state=%s unit=%s device_class=%s name=%s",
+                f"MAPPED:{candidate.mapped_to}" if candidate.mapped_to else "CANDIDATE",
                 candidate.suggested_domain,
+                candidate.suggested_point,
                 candidate.score,
                 candidate.entity_id,
                 candidate.state,
