@@ -1,0 +1,1 @@
+"""Adapters between external systems and the INS-EI model."""\n
