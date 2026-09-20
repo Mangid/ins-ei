@@ -60,8 +60,10 @@ def suggest(domain,hay,dc,kind):
         if contains(hay,"ausschalt","tpm","unten","lower"):return "temperature_lower"
     if domain=="DHW":
         if kind=="PARAMETER":
-            if contains(hay,"soll","target","wassertemp_soll"):return "target_temperature"
+            if contains(hay,"max_set","maximum","maximal"):return None
+            if contains(hay,"temp_set","wassertemp_soll","target temperature"):return "target_temperature"
             return None
+        if contains(hay,"aus_temperatur","ein_temperatur") and dc=="temperature":return "temperature"
         if dc=="temperature":return "temperature"
     if domain=="PELLET_BOILER":
         if kind=="PARAMETER":return None
@@ -69,7 +71,11 @@ def suggest(domain,hay,dc,kind):
         if contains(hay,"kesseltemperatur","boiler temperature"):return "boiler_temperature"
         if contains(hay,"vorlauf","flow temperature"):return "flow_temperature"
         if contains(hay,"rücklauf","rucklauf","return temperature"):return "return_temperature"
-        if contains(hay,"verbrauch","fuel consumption"):return "fuel_consumption_total"
+        if contains(hay,"verbrauch","fuel consumption"):
+            if contains(hay,"gestern","yesterday"):return "fuel_consumption_yesterday"
+            if contains(hay,"heute","today"):return "fuel_consumption_today"
+            if contains(hay,"gesamt","total"):return "fuel_consumption_total"
+            return None
         if contains(hay,"starts","starts"):return "burner_starts"
         if contains(hay,"laufzeit","runtime"):return "runtime"
         if contains(hay,"betriebsart","status","state"):return "state"
