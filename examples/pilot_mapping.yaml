@@ -1,0 +1,18 @@
+# Example only. Customer entity IDs belong in local configuration.
+mappings:
+  - component_id: grid
+    point: power
+    entity_id: sensor.example_grid_power
+    unit: W
+    role: OPTIMIZATION
+    max_age_seconds: 60
+  - component_id: pv
+    point: power
+    entity_id: sensor.example_pv_power
+    unit: W
+    role: OPTIMIZATION
+  - component_id: battery
+    point: soc
+    entity_id: sensor.example_battery_soc
+    unit: "%"
+    role: OPTIMIZATION
