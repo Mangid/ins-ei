@@ -59,7 +59,9 @@ def suggest(domain,hay,dc,kind):
         if contains(hay,"mitte","middle"):return "temperature_middle"
         if contains(hay,"ausschalt","tpm","unten","lower"):return "temperature_lower"
     if domain=="DHW":
-        if contains(hay,"soll","target"):return "target_temperature"
+        if kind=="PARAMETER":
+            if contains(hay,"soll","target","wassertemp_soll"):return "target_temperature"
+            return None
         if dc=="temperature":return "temperature"
     if domain=="PELLET_BOILER":
         if kind=="PARAMETER":return None
