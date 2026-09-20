@@ -2,7 +2,8 @@
 from __future__ import annotations
 import json, logging, os, time
 from pathlib import Path
-from ins_ei.adapters import HomeAssistantAdapter, HomeAssistantClient, mappings_from_dict\nfrom ins_ei.adapters.mapping import validate_mapping_config
+from ins_ei.adapters import HomeAssistantAdapter, HomeAssistantClient, mappings_from_dict
+from ins_ei.adapters.mapping import validate_mapping_config
 from ins_ei.collector import Collector
 from ins_ei.discovery import discover
 from ins_ei.model import Component, OperatingMode, SiteLocation, SiteModel, ThermalTopology
