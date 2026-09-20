@@ -1,77 +1,20 @@
-<!doctype html>
-<html lang="de">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width">
-<title>INS-EI</title>
-<style>
-:root{color-scheme:light dark;--bg:#f4f6f8;--card:#fff;--text:#202124;--muted:#667085;--border:#d9dee5;--accent:#03a9f4;--danger:#d32f2f}
-@media(prefers-color-scheme:dark){:root{--bg:#111418;--card:#1c2127;--text:#e8eaed;--muted:#aab2bd;--border:#343b44}}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px system-ui,-apple-system,sans-serif}
-header{background:var(--card);border-bottom:1px solid var(--border);padding:14px 22px;display:flex;align-items:center;gap:18px;position:sticky;top:0;z-index:3}
-header b{font-size:20px}nav{margin-left:auto;display:flex;gap:8px}.tab{padding:7px 11px;border-radius:8px;color:var(--muted);cursor:pointer}.tab.active{color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,transparent)}
-main{max-width:1350px;margin:22px auto;padding:0 18px}.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:18px}
-button,select,input,textarea{padding:8px;border:1px solid var(--border);border-radius:7px;background:var(--card);color:var(--text)}button{cursor:pointer;margin:5px}.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
-textarea{width:100%;min-height:130px}table{width:100%;border-collapse:collapse}td,th{padding:8px;border-bottom:1px solid var(--border);text-align:left;vertical-align:top}
-.badge{display:inline-block;font-size:11px;padding:3px 7px;border-radius:10px;background:color-mix(in srgb,var(--accent) 15%,transparent);margin:2px}.muted{color:var(--muted)}.candidate{padding:11px 0;border-bottom:1px solid var(--border)}
-.filters{display:grid;grid-template-columns:minmax(220px,2fr) 1fr 1fr auto;gap:8px;margin:14px 0}.filters input,.filters select{width:100%}.count{margin:8px 0;color:var(--muted)}
-@media(max-width:800px){.filters{grid-template-columns:1fr}nav{gap:2px}.tab{padding:6px}}
-</style>
-</head>
-<body>
-<header>
-<button onclick="goBack()">← Zurück</button><b>⚡ INS-EI</b>
-<nav><span class="tab">Übersicht</span><span id="mapTab" class="tab active" onclick="showPage('map')">Mappings</span><span id="discTab" class="tab" onclick="showPage('disc')">Discovery</span><span class="tab">System</span></nav>
-</header>
-<main>
-<div id="mapPage">
-<section class="card"><h2>Massenimport</h2><p class="muted">Format: component|point|entity_id</p><textarea id="bulk"></textarea><br><button class="primary" onclick="bulkImport()">Importieren</button><span id="msg" class="muted"></span></section>
-<section class="card"><h2>Mappings</h2><button class="primary" onclick="addMapping()">+ Mapping hinzufügen</button><table><thead><tr><th>Komponente</th><th>Datenpunkt</th><th>Home Assistant Entity</th><th></th></tr></thead><tbody id="mappingRows"></tbody></table><br><button class="primary" onclick="saveMappings()">Änderungen speichern</button></section>
-</div>
-<div id="discPage" hidden>
-<section class="card"><h2>Discovery</h2><p class="muted">Gefundene Home-Assistant-Entities mit INS-EI-Vorschlägen.</p>
-<div class="filters"><input id="discSearch" placeholder="Entity oder Name suchen…"><select id="discDomain"><option value="">Alle Komponenten</option></select><select id="discStatus"><option value="candidate">Nur Kandidaten</option><option value="">Alle</option><option value="mapped">Nur gemappte</option></select><button onclick="reloadDiscovery()">Aktualisieren</button></div>
-<div id="discCount" class="count"></div><div id="discoveryRows"></div></section>
-</div>
-</main>
+<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>INS-EI</title><style>
+:root{color-scheme:light dark;--bg:#f4f6f8;--card:#fff;--text:#202124;--muted:#667085;--border:#d9dee5;--accent:#03a9f4}@media(prefers-color-scheme:dark){:root{--bg:#111418;--card:#1c2127;--text:#e8eaed;--muted:#aab2bd;--border:#343b44}}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px system-ui}header{background:var(--card);border-bottom:1px solid var(--border);padding:14px 22px;display:flex;align-items:center;gap:18px;position:sticky;top:0;z-index:3}header b{font-size:20px}nav{margin-left:auto;display:flex;gap:8px}.tab{padding:7px 11px;color:var(--muted);cursor:pointer}.tab.active{color:var(--accent)}main{max-width:1400px;margin:22px auto;padding:0 18px}.card,.group{background:var(--card);border:1px solid var(--border);border-radius:12px;margin-bottom:14px}.card{padding:18px}.group h3{margin:0;padding:13px 16px;cursor:pointer;border-bottom:1px solid var(--border)}.points{padding:0 16px}.point{display:grid;grid-template-columns:minmax(180px,1fr) minmax(260px,2fr) auto;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)}.point:last-child{border-bottom:0}.name{font-weight:600}.meta{color:var(--muted);font-size:12px}.sensor{display:flex;gap:6px}.sensor input{width:100%}button,input,select{padding:8px;border:1px solid var(--border);border-radius:7px;background:var(--card);color:var(--text)}button{cursor:pointer}.primary{background:var(--accent);color:white;border-color:var(--accent)}.mapped{color:#2e7d32}.empty{color:var(--muted)}.badge{font-size:11px;padding:3px 6px;border-radius:8px;background:color-mix(in srgb,var(--accent) 12%,transparent)}dialog{width:min(900px,92vw);max-height:80vh;border:1px solid var(--border);border-radius:12px;background:var(--card);color:var(--text)}.entity{padding:9px;border-bottom:1px solid var(--border);cursor:pointer}.entity:hover{background:color-mix(in srgb,var(--accent) 8%,transparent)}#entitySearch{width:100%;margin-bottom:10px}
+</style></head><body><header><button onclick="history.back()">← Zurück</button><b>⚡ INS-EI</b><nav><span class="tab">Übersicht</span><span class="tab active">Mappings</span><span class="tab">Discovery</span><span class="tab">System</span></nav></header><main>
+<section class="card"><h2>INS-EI Datenpunkte</h2><p>Komponenten und Datenpunkte kommen aus dem INS-EI Point Catalog. Dahinter wird die passende Home-Assistant-Entity zugeordnet.</p><button class="primary" onclick="save()">Änderungen speichern</button><span id="msg"></span></section><div id="groups"></div></main>
+<dialog id="picker"><h3 id="pickerTitle">Home Assistant Sensor auswählen</h3><input id="entitySearch" placeholder="Sensor suchen…"><div id="entityList"></div><br><button onclick="picker.close()">Abbrechen</button></dialog>
 <script>
-let catalog={};let mappings=[];let discovery=[];
-const el=id=>document.getElementById(id);
-function escapeHtml(value){return String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));}
-function optionHtml(values,selected){return values.map(v=>'<option '+(v===selected?'selected':'')+'>'+escapeHtml(v)+'</option>').join('');}
-async function init(){
-  catalog=await (await fetch('api/catalog')).json();
-  mappings=await (await fetch('api/mappings')).json();
-  discovery=await (await fetch('api/discovery')).json();
-  el('discDomain').innerHTML='<option value="">Alle Komponenten</option>'+catalog.components.map(v=>'<option>'+escapeHtml(v)+'</option>').join('');
-  el('discSearch').addEventListener('input',renderDiscovery);
-  el('discDomain').addEventListener('change',renderDiscovery);
-  el('discStatus').addEventListener('change',renderDiscovery);
-  renderMappings();renderDiscovery();
-}
-function renderMappings(){
-  el('mappingRows').innerHTML=mappings.map((x,i)=>{
-    const c=(x.component_id||'').toUpperCase();const points=catalog.points[c]||[];
-    return '<tr><td><select onchange="changeComponent('+i+',this.value)">'+optionHtml(catalog.components,c)+'</select></td><td><select onchange="mappings['+i+'].point=this.value">'+optionHtml(points,x.point)+'</select></td><td><input value="'+escapeHtml(x.entity_id)+'" onchange="mappings['+i+'].entity_id=this.value"></td><td><button onclick="removeMapping('+i+')">Löschen</button></td></tr>';
-  }).join('');
-}
-function addMapping(){const c=catalog.components[0];mappings.push({component_id:c,point:catalog.points[c][0],entity_id:''});renderMappings();}
-function removeMapping(i){mappings.splice(i,1);renderMappings();}
-function changeComponent(i,c){mappings[i].component_id=c;mappings[i].point=(catalog.points[c]||[])[0]||'';renderMappings();}
-async function saveMappings(){const r=await fetch('api/mappings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:mappings})});const j=await r.json();el('msg').textContent=r.ok?'Gespeichert: '+j.saved:(j.errors||['Fehler']).join('; ');}
-async function bulkImport(){const r=await fetch('api/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:el('bulk').value})});const j=await r.json();if(r.ok){mappings=j.rows;el('bulk').value='';el('msg').textContent='Importiert: '+j.added+', übersprungen: '+j.skipped;renderMappings();}else{el('msg').textContent=(j.errors||['Fehler']).join('; ');}}
-function filteredDiscovery(){
-  const search=el('discSearch').value.toLowerCase().trim();const domain=el('discDomain').value;const status=el('discStatus').value;
-  return discovery.map((x,i)=>({x,i})).filter(o=>{const x=o.x;const text=((x.entity_id||'')+' '+(x.name||'')).toLowerCase();if(search&&!text.includes(search))return false;if(domain&&x.suggested_domain!==domain)return false;if(status==='candidate'&&x.mapped_to)return false;if(status==='mapped'&&!x.mapped_to)return false;return true;});
-}
-function renderDiscovery(){
-  const filtered=filteredDiscovery();el('discCount').textContent=filtered.length+' Treffer';
-  el('discoveryRows').innerHTML=filtered.slice(0,300).map(o=>{const x=o.x;const button=(!x.mapped_to&&x.suggested_point)?'<button class="primary" onclick="acceptDiscovery('+o.i+')">Übernehmen</button>':'';return '<div class="candidate"><b>'+escapeHtml(x.entity_id)+'</b> <span class="badge">'+escapeHtml(x.mapped_to?'MAPPED '+x.mapped_to:'CANDIDATE')+'</span><div class="muted">'+escapeHtml(x.name||'')+' · '+escapeHtml(x.state)+' '+escapeHtml(x.unit||'')+' · Vorschlag: '+escapeHtml(x.suggested_domain||'?')+' / '+escapeHtml(x.suggested_point||'?')+'</div>'+button+'</div>';}).join('');
-}
-async function acceptDiscovery(i){const r=await fetch('api/discovery/accept',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({item:discovery[i]})});const j=await r.json();if(r.ok){mappings=j.rows;discovery[i].mapped_to=discovery[i].suggested_domain+'.'+discovery[i].suggested_point;renderMappings();renderDiscovery();}else{alert((j.errors||[j.error||'Fehler']).join('; '));}}
-async function reloadDiscovery(){discovery=await (await fetch('api/discovery')).json();renderDiscovery();}
-function showPage(page){el('mapPage').hidden=page!=='map';el('discPage').hidden=page!=='disc';el('mapTab').classList.toggle('active',page==='map');el('discTab').classList.toggle('active',page==='disc');}
-function goBack(){if(history.length>1)history.back();else location.href='/';}
+let catalog={},mappings=[],entities=[],target=null;const e=id=>document.getElementById(id);const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+async function init(){catalog=await(await fetch('api/catalog')).json();mappings=await(await fetch('api/mappings')).json();entities=await(await fetch('api/entities')).json();e('entitySearch').addEventListener('input',renderPicker);render()}
+function mappingFor(c,p){return mappings.find(x=>(x.component_id||'').toUpperCase()===c&&x.point===p)}
+function render(){e('groups').innerHTML=catalog.components.map(c=>'<section class="group"><h3 onclick="toggle(\''+c+'\')">▾ '+c+'</h3><div class="points" id="g-'+c+'">'+(catalog.points[c]||[]).map(p=>row(c,p)).join('')+'</div></section>').join('')}
+function row(c,p){let m=mappingFor(c,p),meta=((catalog.meta||{})[c]||{})[p]||{};let value=m?m.entity_id:'— nicht zugeordnet —';return '<div class="point"><div><div class="name">'+esc(p)+'</div><div class="meta">'+esc(meta.unit||'ohne Einheit')+' · '+esc(meta.role||'MONITORING')+' · '+esc(meta.freshness||'NORMAL')+'</div></div><div class="'+(m?'mapped':'empty')+'">'+esc(value)+'</div><div class="sensor"><button onclick="pick(\''+c+'\',\''+p+'\')">Sensor wählen</button>'+(m?'<button onclick="clearMap(\''+c+'\',\''+p+'\')">×</button>':'')+'</div></div>'}
+function toggle(c){let x=e('g-'+c);x.hidden=!x.hidden}
+function pick(c,p){target={c,p};e('pickerTitle').textContent=c+' → '+p+' · Home Assistant Sensor';e('entitySearch').value='';renderPicker();e('picker').showModal()}
+function candidates(){let q=e('entitySearch').value.toLowerCase().trim(),meta=((catalog.meta||{})[target.c]||{})[target.p]||{},unit=meta.unit;return entities.filter(x=>{let text=((x.entity_id||'')+' '+(x.name||'')).toLowerCase();if(q&&!text.includes(q))return false;if(unit&&x.unit&&unit!==x.unit){if(!(unit==='W'&&x.unit==='kW'))return false}return true}).sort((a,b)=>{let as=(a.suggested_domain===target.c&&a.suggested_point===target.p)?0:1,bs=(b.suggested_domain===target.c&&b.suggested_point===target.p)?0:1;return as-bs})}
+function renderPicker(){if(!target)return;let list=candidates().slice(0,250);e('entityList').innerHTML=list.map(x=>'<div class="entity" onclick="choose(\''+esc(x.entity_id)+'\')"><b>'+esc(x.entity_id)+'</b><div class="meta">'+esc(x.name||'')+' · '+esc(x.state)+' '+esc(x.unit||'')+(x.suggested_domain===target.c&&x.suggested_point===target.p?' · <span class="badge">INS-EI Vorschlag</span>':'')+'</div></div>').join('')}
+function choose(entity){let old=mappingFor(target.c,target.p);let used=mappings.find(x=>x.entity_id===entity&&x!==old);if(used){alert('Dieser Sensor ist bereits '+used.component_id+'.'+used.point+' zugeordnet.');return}if(old)old.entity_id=entity;else mappings.push({component_id:target.c,point:target.p,entity_id:entity});e('picker').close();render()}
+function clearMap(c,p){mappings=mappings.filter(x=>!((x.component_id||'').toUpperCase()===c&&x.point===p));render()}
+async function save(){let r=await fetch('api/mappings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:mappings})});let j=await r.json();e('msg').textContent=r.ok?' Gespeichert: '+j.saved:(j.errors||['Fehler']).join('; ')}
 init();
-</script>
-</body></html>
+</script></body></html>
