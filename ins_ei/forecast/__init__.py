@@ -1,0 +1,1 @@
+"""Site context, weather and energy forecasts."""\n
