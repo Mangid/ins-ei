@@ -1,73 +1,52 @@
 # INS-EI
 
-INS-EI is a local energy-intelligence platform for Home Assistant installations.
+INS-EI is a local-first, vendor-neutral energy-intelligence platform for Home Assistant.
 
-> Status: early development / pilot architecture.
+> Current pilot version: **0.9.1** — SHADOW mode / early development.
+
+## Current pilot capabilities
+
+- Home Assistant app with Ingress web UI
+- Abstract INS-EI Point Catalog
+- Point-centric mapping grouped by component
+- Persistent mappings and duplicate validation
+- Searchable Home Assistant entity picker
+- Read-only Discovery with mapping suggestions
+- Automatic freshness, unit and role defaults
+- Electrical model for grid, PV and battery
+- Battery/BMS diagnostic points
+- Thermal model with DIRECT, BUFFER and COMBINED_STORAGE
+- Optional component configuration
+- Repeatable HEATING_CIRCUIT, ROOM and LOAD instances
+- Mapping hot-reload without restarting Home Assistant
 
 ## Core principles
 
-- **Local first:** measurement processing, optimization and control run locally at the customer site.
-- **Vendor neutral:** optimizers use an abstract INS-EI data model instead of manufacturer-specific Home Assistant entity IDs.
-- **Optional components:** a component that is not configured is not part of the optimization.
-- **Safe by design:** active control requires a known and verified restore path. Failover stops INS-EI control and restores captured pre-INS-EI baseline values.
-- **Observable:** inputs, data quality, forecasts, decisions, reasons, actions and results are logged for traceability.
-- **Service independent:** loss of INS-Service, MQTT, Internet or remote access must not stop local optimization.
-- **Shadow first:** pilot installations initially collect data and calculate decisions without issuing control commands.
+- **Local first:** processing, optimization and control run locally.
+- **Vendor neutral:** optimizers use abstract INS-EI points, not manufacturer entity IDs.
+- **Optional components:** absent equipment does not participate in optimization.
+- **Safe by design:** active control requires a known restore path; pilot operation is SHADOW first.
+- **Observable:** inputs, quality, decisions, reasons, actions and results remain traceable.
+- **Service independent:** Internet or remote-service loss must not stop local operation.
+- **Human-verifiable mapping:** Discovery suggests; explicit mappings remain the source of truth.
 
-## Planned thermal topologies
+## Thermal topologies
 
-1. **DIRECT** — no buffer; heat generator supplies heating circuits directly, with optional separate DHW storage.
-2. **BUFFER** — buffer is the thermal hub; heating circuits and optional DHW charging draw from it.
-3. **COMBINED_STORAGE** — buffer and domestic hot-water function share one combined thermal storage system.
+- **DIRECT** — heat generator supplies heating circuits directly; separate DHW is optional.
+- **BUFFER** — a buffer is the thermal hub.
+- **COMBINED_STORAGE** — heating buffer and DHW function share one storage system.
 
-Special hydraulic/control solutions are modeled through explicit actions and connections rather than customer-specific optimizer code.
+See the thermal architecture document under docs/architecture/thermal-model.md.
 
-## Architecture
+## Current UI model
 
-```text
-Home Assistant devices/entities
-          |
-          v
-   Adapter / Mapping
-          |
-          v
- Abstract INS-EI model
-          |
-   +------+------+
-   |             |
-Electrical     Thermal
-Optimizer      Optimizer
-   |             |
-   +------+------+
-          |
-      Action layer
-          |
-          v
- Home Assistant devices
+Mappings are organized by INS-EI component and data point. The installer selects the matching Home Assistant entity. Single components can be enabled/disabled; repeatable components such as heating circuits, rooms/zones and loads can have multiple named instances.
 
-INS-EI Core ---- telemetry ----> INS-Service
-     |
-     +---- local audit / logging
-     +---- failover / restore
-```
+Discovery is an assistance layer, not the source of truth.
 
-## Initial modules
+## Pilot status
 
-- Core/runtime
-- Abstract data model
-- Home Assistant adapter
-- Collector and data-quality handling
-- Electrical optimizer
-- Thermal optimizer
-- Action layer
-- Failover/baseline restore
-- INS-Service client and MQTT telemetry
-- Licensing/installation identity
-- Forecast/site context
-
-## Pilot phase
-
-The first deployments are intended to run in **SHADOW** mode on multiple Home Assistant installations. Pilot telemetry may be more detailed than normal production telemetry so the abstract model and optimization logic can be validated against real systems.
+The current implementation collects and normalizes real installation data. Active switching/control is not the goal of the present pilot stage. Next development focuses on completing installation modelling and connecting electrical/thermal data to traceable SHADOW optimization decisions.
 
 ## Security
 
