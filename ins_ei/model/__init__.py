@@ -1,0 +1,1 @@
+"""Abstract vendor-neutral INS-EI data model."""\n
