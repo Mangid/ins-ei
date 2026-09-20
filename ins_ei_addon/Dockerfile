@@ -9,5 +9,7 @@ LABEL io.hass.arch="${BUILD_ARCH}"
 RUN apk add --no-cache python3
 COPY ins_ei /opt/ins-ei/ins_ei
 COPY run.py /opt/ins-ei/run.py
+COPY web.py /opt/ins-ei/web.py
+COPY web /opt/ins-ei/web
 WORKDIR /opt/ins-ei
-CMD ["python3", "/opt/ins-ei/run.py"]
+CMD ["sh", "-c", "python3 /opt/ins-ei/web.py & exec python3 /opt/ins-ei/run.py"]
