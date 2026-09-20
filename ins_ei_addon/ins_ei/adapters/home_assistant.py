@@ -37,7 +37,7 @@ class HomeAssistantAdapter:
         key=f"{mapping.component_id}.{mapping.point}"
         try: state=self.client.state(mapping.entity_id)
         except HomeAssistantError: return DataPoint(key=key,unit=mapping.unit,quality=DataQuality.UNAVAILABLE,source=mapping.entity_id,role=mapping.role)
-        raw=state.get("state"); changed=_parse_timestamp(state.get("last_updated")); quality=DataQuality.GOOD
+        raw=state.get("state"); changed=_parse_timestamp(state.get("last_updated")); updated=_parse_timestamp(state.get("last_updated")); quality=DataQuality.GOOD
         if raw in (None,"unknown","unavailable",""):
             return DataPoint(key=key,unit=mapping.unit,timestamp=changed,quality=DataQuality.UNAVAILABLE,source=mapping.entity_id,role=mapping.role)
         value: Any=raw
@@ -45,7 +45,7 @@ class HomeAssistantAdapter:
             value=float(raw)*mapping.scale
             if mapping.invert_sign: value*=-1
         except (TypeError,ValueError): pass
-        if mapping.max_age_seconds and changed and (datetime.now(timezone.utc)-changed).total_seconds()>mapping.max_age_seconds: quality=DataQuality.STALE
+        if mapping.max_age_seconds and updated and (datetime.now(timezone.utc)-updated).total_seconds()>mapping.max_age_seconds: quality=DataQuality.STALE
         unit=mapping.unit or state.get("attributes",{}).get("unit_of_measurement")
         return DataPoint(key=key,value=value,unit=unit,timestamp=changed,quality=quality,source=mapping.entity_id,role=mapping.role)
 
