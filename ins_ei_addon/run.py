@@ -161,7 +161,7 @@ def main():
                 round(decision.inputs.get("market_future_spot_max_ct"),3) if decision.inputs.get("market_future_spot_max_ct") is not None else None,
                 decision.inputs.get("market_price_class"))
             log.info("price timing | cheapest_in=%s h | most_expensive_in=%s h",decision.inputs.get("market_hours_to_min"),decision.inputs.get("market_hours_to_max"))
-            log.info("strategy | profile=%s | thermal=%s | battery=%s | export=%s | ev=%s",strategy_cfg.get("profile"),strategy_cfg.get("priorities",{}).get("thermal_storage"),strategy_cfg.get("priorities",{}).get("battery_economics"),strategy_cfg.get("priorities",{}).get("export"),strategy_cfg.get("priorities",{}).get("ev"))
+            log.info("profile detect | profile=%s | reason=%s",decision.inputs.get("detected_profile"),decision.inputs.get("profile_reason"))
             log.info("shadow | action=%s | confidence=%s | reason=%s",decision.action,decision.confidence,decision.reason)
             if time.time()-last>300:snapshot(client,mappings);last=time.time()
         time.sleep(interval)
