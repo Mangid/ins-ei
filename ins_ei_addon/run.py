@@ -59,11 +59,11 @@ def build_site(options,component_cfg,mappings):
         thermal_topology=ThermalTopology(options["thermal_topology"]),
     )
     for cid,kind,enabled,metadata in configured_components(component_cfg,mappings):
-        model.add_component(Component(id=cid,kind=kind,enabled=enabled,metadata=metadata))
+        model.add_component(Component(id=cid,kind=kind,name=metadata.get("name"),enabled=enabled,config=metadata))
     return model
 
 def persist_site(model):
-    payload={"installation_id":model.installation_id,"mode":model.mode.value,"thermal_topology":model.thermal_topology.value if model.thermal_topology else None,"components":[{"id":c.id,"kind":c.kind,"enabled":c.enabled,"metadata":c.metadata} for c in model.components.values()]}
+    payload={"installation_id":model.installation_id,"mode":model.mode.value,"thermal_topology":model.thermal_topology.value if model.thermal_topology else None,"components":[{"id":c.id,"kind":c.kind,"enabled":c.enabled,"name":c.name,"config":c.config} for c in model.components.values()]}
     SITE.write_text(json.dumps(payload,ensure_ascii=False,indent=2),encoding="utf-8")
 
 def snapshot(client,mappings):
