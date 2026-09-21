@@ -46,7 +46,13 @@ def _market_prices(site):
     return price("import","import_price"),price("export","export_price"),None
 
 def _detect_profile(site):
-    heating_signals=0;summer_signals=0;reasons=[]\n    outdoor=_point(site,"WEATHER","outdoor_temperature")\n    if _usable(outdoor):\n        temp=float(outdoor.value)\n        if temp<=12:heating_signals+=2;reasons.append(f"Außentemperatur {temp:.1f} °C")\n        elif temp>=18:summer_signals+=2;reasons.append(f"Außentemperatur {temp:.1f} °C")\n        else:reasons.append(f"Außentemperatur {temp:.1f} °C im Übergangsbereich")
+    heating_signals=0;summer_signals=0;reasons=[]
+    outdoor=_point(site,"WEATHER","outdoor_temperature")
+    if _usable(outdoor):
+        temp=float(outdoor.value)
+        if temp<=12:heating_signals+=2;reasons.append(f"Außentemperatur {temp:.1f} °C")
+        elif temp>=18:summer_signals+=2;reasons.append(f"Außentemperatur {temp:.1f} °C")
+        else:reasons.append(f"Außentemperatur {temp:.1f} °C im Übergangsbereich")
     circuits=site.components_by_kind("HEATING_CIRCUIT")
     active_circuits=0
     for circuit in circuits:
