@@ -1,38 +1,49 @@
-# INS-EI Pilot Release Notes — 0.9.1
+# INS-EI Pilot Release Notes — 0.23.1
 
-**Date:** 2026-09-20  
+**Date:** 2026-09-21  
 **Stage:** Internal pilot / SHADOW
 
 ## Purpose
 
-Version 0.9.1 establishes the installation-configuration and mapping foundation needed before INS-EI is connected to broader optimization logic.
+0.23.1 represents the current integration milestone: real electrical, tariff, forecast and thermal inputs can be mapped into a vendor-neutral SiteModel and evaluated by a traceable SHADOW decision layer. The next focus is robust automatic operating-profile detection and heating-demand modelling.
 
 ## Highlights
 
-### Point-centric installation mapping
-The UI starts from the data INS-EI understands. Components are grouped, abstract data points are documented, and the installer selects the corresponding Home Assistant entity.
+### Structured installation mapping
+Mappings are grouped by electricity, heat, environment/weather, tariffs/forecasts and rooms/loads. Search and mapped/unmapped filters help commissioning. Repeatable heating circuits, rooms and loads can be created as named instances.
 
-### Real installation structure
-Optional equipment can be marked present or absent. Heating circuits, rooms/zones and electrical loads are designed as repeatable instances.
+### Dynamic market intelligence
+Import and export tariffs are independent. This supports static/dynamic combinations. The current pilot can consume an EPEX spot-price entity, calculate effective import/export prices from tariff parameters and read future price slots for relative price evaluation.
 
-### Discovery remains assistance
-Read-only Discovery scans Home Assistant and proposes likely mappings. Mappings remain explicit and editable.
+### PV and consumption forecasts
+Victron PV and consumption forecasts can be mapped for the current hour, today and tomorrow. SHADOW records forecast balance and combines it with current SOC, grid flow and market context.
 
-### Electrical, battery and thermal foundation
-Grid, PV, battery/BMS diagnostics and Thermal Core v1 are represented through the abstract model. Thermal topologies are DIRECT, BUFFER and COMBINED_STORAGE.
+### Customer strategy
+The Strategy view separates customer preferences from technical protection. HEATING, TRANSITION and SUMMER each have their own priorities for thermal storage, battery economics, export and e-mobility. Hard requirements such as minimum DHW temperature remain independent and take precedence.
 
-## Pilot limitations
+### Automatic operating profile — SHADOW
+INS-EI is beginning to infer HEATING, TRANSITION or SUMMER automatically instead of requiring seasonal manual switching. Outdoor temperature is available as an abstract WEATHER point. Heating-circuit demand and thermal state are being added as additional evidence. The detector currently remains observational so its behavior can be validated before it changes optimization priorities.
 
-- SHADOW mode remains the intended operating mode.
-- Active device control and production failover/restore are not the focus of this milestone.
-- Discovery suggestions require installer review.
-- Component configuration is currently primarily installation/UI metadata.
-- ROOM and LOAD modelling is preliminary and expected to evolve through pilot use.
+## Safety and traceability
+
+- Production actuator commands are not enabled by this milestone.
+- Technical protection limits and hard requirements must override customer priorities.
+- New optimization behavior is introduced in SHADOW first.
+- Price, forecast, data-quality, profile and decision reasons are logged for validation.
+- Discovery remains assistance; explicit mappings remain authoritative.
+
+## Current pilot limitations
+
+- Automatic operating-profile detection still needs real heating-circuit mappings and time/hysteresis stabilization.
+- Strategy priorities are not yet the final optimization objective function.
+- Target-SOC and full multi-hour energy-allocation planning are not yet implemented.
+- Power-to-heat availability depends on the mapped device/integration being available.
+- Active device control, restore/failover and production safety validation remain future milestones.
 
 ## Next focus
 
-1. Validate component configuration and mappings on real pilot installations.
-2. Refine repeatable heating-circuit, room and load modelling.
-3. Complete thermal data mapping and quality checks.
-4. Connect the abstract electrical and thermal model to traceable SHADOW optimization decisions.
-5. Preserve clear reasoning and before/after evidence for simulated and future executed actions.
+1. Map real heating circuits and validate heating-demand signals.
+2. Add hysteresis/time stabilization to automatic operating-profile selection.
+3. Let the detected profile select its configured customer priorities.
+4. Feed those priorities into the multi-hour battery/thermal/EV allocation planner.
+5. Preserve a complete explanation of why each proposed action was selected.
