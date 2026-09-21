@@ -28,7 +28,7 @@ def supervisor_token():
 
 def base_kind(component_id):
     raw=component_id.upper()
-    for kind in ("COMBINED_STORAGE","HEATING_CIRCUIT","POWER_TO_HEAT","PELLET_BOILER","HEAT_PUMP","FORECAST","MARKET","BATTERY","BUFFER","DHW","GRID","LOAD","PV","ROOM"):
+    for kind in ("COMBINED_STORAGE","HEATING_CIRCUIT","POWER_TO_HEAT","PELLET_BOILER","HEAT_PUMP","SOLAR_THERMAL","FORECAST","MARKET","BATTERY","BUFFER","DHW","GRID","LOAD","PV","ROOM"):
         if raw==kind or raw.startswith(kind+"_") or raw.startswith(kind+":"):return kind
     return raw
 
