@@ -103,7 +103,13 @@ def main():
                     log.info("site model | components=%d kinds=%s topology=%s ids=%s",len(model.components),kinds,model.thermal_topology.value if model.thermal_topology else "none",sorted(model.components))
                     log.info("mapping | active=%d",len(mappings));snapshot(client,mappings);last=time.time()
         if signature is not None:
-            result=collector.collect(mappings);log.info("collector | read=%d good=%d stale=%d unavailable=%d",result.read,result.good,result.stale,result.unavailable)
+            result=collector.collect(mappings)
+            log.info("collector | read=%d good=%d stale=%d unavailable=%d",result.read,result.good,result.stale,result.unavailable)
+            if result.stale or result.unavailable:
+                for component in model.components.values():
+                    for point_name,point in component.points.items():
+                        if point.quality.value in ("STALE","UNAVAILABLE"):
+                            log.info("collector issue | %s.%s | quality=%s | value=%s %s | source=%s",component.id,point_name,point.quality.value,point.value,point.unit or "",point.source)
             if time.time()-last>300:snapshot(client,mappings);last=time.time()
         time.sleep(interval)
 
