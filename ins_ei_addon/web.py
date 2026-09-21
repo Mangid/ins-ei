@@ -77,6 +77,8 @@ class H(BaseHTTPRequestHandler):
             return self.js(load(COMPONENTS, {}))
         if p.endswith("/api/market"):
             return self.js(load(MARKET, MARKET_DEFAULT))
+        if p.endswith("/api/strategy"):
+            return self.js(load(STRATEGY, {"profile":"AUTO","priorities":{"thermal_storage":80,"battery_economics":60,"export":40,"ev":50},"requirements":{"dhw_min_c":50.0}}))
         if p.endswith("/api/discovery"):
             return self.js(load(DISC, []))
         if p.endswith("/api/entities"):
@@ -103,6 +105,9 @@ class H(BaseHTTPRequestHandler):
         p = urlparse(self.path).path
         n = int(self.headers.get("Content-Length", "0"))
         body = json.loads(self.rfile.read(n) or b"{}")
+        if p.endswith("/api/strategy"):
+            STRATEGY.write_text(json.dumps(body, ensure_ascii=False, indent=2), encoding="utf-8")
+            return self.js({"saved": True})
         if p.endswith("/api/market"):
             MARKET.write_text(json.dumps(body, ensure_ascii=False, indent=2), encoding="utf-8")
             return self.js({"saved": True})
