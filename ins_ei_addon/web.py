@@ -31,7 +31,6 @@ class H(BaseHTTPRequestHandler):
         if p.endswith("/api/catalog"):return self.js({"components":component_choices(),"points":{c:point_choices(c) for c in component_choices()},"meta":{c:{x:{"unit":point_spec(c,x).unit,"role":point_spec(c,x).role,"freshness":point_spec(c,x).freshness,"description":point_description(c,x)} for x in point_choices(c)} for c in component_choices()}})
         if p.endswith("/api/mappings"):return self.js(rows())
         if p.endswith("/api/market"):
-            MARKET.write_text(json.dumps(body,ensure_ascii=False,indent=2),encoding="utf-8");return self.js({"saved":True})
         if p.endswith("/api/components"):return self.js(load(COMPONENTS,{}))
         if p.endswith("/api/market"):return self.js(load(MARKET,{"mode":"AWATTAR_AT","import_markup_ct":1.5,"vat_percent":20.0,"export_factor_percent":81.0,"static_import_ct":25.0,"static_export_ct":8.0}))
         if p.endswith("/api/discovery"):return self.js(load(DISC,[]))
@@ -41,6 +40,8 @@ class H(BaseHTTPRequestHandler):
         raw=(ROOT/"index.html").read_bytes();self.send_response(200);self.send_header("Content-Type","text/html");self.send_header("Content-Length",str(len(raw)));self.end_headers();self.wfile.write(raw)
     def do_POST(self):
         p=urlparse(self.path).path;n=int(self.headers.get("Content-Length","0"));body=json.loads(self.rfile.read(n) or b"{}")
+        if p.endswith("/api/market"):
+            MARKET.write_text(json.dumps(body,ensure_ascii=False,indent=2),encoding="utf-8");return self.js({"saved":True})
         if p.endswith("/api/components"):
             COMPONENTS.write_text(json.dumps(body,ensure_ascii=False,indent=2),encoding="utf-8");return self.js({"saved":True})
         if p.endswith("/api/discovery/accept"):
