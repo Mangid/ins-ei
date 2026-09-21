@@ -19,6 +19,8 @@ KEYWORDS={
  "PELLET_BOILER":("pellematic","ökofen","oekofen","pellet"),
  "HEATING_CIRCUIT":("heizkreis","heating circuit","hk1","hk2"),
  "ROOM":("raumtemperatur","humidity","feuchte"),
+ "MARKET":("epex","awattar","spot price","market price","marktpreis"),
+ "FORECAST":("victron_remote_monitoring","forecast","prognose","geschatzte_energieerzeugung","geschätzte energieerzeugung"),
 }
 EXCLUDE_BATTERY=("iphone","ipad","watch","rauchmelder","smoke","remote","phone")
 
@@ -37,6 +39,17 @@ def source_kind(entity,hay):
     return "MEASUREMENT"
 
 def suggest(domain,hay,dc,kind):
+    if domain=="MARKET":
+        if contains(hay,"epex","spot","market_price","marktpreis"):return "spot_price"
+    if domain=="FORECAST":
+        if contains(hay,"verbrauch","consumption"):
+            if contains(hay,"aktuelle_stunde","current_hour"):return "consumption_current_hour"
+            if contains(hay,"morgen","tomorrow"):return "consumption_tomorrow"
+            if contains(hay,"heute","today"):return "consumption_today"
+        if contains(hay,"energieerzeugung","pv","solar","generation"):
+            if contains(hay,"aktuelle_stunde","current_hour"):return "pv_current_hour"
+            if contains(hay,"morgen","tomorrow"):return "pv_tomorrow"
+            if contains(hay,"heute","today"):return "pv_today"
     if domain=="BATTERY":
         if contains(hay,"state_of_health","state of health"):return "soh"
         if contains(hay,"ladestand"," soc") or dc=="battery":return "soc"
