@@ -9,7 +9,7 @@ from ins_ei.discovery import discover
 from ins_ei.model import Component,OperatingMode,SiteLocation,SiteModel,ThermalTopology
 from ins_ei.shadow import evaluate as shadow_evaluate
 
-OPTIONS=Path("/data/options.json");UI=Path("/data/ui_mappings.json");DISC=Path("/data/discovery.json");COMPONENTS=Path("/data/components.json");SITE=Path("/data/site_model.json");SHADOW=Path("/data/shadow_decision.json")
+OPTIONS=Path("/data/options.json");UI=Path("/data/ui_mappings.json");DISC=Path("/data/discovery.json");COMPONENTS=Path("/data/components.json");SITE=Path("/data/site_model.json");SHADOW=Path("/data/shadow_decision.json");MARKET=Path("/data/market.json")
 MULTI={"HEATING_CIRCUIT","ROOM","LOAD"}
 
 def load(path,default):
@@ -28,7 +28,7 @@ def supervisor_token():
 
 def base_kind(component_id):
     raw=component_id.upper()
-    for kind in ("COMBINED_STORAGE","HEATING_CIRCUIT","POWER_TO_HEAT","PELLET_BOILER","HEAT_PUMP","BATTERY","BUFFER","DHW","GRID","LOAD","PV","ROOM"):
+    for kind in ("COMBINED_STORAGE","HEATING_CIRCUIT","POWER_TO_HEAT","PELLET_BOILER","HEAT_PUMP","FORECAST","MARKET","BATTERY","BUFFER","DHW","GRID","LOAD","PV","ROOM"):
         if raw==kind or raw.startswith(kind+"_") or raw.startswith(kind+":"):return kind
     return raw
 
@@ -87,8 +87,8 @@ def main():
     if not token:log.error("Supervisor token unavailable");return
     client=HomeAssistantClient("http://supervisor/core",token);signature=None;last=0;interval=int(options.get("interval_seconds",30))
     while True:
-        cfg=effective_config(options);component_cfg=load(COMPONENTS,{})
-        sig=json.dumps({"mappings":cfg.get("mappings",[]),"components":component_cfg,"topology":options.get("thermal_topology")},sort_keys=True,ensure_ascii=False)
+        cfg=effective_config(options);component_cfg=load(COMPONENTS,{});market_cfg=load(MARKET,{"mode":"AWATTAR_AT","import_markup_ct":1.5,"vat_percent":20.0,"export_factor_percent":81.0})
+        sig=json.dumps({"mappings":cfg.get("mappings",[]),"components":component_cfg,"market":market_cfg,"topology":options.get("thermal_topology")},sort_keys=True,ensure_ascii=False)
         if sig!=signature:
             check=validate_mapping_config(cfg)
             if check.errors:
