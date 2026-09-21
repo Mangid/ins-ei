@@ -12,7 +12,16 @@ def load(p,d):
 def rows():
     value=load(DATA,None)
     return value if value is not None else list(load(OPTIONS,{}).get("mappings",[]))
-def save(value):DATA.write_text(json.dumps(value,ensure_ascii=False,indent=2),encoding="utf-8")
+def save(value):
+    # Persist only source identity and explicit conversion overrides.
+    # Catalog-owned semantics (unit/role/freshness) must never be frozen in UI data.
+    clean=[]
+    for item in value:
+        row={key:item[key] for key in ("component_id","point","entity_id") if key in item}
+        for key in ("scale","invert_sign","max_age_seconds"):
+            if key in item and item[key] is not None:row[key]=item[key]
+        clean.append(row)
+    DATA.write_text(json.dumps(clean,ensure_ascii=False,indent=2),encoding="utf-8")
 def validate(value):return validate_mapping_config({"mappings":value}).errors
 class H(BaseHTTPRequestHandler):
     def js(self,obj,status=200):
