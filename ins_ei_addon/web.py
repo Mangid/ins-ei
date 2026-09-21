@@ -13,7 +13,7 @@ OPTIONS = Path("/data/options.json")
 DISC = Path("/data/discovery.json")
 COMPONENTS = Path("/data/components.json")
 MARKET = Path("/data/market.json")
-STRATEGY = Path("/data/strategy.json")
+STRATEGY = Path("/data/strategy.json")\nSERVER = Path("/data/server.json")\nTELEMETRY_STATUS = Path("/data/telemetry_status.json")
 
 MARKET_DEFAULT = {
     "import": {"mode": "DYNAMIC", "provider": "AWATTAR_AT", "markup_ct": 1.5, "adjust_percent": 0.0, "vat_percent": 20.0, "static_ct": 25.0},
@@ -73,12 +73,19 @@ class H(BaseHTTPRequestHandler):
             })
         if p.endswith("/api/mappings"):
             return self.js(rows())
+        if p.endswith("/api/server"):
+            SERVER.write_text(json.dumps(body, ensure_ascii=False, indent=2), encoding="utf-8")
+            return self.js({"saved": True})
         if p.endswith("/api/components"):
             return self.js(load(COMPONENTS, {}))
         if p.endswith("/api/market"):
             return self.js(load(MARKET, MARKET_DEFAULT))
         if p.endswith("/api/strategy"):
             return self.js(load(STRATEGY, {"mode":"AUTO","active_profile":"TRANSITION","profile_reason":"Noch keine automatische Profilbewertung verfügbar","profiles":{"HEATING":{"thermal_storage":90,"battery_economics":60,"export":25,"ev":50},"TRANSITION":{"thermal_storage":65,"battery_economics":65,"export":55,"ev":50},"SUMMER":{"thermal_storage":30,"battery_economics":65,"export":80,"ev":50}},"requirements":{"dhw_min_c":50.0}}))
+        if p.endswith("/api/server"):
+            return self.js(load(SERVER, {"url":"https://ins-ei.ins-enertech.net","installation_id":"pilot-local","interval_seconds":30,"enabled":False}))
+        if p.endswith("/api/telemetry-status"):
+            return self.js(load(TELEMETRY_STATUS, {"connected":False}))
         if p.endswith("/api/discovery"):
             return self.js(load(DISC, []))
         if p.endswith("/api/entities"):
