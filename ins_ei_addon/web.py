@@ -15,12 +15,8 @@ COMPONENTS = Path("/data/components.json")
 MARKET = Path("/data/market.json")
 
 MARKET_DEFAULT = {
-    "mode": "AWATTAR_AT",
-    "import_markup_ct": 1.5,
-    "vat_percent": 20.0,
-    "export_factor_percent": 81.0,
-    "static_import_ct": 25.0,
-    "static_export_ct": 8.0,
+    "import": {"mode": "DYNAMIC", "provider": "AWATTAR_AT", "markup_ct": 1.5, "adjust_percent": 0.0, "vat_percent": 20.0, "static_ct": 25.0},
+    "export": {"mode": "DYNAMIC", "provider": "SPOT_AT", "markup_ct": 0.0, "adjust_percent": -19.0, "vat_percent": 0.0, "static_ct": 8.0},
 }
 
 def load(path, default):
