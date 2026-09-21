@@ -66,6 +66,10 @@ def _detect_profile(site):
 
 def evaluate(site,market_series=None,strategy=None):
     strategy=strategy or {}
+    detected_profile,profile_reason=_detect_profile(site)
+    strategy=dict(strategy)
+    strategy["detected_profile"]=detected_profile
+    strategy["profile_reason"]=profile_reason
     pv=_point(site,"PV","power");grid=_point(site,"GRID","power");soc=_point(site,"BATTERY","soc")
     batt=_point(site,"BATTERY","power");pth=_point(site,"POWER_TO_HEAT","electrical_power")
     buffer=_point(site,"BUFFER","temperature_upper");dhw=_point(site,"DHW","temperature")
