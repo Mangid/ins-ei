@@ -75,9 +75,21 @@ def build_site(options,component_cfg,mappings,market_cfg):
     singleton_ids={}
     for component in model.components.values():
         if component.kind not in MULTI:singleton_ids.setdefault(component.kind,component.id)
-    for mapping in mappings:
-        kind=base_kind(mapping.component_id)
-        if kind in singleton_ids:mapping.component_id=singleton_ids[kind]
+    mappings=[
+        mapping if base_kind(mapping.component_id) not in singleton_ids else
+        mapping.__class__(
+            component_id=singleton_ids[base_kind(mapping.component_id)],
+            point=mapping.point,
+            entity_id=mapping.entity_id,
+            unit=mapping.unit,
+            role=mapping.role,
+            scale=mapping.scale,
+            invert_sign=mapping.invert_sign,
+            freshness=mapping.freshness,
+            max_age_seconds=mapping.max_age_seconds,
+        )
+        for mapping in mappings
+    ]
     market_components=model.components_by_kind("MARKET")
     if market_components:
         market_components[0].config=market_cfg
@@ -108,7 +120,7 @@ def main():
             if check.errors:
                 for error in check.errors:log.error("mapping | %s",error)
             else:
-                mappings=mappings_from_dict(cfg);model=build_site(options,component_cfg,mappings,market_cfg);errors=model.validate()
+                mappings=mappings_from_dict(cfg);model,mappings=build_site(options,component_cfg,mappings,market_cfg);errors=model.validate()
                 if errors:
                     for error in errors:log.error("site model | %s",error)
                 else:
