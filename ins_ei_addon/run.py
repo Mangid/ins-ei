@@ -1,6 +1,6 @@
 """INS-EI runtime: persistent installation model + collector."""
 from __future__ import annotations
-import json,logging,os,time
+import json,logging,os,time\nfrom urllib.request import Request,urlopen\nfrom urllib.error import URLError,HTTPError
 from pathlib import Path
 from ins_ei.adapters import HomeAssistantAdapter,HomeAssistantClient,mappings_from_dict
 from ins_ei.adapters.mapping import validate_mapping_config
@@ -15,6 +15,21 @@ MULTI={"HEATING_CIRCUIT","ROOM","LOAD"}
 def load(path,default):
     try:return json.loads(path.read_text(encoding="utf-8"))
     except (OSError,json.JSONDecodeError):return default
+
+def send_telemetry(url,installation_id,model,decision,timeout=5):
+    if not url:return None
+    data={}
+    for component in model.components.values():
+        for name,point in component.points.items():
+            if point.value is not None and point.quality.value=="GOOD":
+                data[f"{component.id}.{name}"]=point.value
+    data["shadow.action"]=decision.action
+    data["shadow.confidence"]=decision.confidence
+    payload={"installation_id":installation_id,"timestamp":decision.timestamp,"data":data}
+    req=Request(url.rstrip("/")+"/api/v1/telemetry",data=json.dumps(payload,ensure_ascii=False).encode("utf-8"),headers={"Content-Type":"application/json"},method="POST")
+    try:
+        with urlopen(req,timeout=timeout) as response:return response.status,len(data)
+    except (URLError,HTTPError,TimeoutError,OSError) as exc:return exc,None
 
 def supervisor_token():
     value=os.environ.get("SUPERVISOR_TOKEN")
@@ -111,7 +126,7 @@ def main():
     logging.basicConfig(level=getattr(logging,options.get("log_level","INFO")),format="%(asctime)s %(levelname)s %(message)s");log=logging.getLogger("ins_ei")
     token=supervisor_token()
     if not token:log.error("Supervisor token unavailable");return
-    client=HomeAssistantClient("http://supervisor/core",token);signature=None;last=0;interval=int(options.get("interval_seconds",30))
+    client=HomeAssistantClient("http://supervisor/core",token);signature=None;last=0;interval=int(options.get("interval_seconds",30));telemetry_url=options.get("telemetry_url","").strip();telemetry_interval=int(options.get("telemetry_interval_seconds",30));last_telemetry=0
     while True:
         cfg=effective_config(options);component_cfg=load(COMPONENTS,{});market_cfg=load(MARKET,{"mode":"AWATTAR_AT","import_markup_ct":1.5,"vat_percent":20.0,"export_factor_percent":81.0});strategy_cfg=load(STRATEGY,{"profile":"AUTO","priorities":{"thermal_storage":80,"battery_economics":60,"export":40,"ev":50},"requirements":{"dhw_min_c":50.0}})
         sig=json.dumps({"mappings":cfg.get("mappings",[]),"components":component_cfg,"market":market_cfg,"strategy":strategy_cfg,"topology":options.get("thermal_topology")},sort_keys=True,ensure_ascii=False)
@@ -162,7 +177,11 @@ def main():
                 decision.inputs.get("market_price_class"))
             log.info("price timing | cheapest_in=%s h | most_expensive_in=%s h",decision.inputs.get("market_hours_to_min"),decision.inputs.get("market_hours_to_max"))
             log.info("profile detect | profile=%s | reason=%s",decision.inputs.get("detected_profile"),decision.inputs.get("profile_reason"))
-            log.info("shadow | action=%s | confidence=%s | reason=%s",decision.action,decision.confidence,decision.reason)
+            log.info("shadow | action=%s | confidence=%s | reason=%s",decision.action,decision.confidence,decision.reason)\n            if telemetry_url and time.time()-last_telemetry>=telemetry_interval:
+                status,count=send_telemetry(telemetry_url,options.get("installation_id","pilot-local"),model,decision)
+                if isinstance(status,int):log.info("telemetry | sent=%d | status=%d | endpoint=%s",count,status,telemetry_url)
+                else:log.warning("telemetry | send failed | endpoint=%s | error=%s",telemetry_url,status)
+                last_telemetry=time.time()
             if time.time()-last>300:snapshot(client,mappings);last=time.time()
         time.sleep(interval)
 
