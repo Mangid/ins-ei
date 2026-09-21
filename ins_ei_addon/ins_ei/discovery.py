@@ -13,7 +13,7 @@ KEYWORDS={
  "GRID":("grid","netz","em540","meter"),
  "PV":("pv","solar","photovolta","wechselrichter","inverter"),
  "BATTERY":("pylontech","ess battery","batteriespeicher"),
- "POWER_TO_HEAT":("ac_thor","ac thor","ohmpilot","heizstab","power to heat"),
+ "SOLAR_THERMAL":("solarthermie","solar thermal","kollektor","solarkreis","solarpumpe"),\n "POWER_TO_HEAT":("ac_thor","ac thor","ohmpilot","heizstab","power to heat"),
  "BUFFER":("buffer_storage","buffer storage","puffer"),
  "DHW":("hot_water","hot water","warmwasser","boiler","dhw"),
  "HEAT_PUMP":("heat_pump","heat pump","wärmepumpe","waermepumpe","knv"),
@@ -52,6 +52,15 @@ def suggest(domain,hay,dc,kind):
             if contains(hay,"aktuelle_stunde","current_hour"):return "pv_current_hour"
             if contains(hay,"morgen","tomorrow"):return "pv_tomorrow"
             if contains(hay,"heute","today"):return "pv_today"
+    if domain=="SOLAR_THERMAL":
+        if contains(hay,"kollektor","collector"):return "collector_temperature"
+        if contains(hay,"vorlauf","flow temperature"):return "flow_temperature"
+        if contains(hay,"rucklauf","rücklauf","return temperature"):return "return_temperature"
+        if contains(hay,"pumpe","pump"):return "pump_state"
+        if contains(hay,"volumenstrom","flow rate"):return "flow_rate"
+        if contains(hay,"leistung","power"):return "thermal_power"
+        if contains(hay,"heute","today") and contains(hay,"energie","energy","wärmemenge"):return "energy_today"
+        if contains(hay,"gesamt","total") and contains(hay,"energie","energy","wärmemenge"):return "energy_total"
     if domain=="BATTERY":
         if contains(hay,"state_of_health","state of health"):return "soh"
         if contains(hay,"ladestand"," soc") or dc=="battery":return "soc"
