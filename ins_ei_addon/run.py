@@ -132,7 +132,7 @@ def main():
                     for mapping in mappings:
                         if base_kind(mapping.component_id)=="MARKET" and mapping.point=="spot_price":
                             state=client.state(mapping.entity_id);attrs=state.get("attributes") or {}
-                            log.info("market source keys | entity=%s | keys=%s",mapping.entity_id,sorted(attrs.keys()))
+                            log.info("market source data | entity=%s | data=%s",mapping.entity_id,json.dumps(attrs.get("data"),ensure_ascii=False,default=str)[:12000])
                     last=time.time()
         if signature is not None:
             result=collector.collect(mappings)
