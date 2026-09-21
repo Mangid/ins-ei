@@ -9,7 +9,8 @@ class DiscoveryCandidate:
     score:int; mapped_to:str|None=None; source_kind:str="MEASUREMENT"
 
 KEYWORDS={
- "WEATHER":("aussentemperatur","außentemperatur","outdoor temperature","outside temperature"),\n "GRID":("grid","netz","em540","meter"),
+ "WEATHER":("aussentemperatur","außentemperatur","outdoor temperature","outside temperature"),
+ "GRID":("grid","netz","em540","meter"),
  "PV":("pv","solar","photovolta","wechselrichter","inverter"),
  "BATTERY":("pylontech","ess battery","batteriespeicher"),
  "POWER_TO_HEAT":("ac_thor","ac thor","ohmpilot","heizstab","power to heat"),
@@ -38,7 +39,8 @@ def source_kind(entity,hay):
         return "PARAMETER"
     return "MEASUREMENT"
 
-def suggest(domain,hay,dc,kind):\n    if domain=="WEATHER" and dc=="temperature":return "outdoor_temperature"
+def suggest(domain,hay,dc,kind):
+    if domain=="WEATHER" and dc=="temperature":return "outdoor_temperature"
     if domain=="MARKET":
         if contains(hay,"epex","spot","market_price","marktpreis"):return "spot_price"
     if domain=="FORECAST":
