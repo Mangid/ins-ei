@@ -39,7 +39,9 @@ CATALOG={
  "HEAT_PUMP":{"electrical_power":PointSpec("W","FAST","OPTIMIZATION"),"thermal_power":PointSpec("W","FAST","OPTIMIZATION"),"flow_temperature":PointSpec("°C","NORMAL","OPTIMIZATION"),"return_temperature":PointSpec("°C","NORMAL","MONITORING"),"source_temperature":PointSpec("°C","NORMAL","MONITORING"),"compressor_state":PointSpec(None,"STATE","MONITORING"),"compressor_starts":PointSpec(None,"STATE","DIAGNOSTIC"),"runtime":PointSpec("h","STATE","DIAGNOSTIC"),"state":PointSpec(None,"STATE","OPTIMIZATION")},
  "PELLET_BOILER":{"current_power":PointSpec("W","FAST","OPTIMIZATION"),"boiler_temperature":PointSpec("°C","NORMAL","OPTIMIZATION"),"flame_temperature":PointSpec("°C","NORMAL","MONITORING"),"flow_temperature":PointSpec("°C","NORMAL","OPTIMIZATION"),"return_temperature":PointSpec("°C","NORMAL","MONITORING"),"fuel_consumption_total":PointSpec("kg","STATE","DIAGNOSTIC"),"fuel_consumption_today":PointSpec("kg","STATE","DIAGNOSTIC"),"fuel_consumption_yesterday":PointSpec("kg","STATE","DIAGNOSTIC"),"burner_starts":PointSpec(None,"STATE","DIAGNOSTIC"),"runtime":PointSpec("h","STATE","DIAGNOSTIC"),"state":PointSpec(None,"STATE","OPTIMIZATION")},
  "ROOM":{"temperature":PointSpec("°C","SLOW"),"humidity":PointSpec("%","SLOW"),"co2":PointSpec("ppm","NORMAL"),"heating_target":PointSpec("°C","STATE"),"valve_position":PointSpec("%","NORMAL")},
- "LOAD":{"power":PointSpec("W","FAST"),"energy_today":PointSpec("kWh","STATE"),"energy_total":PointSpec("kWh","STATE"),"state":PointSpec(None,"STATE")}
+ "LOAD":{"power":PointSpec("W","FAST"),"energy_today":PointSpec("kWh","STATE"),"energy_total":PointSpec("kWh","STATE"),"state":PointSpec(None,"STATE")},
+ "MARKET":{"spot_price":PointSpec("€/kWh","NORMAL","OPTIMIZATION"),"import_price":PointSpec("ct/kWh","NORMAL","OPTIMIZATION"),"export_price":PointSpec("ct/kWh","NORMAL","OPTIMIZATION")},
+ "FORECAST":{"pv_current_hour":PointSpec("kWh","NORMAL","OPTIMIZATION"),"pv_today":PointSpec("kWh","NORMAL","OPTIMIZATION"),"pv_tomorrow":PointSpec("kWh","NORMAL","OPTIMIZATION"),"consumption_current_hour":PointSpec("kWh","NORMAL","OPTIMIZATION"),"consumption_today":PointSpec("kWh","NORMAL","OPTIMIZATION"),"consumption_tomorrow":PointSpec("kWh","NORMAL","OPTIMIZATION")}
 }
 
 ALIASES={"DHW_STORAGE":"DHW"}
@@ -116,6 +118,15 @@ DESCRIPTIONS={
 ("LOAD","energy_today"):"Heute verbrauchte elektrische Energie dieses Verbrauchers.",
 ("LOAD","energy_total"):"Fortlaufender Energieverbrauchszähler dieses Verbrauchers.",
 ("LOAD","state"):"Aktueller Betriebszustand des Verbrauchers.",
+("MARKET","spot_price"):"Aktueller Spotmarktpreis als Rohwert in Euro pro Kilowattstunde.",
+("MARKET","import_price"):"Effektiver Strombezugspreis inklusive tarifabhängiger Aufschläge, soweit als Sensor verfügbar.",
+("MARKET","export_price"):"Effektiver Vergütungspreis für Netzeinspeisung, soweit als Sensor verfügbar.",
+("FORECAST","pv_current_hour"):"Prognostizierte PV-Energie für die aktuelle Stunde.",
+("FORECAST","pv_today"):"Prognostizierte PV-Energie für den heutigen Tag.",
+("FORECAST","pv_tomorrow"):"Prognostizierte PV-Energie für morgen.",
+("FORECAST","consumption_current_hour"):"Prognostizierter Stromverbrauch für die aktuelle Stunde.",
+("FORECAST","consumption_today"):"Prognostizierter Stromverbrauch für heute.",
+("FORECAST","consumption_tomorrow"):"Prognostizierter Stromverbrauch für morgen.",
 }
 
 def point_description(component:str,point:str)->str:
