@@ -48,7 +48,7 @@ function visiblePoint(c,id,p){
 }
 function componentHasVisible(c){
  if(c==='MARKET')return true;
- if(multi.includes(c)){let inst=cfg[c]?.instances||[];return inst.some(x=>(catalog.points[c]||[]).some(p=>visiblePoint(c,x.id,p)))}
+ if(multi.includes(c)){let inst=cfg[c]?.instances||[];if(!inst.length)return true;return inst.some(x=>(catalog.points[c]||[]).some(p=>visiblePoint(c,x.id,p)))}
  return (catalog.points[c]||[]).some(p=>visiblePoint(c,c,p))
 }
 function render(){
