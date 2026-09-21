@@ -120,7 +120,12 @@ def main():
             SHADOW.write_text(json.dumps(decision.to_dict(),ensure_ascii=False,indent=2),encoding="utf-8")
             spot_input=decision.inputs.get("market_spot_price",{})
             log.info("market price | spot=%s %s | import=%.3f ct/kWh | export=%.3f ct/kWh",spot_input.get("value"),spot_input.get("unit") or "",decision.inputs.get("import_price_ct_kwh") or 0,decision.inputs.get("export_price_ct_kwh") or 0)
-            log.info("forecast | pv_today=%s kWh | consumption_today=%s kWh | balance=%s kWh",decision.inputs.get("forecast_pv_today",{}).get("value"),decision.inputs.get("forecast_consumption_today",{}).get("value"),decision.inputs.get("forecast_balance_today_kwh"))
+            log.info("forecast | pv_today=%s kWh [%s/%s] | consumption_today=%s kWh [%s/%s] | pv_hour=%s kWh [%s/%s] | consumption_hour=%s kWh [%s/%s] | balance=%s kWh",
+                decision.inputs.get("forecast_pv_today",{}).get("value"),decision.inputs.get("forecast_pv_today",{}).get("quality"),decision.inputs.get("forecast_pv_today",{}).get("source"),
+                decision.inputs.get("forecast_consumption_today",{}).get("value"),decision.inputs.get("forecast_consumption_today",{}).get("quality"),decision.inputs.get("forecast_consumption_today",{}).get("source"),
+                decision.inputs.get("forecast_pv_current_hour",{}).get("value"),decision.inputs.get("forecast_pv_current_hour",{}).get("quality"),decision.inputs.get("forecast_pv_current_hour",{}).get("source"),
+                decision.inputs.get("forecast_consumption_current_hour",{}).get("value"),decision.inputs.get("forecast_consumption_current_hour",{}).get("quality"),decision.inputs.get("forecast_consumption_current_hour",{}).get("source"),
+                decision.inputs.get("forecast_balance_today_kwh"))
             log.info("shadow | action=%s | confidence=%s | reason=%s",decision.action,decision.confidence,decision.reason)
             if time.time()-last>300:snapshot(client,mappings);last=time.time()
         time.sleep(interval)
