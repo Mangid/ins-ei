@@ -12,7 +12,7 @@ BATTERY:['Batteriespeicher','Elektrischer Speicher für Eigenverbrauch, dynamisc
 BUFFER:['Pufferspeicher','Thermischer Speicher für Raumheizung und Wärmeerzeuger.'],
 COMBINED_STORAGE:['Kombispeicher','Gemeinsamer Speicher für Raumheizung und Warmwasser.'],
 DHW:['Warmwasserspeicher','Separater Speicher für Trinkwarmwasser.'],
-POWER_TO_HEAT:['Power-to-Heat','Elektrischer Heizstab oder Leistungssteller wie AC-THOR bzw. Ohmpilot.'],
+SOLAR_THERMAL:['Solarthermie','Thermischer Solarkollektor mit Solarregelung, Pumpe und optionaler Wärmemengenerfassung.'],\nPOWER_TO_HEAT:['Power-to-Heat','Elektrischer Heizstab oder Leistungssteller wie AC-THOR bzw. Ohmpilot.'],
 HEAT_PUMP:['Wärmepumpe','Elektrischer Wärmeerzeuger für Heizung und/oder Warmwasser.'],
 PELLET_BOILER:['Pelletkessel','Pellet-Wärmeerzeuger einschließlich Verbrauchs- und Betriebsdaten.'],
 HEATING_CIRCUIT:['Heizkreise','Mehrere Heizkreise wie Heizkörper oder Fußbodenheizung können separat angelegt werden.'],
@@ -54,7 +54,7 @@ function componentHasVisible(c){
 function render(){
  const themes=[
   ['STROM','Strom','Netz, Photovoltaik und Batteriespeicher',['GRID','PV','BATTERY']],
-  ['WAERME','Wärme','Speicher, Wärmeerzeuger und Heizkreise',['BUFFER','COMBINED_STORAGE','DHW','PELLET_BOILER','HEAT_PUMP','POWER_TO_HEAT','HEATING_CIRCUIT']],
+  ['WAERME','Wärme','Speicher, Wärmeerzeuger und Heizkreise',['BUFFER','COMBINED_STORAGE','DHW','SOLAR_THERMAL','PELLET_BOILER','HEAT_PUMP','POWER_TO_HEAT','HEATING_CIRCUIT']],
   ['UMGEBUNG','Umgebung & Wetter','Außentemperatur und weitere Umgebungsdaten für Betriebszustand und Prognosen',['WEATHER']],
   ['MARKT','Tarife & Prognosen','Stromtarife, Marktdaten und Energieprognosen',['MARKET','FORECAST']],
   ['NUTZUNG','Räume & Verbraucher','Optionale Zonen und einzelne Verbraucher',['ROOM','LOAD']]
