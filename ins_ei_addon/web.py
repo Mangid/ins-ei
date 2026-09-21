@@ -78,7 +78,7 @@ class H(BaseHTTPRequestHandler):
         if p.endswith("/api/market"):
             return self.js(load(MARKET, MARKET_DEFAULT))
         if p.endswith("/api/strategy"):
-            return self.js(load(STRATEGY, {"profile":"AUTO","priorities":{"thermal_storage":80,"battery_economics":60,"export":40,"ev":50},"requirements":{"dhw_min_c":50.0}}))
+            return self.js(load(STRATEGY, {"mode":"AUTO","active_profile":"TRANSITION","profile_reason":"Noch keine automatische Profilbewertung verfügbar","profiles":{"HEATING":{"thermal_storage":90,"battery_economics":60,"export":25,"ev":50},"TRANSITION":{"thermal_storage":65,"battery_economics":65,"export":55,"ev":50},"SUMMER":{"thermal_storage":30,"battery_economics":65,"export":80,"ev":50}},"requirements":{"dhw_min_c":50.0}}))
         if p.endswith("/api/discovery"):
             return self.js(load(DISC, []))
         if p.endswith("/api/entities"):
