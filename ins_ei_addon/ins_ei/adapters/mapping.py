@@ -54,10 +54,9 @@ def mappings_from_dict(config:dict[str,Any])->list[EntityMapping]:
     for item in _expanded_items(config):
         cid=item["component_id"].strip();point=_normalize_point(item["point"]);entity=item["entity_id"].strip();spec=point_spec(cid,point)
         default_freshness=spec.freshness if spec else "NORMAL";default_role=spec.role if spec else DataRole.MONITORING.value
-        configured_freshness=item.get("freshness")
-        # Catalog semantics are authoritative for legacy/UI mappings unless an
-        # explicit custom max age is configured. This also migrates old FAST
-        # values such as PV power to the newer STATE policy automatically.
-        freshness=default_freshness if item.get("max_age_seconds") is None else (configured_freshness or default_freshness)
+        # Point Catalog semantics are authoritative. Legacy persisted freshness values
+        # are intentionally ignored. max_age_seconds remains the only explicit
+        # per-mapping freshness override.
+        freshness=default_freshness
         result.append(EntityMapping(component_id=cid,point=point,entity_id=entity,unit=item.get("unit") or (spec.unit if spec else None),role=DataRole(item.get("role",default_role)),scale=float(item.get("scale",1.0)),invert_sign=bool(item.get("invert_sign",False)),freshness=FreshnessPolicy(freshness),max_age_seconds=item.get("max_age_seconds")))
     return result
