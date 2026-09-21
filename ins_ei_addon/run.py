@@ -69,6 +69,11 @@ def build_site(options,component_cfg,mappings,market_cfg):
     )
     for cid,kind,enabled,metadata in configured_components(component_cfg,mappings):
         model.add_component(Component(id=cid,kind=kind,name=metadata.get("name"),enabled=enabled,config=metadata))
+    market_components=model.components_by_kind("MARKET")
+    if market_components:
+        market_components[0].config=market_cfg
+    else:
+        model.add_component(Component(id="market",kind="MARKET",enabled=True,config=market_cfg))
     return model
 
 def persist_site(model):
