@@ -52,7 +52,9 @@ def evaluate(site):
     import_ct,export_ct,market_error=_market_prices(site)
     forecast_pv=_point(site,"FORECAST","pv_today");forecast_load=_point(site,"FORECAST","consumption_today")
     inputs={"pv_power":_input(pv),"grid_power":_input(grid),"battery_soc":_input(soc),"battery_power":_input(batt),"power_to_heat":_input(pth),"buffer_upper":_input(buffer),"dhw_temperature":_input(dhw),"forecast_pv_today":_input(forecast_pv),"forecast_consumption_today":_input(forecast_load),"import_price_ct_kwh":import_ct,"export_price_ct_kwh":export_ct}
-    now=datetime.now(timezone.utc).isoformat();guards=[];alternatives=[]\n    if market_error:guards.append(market_error)\n    if import_ct is None or export_ct is None:guards.append("Tarifpreis aktuell nicht vollständig verfügbar")
+    now=datetime.now(timezone.utc).isoformat();guards=[];alternatives=[]
+    if market_error:guards.append(market_error)
+    if import_ct is None or export_ct is None:guards.append("Tarifpreis aktuell nicht vollständig verfügbar")
     critical=[("grid.power",grid),("pv.power",pv),("battery.soc",soc)]
     missing=[name for name,point in critical if not _usable(point)]
     if missing:
