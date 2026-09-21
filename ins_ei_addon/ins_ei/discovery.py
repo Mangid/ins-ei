@@ -9,7 +9,7 @@ class DiscoveryCandidate:
     score:int; mapped_to:str|None=None; source_kind:str="MEASUREMENT"
 
 KEYWORDS={
- "WEATHER":("aussentemperatur","außentemperatur","outdoor temperature","outside temperature"),
+ "WEATHER":("aussentemperatur","außentemperatur","aussensensor","außensensor","outdoor temperature","outside temperature"),
  "GRID":("grid","netz","em540","meter"),
  "PV":("pv","solar","photovolta","wechselrichter","inverter"),
  "BATTERY":("pylontech","ess battery","batteriespeicher"),
