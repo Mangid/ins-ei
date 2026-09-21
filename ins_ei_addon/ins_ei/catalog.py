@@ -20,7 +20,7 @@ CATALOG={
  "BATTERY":{
   "soc":PointSpec("%","STATE","OPTIMIZATION"),"power":PointSpec("W","FAST","OPTIMIZATION"),"voltage":PointSpec("V","STATE","DIAGNOSTIC"),
   "current":PointSpec("A","FAST","DIAGNOSTIC"),"temperature":PointSpec("°C","STATE","DIAGNOSTIC"),"soh":PointSpec("%","STATE","DIAGNOSTIC"),
-  "max_cell_voltage":PointSpec("V","NORMAL","DIAGNOSTIC"),"min_cell_voltage":PointSpec("V","NORMAL","DIAGNOSTIC"),
+  "max_cell_voltage":PointSpec("V","STATE","DIAGNOSTIC"),"min_cell_voltage":PointSpec("V","STATE","DIAGNOSTIC"),
   "max_cell_temperature":PointSpec("°C","STATE","DIAGNOSTIC"),"min_cell_temperature":PointSpec("°C","STATE","DIAGNOSTIC"),
   "max_charge_voltage":PointSpec("V","STATE","DIAGNOSTIC"),"max_charge_current":PointSpec("A","STATE","DIAGNOSTIC"),
   "max_discharge_current":PointSpec("A","STATE","DIAGNOSTIC"),"installed_capacity_ah":PointSpec("Ah","STATE","DIAGNOSTIC"),
