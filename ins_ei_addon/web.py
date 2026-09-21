@@ -5,7 +5,7 @@ import json
 from urllib.parse import urlparse
 from ins_ei.catalog import component_choices,point_choices,point_spec,point_description
 from ins_ei.adapters.mapping import _parse_bulk_text,validate_mapping_config
-ROOT=Path("/opt/ins-ei/web"); DATA=Path("/data/ui_mappings.json"); OPTIONS=Path("/data/options.json"); DISC=Path("/data/discovery.json"); COMPONENTS=Path("/data/components.json")
+ROOT=Path("/opt/ins-ei/web"); DATA=Path("/data/ui_mappings.json"); OPTIONS=Path("/data/options.json"); DISC=Path("/data/discovery.json"); COMPONENTS=Path("/data/components.json"); MARKET=Path("/data/market.json")
 def load(p,d):
     try:return json.loads(p.read_text(encoding="utf-8"))
     except (OSError,json.JSONDecodeError):return d
@@ -30,7 +30,10 @@ class H(BaseHTTPRequestHandler):
         p=urlparse(self.path).path
         if p.endswith("/api/catalog"):return self.js({"components":component_choices(),"points":{c:point_choices(c) for c in component_choices()},"meta":{c:{x:{"unit":point_spec(c,x).unit,"role":point_spec(c,x).role,"freshness":point_spec(c,x).freshness,"description":point_description(c,x)} for x in point_choices(c)} for c in component_choices()}})
         if p.endswith("/api/mappings"):return self.js(rows())
+        if p.endswith("/api/market"):
+            MARKET.write_text(json.dumps(body,ensure_ascii=False,indent=2),encoding="utf-8");return self.js({"saved":True})
         if p.endswith("/api/components"):return self.js(load(COMPONENTS,{}))
+        if p.endswith("/api/market"):return self.js(load(MARKET,{"mode":"AWATTAR_AT","import_markup_ct":1.5,"vat_percent":20.0,"export_factor_percent":81.0,"static_import_ct":25.0,"static_export_ct":8.0}))
         if p.endswith("/api/discovery"):return self.js(load(DISC,[]))
         if p.endswith("/api/entities"):
             items=load(DISC,[])
