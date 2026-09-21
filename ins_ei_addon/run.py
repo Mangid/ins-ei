@@ -69,6 +69,15 @@ def build_site(options,component_cfg,mappings,market_cfg):
     )
     for cid,kind,enabled,metadata in configured_components(component_cfg,mappings):
         model.add_component(Component(id=cid,kind=kind,name=metadata.get("name"),enabled=enabled,config=metadata))
+    # Canonicalize singleton mapping IDs to the actual SiteModel component IDs.
+    # UI mappings use catalog names such as FORECAST/MARKET while configured
+    # singleton components may be stored lowercase.
+    singleton_ids={}
+    for component in model.components.values():
+        if component.kind not in MULTI:singleton_ids.setdefault(component.kind,component.id)
+    for mapping in mappings:
+        kind=base_kind(mapping.component_id)
+        if kind in singleton_ids:mapping.component_id=singleton_ids[kind]
     market_components=model.components_by_kind("MARKET")
     if market_components:
         market_components[0].config=market_cfg
