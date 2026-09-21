@@ -1,6 +1,8 @@
 """INS-EI runtime: persistent installation model + collector."""
 from __future__ import annotations
-import json,logging,os,time\nfrom urllib.request import Request,urlopen\nfrom urllib.error import URLError,HTTPError
+import json,logging,os,time
+from urllib.request import Request,urlopen
+from urllib.error import URLError,HTTPError
 from pathlib import Path
 from ins_ei.adapters import HomeAssistantAdapter,HomeAssistantClient,mappings_from_dict
 from ins_ei.adapters.mapping import validate_mapping_config
@@ -177,7 +179,8 @@ def main():
                 decision.inputs.get("market_price_class"))
             log.info("price timing | cheapest_in=%s h | most_expensive_in=%s h",decision.inputs.get("market_hours_to_min"),decision.inputs.get("market_hours_to_max"))
             log.info("profile detect | profile=%s | reason=%s",decision.inputs.get("detected_profile"),decision.inputs.get("profile_reason"))
-            log.info("shadow | action=%s | confidence=%s | reason=%s",decision.action,decision.confidence,decision.reason)\n            if telemetry_url and time.time()-last_telemetry>=telemetry_interval:
+            log.info("shadow | action=%s | confidence=%s | reason=%s",decision.action,decision.confidence,decision.reason)
+            if telemetry_url and time.time()-last_telemetry>=telemetry_interval:
                 status,count=send_telemetry(telemetry_url,options.get("installation_id","pilot-local"),model,decision)
                 if isinstance(status,int):log.info("telemetry | sent=%d | status=%d | endpoint=%s",count,status,telemetry_url)
                 else:log.warning("telemetry | send failed | endpoint=%s | error=%s",telemetry_url,status)
