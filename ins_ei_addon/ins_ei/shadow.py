@@ -27,12 +27,32 @@ def _usable(point):
 def _input(point):
     return {"value":point.value if point else None,"unit":point.unit if point else None,"quality":point.quality.value if point else "MISSING","source":point.source if point else None}
 
+def _market_prices(site):
+    components=site.components_by_kind("MARKET")
+    if not components:return None,None,"MARKET fehlt"
+    cfg=components[0].config or {}
+    spot=_point(site,"MARKET","spot_price")
+    def price(side,point_name):
+        tariff=cfg.get(side,{})
+        mode=tariff.get("mode","DYNAMIC")
+        if mode=="STATIC":return float(tariff.get("static_ct",0))
+        if mode=="HA_SENSOR":
+            p=_point(site,"MARKET",point_name)
+            return float(p.value) if _usable(p) else None
+        if not _usable(spot):return None
+        base=float(spot.value)*100.0
+        adjusted=(base+float(tariff.get("markup_ct",0)))*(1.0+float(tariff.get("adjust_percent",0))/100.0)
+        return adjusted*(1.0+float(tariff.get("vat_percent",0))/100.0)
+    return price("import","import_price"),price("export","export_price"),None
+
 def evaluate(site):
     pv=_point(site,"PV","power");grid=_point(site,"GRID","power");soc=_point(site,"BATTERY","soc")
     batt=_point(site,"BATTERY","power");pth=_point(site,"POWER_TO_HEAT","electrical_power")
     buffer=_point(site,"BUFFER","temperature_upper");dhw=_point(site,"DHW","temperature")
-    inputs={"pv_power":_input(pv),"grid_power":_input(grid),"battery_soc":_input(soc),"battery_power":_input(batt),"power_to_heat":_input(pth),"buffer_upper":_input(buffer),"dhw_temperature":_input(dhw)}
-    now=datetime.now(timezone.utc).isoformat();guards=[];alternatives=[]
+    import_ct,export_ct,market_error=_market_prices(site)
+    forecast_pv=_point(site,"FORECAST","pv_today");forecast_load=_point(site,"FORECAST","consumption_today")
+    inputs={"pv_power":_input(pv),"grid_power":_input(grid),"battery_soc":_input(soc),"battery_power":_input(batt),"power_to_heat":_input(pth),"buffer_upper":_input(buffer),"dhw_temperature":_input(dhw),"forecast_pv_today":_input(forecast_pv),"forecast_consumption_today":_input(forecast_load),"import_price_ct_kwh":import_ct,"export_price_ct_kwh":export_ct}
+    now=datetime.now(timezone.utc).isoformat();guards=[];alternatives=[]\n    if market_error:guards.append(market_error)\n    if import_ct is None or export_ct is None:guards.append("Tarifpreis aktuell nicht vollständig verfügbar")
     critical=[("grid.power",grid),("pv.power",pv),("battery.soc",soc)]
     missing=[name for name,point in critical if not _usable(point)]
     if missing:
