@@ -9,7 +9,7 @@ from ins_ei.discovery import discover
 from ins_ei.model import Component,OperatingMode,SiteLocation,SiteModel,ThermalTopology
 from ins_ei.shadow import evaluate as shadow_evaluate
 
-OPTIONS=Path("/data/options.json");UI=Path("/data/ui_mappings.json");DISC=Path("/data/discovery.json");COMPONENTS=Path("/data/components.json");SITE=Path("/data/site_model.json");SHADOW=Path("/data/shadow_decision.json");MARKET=Path("/data/market.json");MARKET_SERIES=Path("/data/market_series.json")
+OPTIONS=Path("/data/options.json");UI=Path("/data/ui_mappings.json");DISC=Path("/data/discovery.json");COMPONENTS=Path("/data/components.json");SITE=Path("/data/site_model.json");SHADOW=Path("/data/shadow_decision.json");MARKET=Path("/data/market.json");MARKET_SERIES=Path("/data/market_series.json");STRATEGY=Path("/data/strategy.json")
 MULTI={"HEATING_CIRCUIT","ROOM","LOAD"}
 
 def load(path,default):
@@ -113,8 +113,8 @@ def main():
     if not token:log.error("Supervisor token unavailable");return
     client=HomeAssistantClient("http://supervisor/core",token);signature=None;last=0;interval=int(options.get("interval_seconds",30))
     while True:
-        cfg=effective_config(options);component_cfg=load(COMPONENTS,{});market_cfg=load(MARKET,{"mode":"AWATTAR_AT","import_markup_ct":1.5,"vat_percent":20.0,"export_factor_percent":81.0})
-        sig=json.dumps({"mappings":cfg.get("mappings",[]),"components":component_cfg,"market":market_cfg,"topology":options.get("thermal_topology")},sort_keys=True,ensure_ascii=False)
+        cfg=effective_config(options);component_cfg=load(COMPONENTS,{});market_cfg=load(MARKET,{"mode":"AWATTAR_AT","import_markup_ct":1.5,"vat_percent":20.0,"export_factor_percent":81.0});strategy_cfg=load(STRATEGY,{"profile":"AUTO","priorities":{"thermal_storage":80,"battery_economics":60,"export":40,"ev":50},"requirements":{"dhw_min_c":50.0}})
+        sig=json.dumps({"mappings":cfg.get("mappings",[]),"components":component_cfg,"market":market_cfg,"strategy":strategy_cfg,"topology":options.get("thermal_topology")},sort_keys=True,ensure_ascii=False)
         if sig!=signature:
             check=validate_mapping_config(cfg)
             if check.errors:
@@ -143,7 +143,7 @@ def main():
                     for point_name,point in component.points.items():
                         if point.quality.value in ("STALE","UNAVAILABLE"):
                             log.info("collector issue | %s.%s | quality=%s | value=%s %s | source=%s",component.id,point_name,point.quality.value,point.value,point.unit or "",point.source)
-            decision=shadow_evaluate(model,load(MARKET_SERIES,[]))
+            decision=shadow_evaluate(model,load(MARKET_SERIES,[]),strategy_cfg)
             SHADOW.write_text(json.dumps(decision.to_dict(),ensure_ascii=False,indent=2),encoding="utf-8")
             spot_input=decision.inputs.get("market_spot_price",{})
             log.info("market price | spot=%s %s | import=%.3f ct/kWh | export=%.3f ct/kWh",spot_input.get("value"),spot_input.get("unit") or "",decision.inputs.get("import_price_ct_kwh") or 0,decision.inputs.get("export_price_ct_kwh") or 0)
@@ -161,6 +161,7 @@ def main():
                 round(decision.inputs.get("market_future_spot_max_ct"),3) if decision.inputs.get("market_future_spot_max_ct") is not None else None,
                 decision.inputs.get("market_price_class"))
             log.info("price timing | cheapest_in=%s h | most_expensive_in=%s h",decision.inputs.get("market_hours_to_min"),decision.inputs.get("market_hours_to_max"))
+            log.info("strategy | profile=%s | thermal=%s | battery=%s | export=%s | ev=%s",strategy_cfg.get("profile"),strategy_cfg.get("priorities",{}).get("thermal_storage"),strategy_cfg.get("priorities",{}).get("battery_economics"),strategy_cfg.get("priorities",{}).get("export"),strategy_cfg.get("priorities",{}).get("ev"))
             log.info("shadow | action=%s | confidence=%s | reason=%s",decision.action,decision.confidence,decision.reason)
             if time.time()-last>300:snapshot(client,mappings);last=time.time()
         time.sleep(interval)
