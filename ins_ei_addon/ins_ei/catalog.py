@@ -12,7 +12,7 @@ class PointSpec:
     role: str = "MONITORING"
 
 CATALOG={
- "GRID":{
+ "WEATHER":{"outdoor_temperature":PointSpec("°C","NORMAL","OPTIMIZATION")},\n "GRID":{
   "power":PointSpec("W","FAST","OPTIMIZATION"),"import_energy":PointSpec("kWh","STATE"),"export_energy":PointSpec("kWh","STATE"),
   "voltage_l1":PointSpec("V","NORMAL","DIAGNOSTIC"),"voltage_l2":PointSpec("V","NORMAL","DIAGNOSTIC"),"voltage_l3":PointSpec("V","NORMAL","DIAGNOSTIC"),
   "current_l1":PointSpec("A","FAST","DIAGNOSTIC"),"current_l2":PointSpec("A","FAST","DIAGNOSTIC"),"current_l3":PointSpec("A","FAST","DIAGNOSTIC"),"frequency":PointSpec("Hz","NORMAL","DIAGNOSTIC")},
@@ -60,7 +60,7 @@ def component_choices()->list[str]: return sorted(CATALOG)
 def point_choices(component:str)->list[str]: return sorted(CATALOG.get(component_type(component),{}))
 
 
-DESCRIPTIONS={
+DESCRIPTIONS={\n("WEATHER","outdoor_temperature"):"Aktuelle Außentemperatur am Anlagenstandort. Wichtig für die automatische Erkennung von Heiz-, Übergangs- und Sommerbetrieb.",
 ("GRID","power"):"Aktuelle Wirkleistung am Netzanschlusspunkt. Positiv = Netzbezug, negativ = Einspeisung.",
 ("GRID","import_energy"):"Kumulierte aus dem öffentlichen Netz bezogene elektrische Energie.",
 ("GRID","export_energy"):"Kumulierte in das öffentliche Netz eingespeiste elektrische Energie.",
