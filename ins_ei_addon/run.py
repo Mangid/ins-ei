@@ -60,7 +60,7 @@ def configured_components(component_cfg,mappings):
         existing_kinds.add(kind)
     return result
 
-def build_site(options,component_cfg,mappings):
+def build_site(options,component_cfg,mappings,market_cfg):
     model=SiteModel(
         installation_id=options["installation_id"],
         location=SiteLocation(timezone=options.get("timezone","Europe/Vienna")),
@@ -94,7 +94,7 @@ def main():
             if check.errors:
                 for error in check.errors:log.error("mapping | %s",error)
             else:
-                mappings=mappings_from_dict(cfg);model=build_site(options,component_cfg,mappings);errors=model.validate()
+                mappings=mappings_from_dict(cfg);model=build_site(options,component_cfg,mappings,market_cfg);errors=model.validate()
                 if errors:
                     for error in errors:log.error("site model | %s",error)
                 else:
