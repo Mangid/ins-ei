@@ -40,7 +40,7 @@ CATALOG={
  "PELLET_BOILER":{"current_power":PointSpec("W","FAST","OPTIMIZATION"),"boiler_temperature":PointSpec("°C","NORMAL","OPTIMIZATION"),"flame_temperature":PointSpec("°C","NORMAL","MONITORING"),"flow_temperature":PointSpec("°C","NORMAL","OPTIMIZATION"),"return_temperature":PointSpec("°C","NORMAL","MONITORING"),"fuel_consumption_total":PointSpec("kg","STATE","DIAGNOSTIC"),"fuel_consumption_today":PointSpec("kg","STATE","DIAGNOSTIC"),"fuel_consumption_yesterday":PointSpec("kg","STATE","DIAGNOSTIC"),"burner_starts":PointSpec(None,"STATE","DIAGNOSTIC"),"runtime":PointSpec("h","STATE","DIAGNOSTIC"),"state":PointSpec(None,"STATE","OPTIMIZATION")},
  "ROOM":{"temperature":PointSpec("°C","SLOW"),"humidity":PointSpec("%","SLOW"),"co2":PointSpec("ppm","NORMAL"),"heating_target":PointSpec("°C","STATE"),"valve_position":PointSpec("%","NORMAL")},
  "LOAD":{"power":PointSpec("W","FAST"),"energy_today":PointSpec("kWh","STATE"),"energy_total":PointSpec("kWh","STATE"),"state":PointSpec(None,"STATE")},
- "MARKET":{"spot_price":PointSpec("€/kWh","NORMAL","OPTIMIZATION"),"import_price":PointSpec("ct/kWh","NORMAL","OPTIMIZATION"),"export_price":PointSpec("ct/kWh","NORMAL","OPTIMIZATION")},
+ "MARKET":{"spot_price":PointSpec("€/kWh","STATE","OPTIMIZATION"),"import_price":PointSpec("ct/kWh","NORMAL","OPTIMIZATION"),"export_price":PointSpec("ct/kWh","NORMAL","OPTIMIZATION")},
  "FORECAST":{"pv_current_hour":PointSpec("kWh","NORMAL","OPTIMIZATION"),"pv_today":PointSpec("kWh","NORMAL","OPTIMIZATION"),"pv_tomorrow":PointSpec("kWh","NORMAL","OPTIMIZATION"),"consumption_current_hour":PointSpec("kWh","NORMAL","OPTIMIZATION"),"consumption_today":PointSpec("kWh","NORMAL","OPTIMIZATION"),"consumption_tomorrow":PointSpec("kWh","NORMAL","OPTIMIZATION")}
 }
 
