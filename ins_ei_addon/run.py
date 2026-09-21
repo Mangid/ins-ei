@@ -128,7 +128,12 @@ def main():
                     kinds={}
                     for component in model.components.values():kinds[component.kind]=kinds.get(component.kind,0)+1
                     log.info("site model | components=%d kinds=%s topology=%s ids=%s",len(model.components),kinds,model.thermal_topology.value if model.thermal_topology else "none",sorted(model.components))
-                    log.info("mapping | active=%d",len(mappings));snapshot(client,mappings)\n                    for mapping in mappings:\n                        if base_kind(mapping.component_id)=="MARKET" and mapping.point=="spot_price":\n                            state=client.state(mapping.entity_id);attrs=state.get("attributes") or {}\n                            log.info("market source keys | entity=%s | keys=%s",mapping.entity_id,sorted(attrs.keys()))\n                    last=time.time()
+                    log.info("mapping | active=%d",len(mappings));snapshot(client,mappings)
+                    for mapping in mappings:
+                        if base_kind(mapping.component_id)=="MARKET" and mapping.point=="spot_price":
+                            state=client.state(mapping.entity_id);attrs=state.get("attributes") or {}
+                            log.info("market source keys | entity=%s | keys=%s",mapping.entity_id,sorted(attrs.keys()))
+                    last=time.time()
         if signature is not None:
             result=collector.collect(mappings)
             log.info("collector | read=%d good=%d stale=%d unavailable=%d",result.read,result.good,result.stale,result.unavailable)
