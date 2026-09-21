@@ -47,13 +47,16 @@ def configured_components(component_cfg,mappings):
             result.append((kind.lower(),kind,True,{}))
     known={x[0] for x in result}
     configured_singletons={kind for _,kind,_,_ in result if kind not in MULTI}
+    existing_kinds={kind for _,kind,_,_ in result}
     for cid in mapped_ids:
         kind=base_kind(cid)
         if cid in known:
             continue
-        if kind in configured_singletons and kind not in MULTI:
+        if kind not in MULTI and kind in existing_kinds:
             continue
         result.append((cid,kind,True,{"legacy_mapping":True}))
+        known.add(cid)
+        existing_kinds.add(kind)
     return result
 
 def build_site(options,component_cfg,mappings):
@@ -97,7 +100,7 @@ def main():
                     persist_site(model);collector=Collector(model,HomeAssistantAdapter(client));signature=sig
                     kinds={}
                     for component in model.components.values():kinds[component.kind]=kinds.get(component.kind,0)+1
-                    log.info("site model | components=%d kinds=%s topology=%s",len(model.components),kinds,model.thermal_topology.value if model.thermal_topology else "none")
+                    log.info("site model | components=%d kinds=%s topology=%s ids=%s",len(model.components),kinds,model.thermal_topology.value if model.thermal_topology else "none",sorted(model.components))
                     log.info("mapping | active=%d",len(mappings));snapshot(client,mappings);last=time.time()
         if signature is not None:
             result=collector.collect(mappings);log.info("collector | read=%d good=%d stale=%d unavailable=%d",result.read,result.good,result.stale,result.unavailable)
