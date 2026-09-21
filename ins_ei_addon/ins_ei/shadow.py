@@ -88,8 +88,13 @@ def evaluate(site,market_series=None):
     # no actuator commands are emitted from this module.
     forecast_surplus=forecast_balance is not None and forecast_balance>2.0
     forecast_deficit=forecast_balance is not None and forecast_balance<-2.0
-    cheap_import=import_ct is not None and import_ct<12.0
-    valuable_export=export_ct is not None and export_ct>15.0
+    current_spot=inputs.get("market_current_spot_ct")
+    cheap_import=current_spot is not None and next_avg is not None and current_spot<=next_avg*0.75
+    valuable_export=current_spot is not None and next_avg is not None and current_spot>=next_avg*1.25
+    price_class="CHEAP" if cheap_import else ("EXPENSIVE" if valuable_export else ("NORMAL" if current_spot is not None and next_avg is not None else "UNKNOWN"))
+    inputs["market_price_class"]=price_class
+    if current_spot is not None and next_min is not None and next_max is not None and next_avg is not None:
+        inputs["market_price_position"]=(current_spot-next_min)/(next_max-next_min) if next_max>next_min else 0.5
 
     if grid_w>100:
         alternatives.append({"action":"GRID_IMPORT","reason":"Netzbezug unverändert zulassen"})
