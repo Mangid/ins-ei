@@ -72,28 +72,58 @@ def evaluate(site):
     if not _usable(buffer):guards.append("Puffertemperatur für thermische Bewertung nicht verfügbar")
     if not _usable(dhw):guards.append("Warmwassertemperatur für thermische Bewertung nicht verfügbar")
 
+    # First forecast + price aware battery policy. It remains SHADOW-only:
+    # no actuator commands are emitted from this module.
+    forecast_surplus=forecast_balance is not None and forecast_balance>2.0
+    forecast_deficit=forecast_balance is not None and forecast_balance<-2.0
+    cheap_import=import_ct is not None and import_ct<12.0
+    valuable_export=export_ct is not None and export_ct>15.0
+
     if grid_w>100:
-        if forecast_balance is not None and forecast_balance<0:alternatives.append({"action":"PRESERVE_BATTERY","reason":f"Tagesprognose zeigt {abs(forecast_balance):.2f} kWh erwartetes Energiedefizit"})
         alternatives.append({"action":"GRID_IMPORT","reason":"Netzbezug unverändert zulassen"})
-        if soc_pct>20:
-            action="BATTERY_SUPPORT_LOAD";reason=f"Netzbezug {grid_w:.0f} W bei SOC {soc_pct:.1f} %. Batterie könnte den Netzbezug reduzieren; SOC-Schutzgrenze 20 % wird eingehalten."
+        if forecast_deficit:
+            alternatives.append({"action":"PRESERVE_BATTERY","reason":f"Tagesprognose zeigt {abs(forecast_balance):.2f} kWh erwartetes Energiedefizit"})
+        if soc_pct<=20:
+            action="GRID_IMPORT"
+            reason=f"Netzbezug {grid_w:.0f} W bei SOC {soc_pct:.1f} %. SOC-Schutz hat Vorrang."
+            guards.append("SOC-Schutz")
+        elif forecast_surplus and cheap_import:
+            action="PRESERVE_BATTERY"
+            reason=f"Netzbezug {grid_w:.0f} W, SOC {soc_pct:.1f} %, erwarteter Tagesüberschuss {forecast_balance:.2f} kWh und Bezugspreis {import_ct:.2f} ct/kWh. SHADOW hält Batterieenergie für wertvollere Zeitfenster zurück."
         else:
-            action="GRID_IMPORT";reason=f"Netzbezug {grid_w:.0f} W, aber SOC {soc_pct:.1f} % liegt am Schutzbereich. Batterie wird im SHADOW-Modell nicht zusätzlich entladen.";guards.append("SOC-Schutz")
+            action="BATTERY_SUPPORT_LOAD"
+            reason=f"Netzbezug {grid_w:.0f} W bei SOC {soc_pct:.1f} %. Batterie kann Bezug zu {import_ct:.2f} ct/kWh vermeiden." if import_ct is not None else f"Netzbezug {grid_w:.0f} W bei SOC {soc_pct:.1f} %. Batterie könnte den Netzbezug reduzieren."
+
     elif grid_w<-100:
         surplus=-grid_w
         alternatives.append({"action":"EXPORT_PV","reason":"PV-Überschuss einspeisen"})
-        if soc_pct<95:
-            action="CHARGE_BATTERY";reason=f"PV-Überschuss ca. {surplus:.0f} W bei SOC {soc_pct:.1f} %. Batterie hat bis zur Reserve von 95 % noch Aufnahmefähigkeit."
+        if valuable_export and soc_pct>40:
+            action="EXPORT_PV"
+            reason=f"PV-Überschuss ca. {surplus:.0f} W, Einspeisepreis {export_ct:.2f} ct/kWh und SOC {soc_pct:.1f} %. Verkauf ist im SHADOW-Modell wirtschaftlich interessant."
+        elif soc_pct<95:
+            action="CHARGE_BATTERY"
+            extra=f" Tagesprognose: {forecast_balance:+.2f} kWh." if forecast_balance is not None else ""
+            reason=f"PV-Überschuss ca. {surplus:.0f} W bei SOC {soc_pct:.1f} %. Batterie hat Aufnahmefähigkeit.{extra}"
         elif _usable(pth) and _usable(buffer):
             temp=float(buffer.value)
             if temp<70:
-                action="POWER_TO_HEAT";reason=f"PV-Überschuss ca. {surplus:.0f} W, SOC {soc_pct:.1f} % und Puffer oben {temp:.1f} °C. Thermische Aufnahme ist im SHADOW-Modell plausibel."
+                action="POWER_TO_HEAT"
+                reason=f"PV-Überschuss ca. {surplus:.0f} W, SOC {soc_pct:.1f} % und Puffer oben {temp:.1f} °C. Thermische Aufnahme ist plausibel."
             else:
-                action="EXPORT_PV";reason=f"PV-Überschuss ca. {surplus:.0f} W und SOC {soc_pct:.1f} %, aber Puffer oben bereits {temp:.1f} °C. Einspeisung wird bevorzugt.";guards.append("Puffer-Temperaturschutz")
+                action="EXPORT_PV"
+                reason=f"PV-Überschuss ca. {surplus:.0f} W, SOC {soc_pct:.1f} % und Puffer oben {temp:.1f} °C. Einspeisung bleibt die sichere Option."
+                guards.append("Puffer-Temperaturschutz")
         else:
-            action="EXPORT_PV";reason=f"PV-Überschuss ca. {surplus:.0f} W bei SOC {soc_pct:.1f} %. Keine belastbare thermische Aufnahme verfügbar, daher Einspeisung."
+            action="EXPORT_PV"
+            reason=f"PV-Überschuss ca. {surplus:.0f} W bei SOC {soc_pct:.1f} %. Keine belastbare thermische Aufnahme verfügbar."
+
     else:
-        action="BALANCED";reason=f"Netzleistung {grid_w:.0f} W liegt innerhalb der ±100-W-Deadband. Kein Eingriff erforderlich."
+        if forecast_surplus and cheap_import and soc_pct>20:
+            action="PRESERVE_BATTERY"
+            reason=f"Netzleistung {grid_w:.0f} W ist ausgeglichen. Für heute werden {forecast_balance:.2f} kWh Überschuss erwartet; aktueller Bezugspreis {import_ct:.2f} ct/kWh. Batterie wird im SHADOW-Modell nicht unnötig entladen."
+        else:
+            action="BALANCED"
+            reason=f"Netzleistung {grid_w:.0f} W liegt innerhalb der ±100-W-Deadband. Kein Eingriff erforderlich."
         alternatives.append({"action":"NO_CHANGE","reason":"Aktuellen Anlagenzustand beibehalten"})
 
     confidence="HIGH" if not guards else "MEDIUM"
