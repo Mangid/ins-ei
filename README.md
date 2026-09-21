@@ -2,7 +2,7 @@
 
 INS-EI is a local-first, vendor-neutral energy-intelligence platform for Home Assistant.
 
-> Current pilot version: **0.23.1** — SHADOW mode / active pilot development.
+> Current pilot version: **0.24.0** — SHADOW mode / active pilot development.
 
 ## Current pilot capabilities
 
@@ -13,7 +13,7 @@ INS-EI is a local-first, vendor-neutral energy-intelligence platform for Home As
 - Optional components and repeatable HEATING_CIRCUIT, ROOM and LOAD instances
 - Read-only Discovery with installer-reviewed suggestions
 - Electrical model for grid, PV and battery plus BMS diagnostics
-- Thermal model with DIRECT, BUFFER and COMBINED_STORAGE
+- Thermal model with DIRECT, BUFFER and COMBINED_STORAGE\n- Solar Thermal component with collector/loop temperatures, pump, flow, thermal power and heat-energy points
 - MARKET model with independent import/export tariffs
 - Dynamic EPEX/aWATTar spot-price input and future price-slot series
 - FORECAST inputs for PV generation and consumption
@@ -61,7 +61,7 @@ See `docs/architecture/thermal-model.md`.
 
 ## Current pilot status
 
-The runtime collects and normalizes real installation data and produces traceable SHADOW decisions. It does **not** yet issue production actuator commands. Current work is focused on robust operating-profile detection, heating-circuit mapping and the later target-SOC/energy-allocation planner.
+Solar thermal is modelled as a first-class renewable heat source so future planning can preserve thermal storage capacity for expected free solar heat.\n\nThe runtime collects and normalizes real installation data and produces traceable SHADOW decisions. It does **not** yet issue production actuator commands. Current work is focused on robust operating-profile detection, heating-circuit mapping and the later target-SOC/energy-allocation planner.
 
 ## Security
 
