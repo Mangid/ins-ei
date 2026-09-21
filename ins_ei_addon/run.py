@@ -9,7 +9,7 @@ from ins_ei.discovery import discover
 from ins_ei.model import Component,OperatingMode,SiteLocation,SiteModel,ThermalTopology
 from ins_ei.shadow import evaluate as shadow_evaluate
 
-OPTIONS=Path("/data/options.json");UI=Path("/data/ui_mappings.json");DISC=Path("/data/discovery.json");COMPONENTS=Path("/data/components.json");SITE=Path("/data/site_model.json");SHADOW=Path("/data/shadow_decision.json");MARKET=Path("/data/market.json")
+OPTIONS=Path("/data/options.json");UI=Path("/data/ui_mappings.json");DISC=Path("/data/discovery.json");COMPONENTS=Path("/data/components.json");SITE=Path("/data/site_model.json");SHADOW=Path("/data/shadow_decision.json");MARKET=Path("/data/market.json");MARKET_SERIES=Path("/data/market_series.json")
 MULTI={"HEATING_CIRCUIT","ROOM","LOAD"}
 
 def load(path,default):
@@ -131,8 +131,9 @@ def main():
                     log.info("mapping | active=%d",len(mappings));snapshot(client,mappings)
                     for mapping in mappings:
                         if base_kind(mapping.component_id)=="MARKET" and mapping.point=="spot_price":
-                            state=client.state(mapping.entity_id);attrs=state.get("attributes") or {}
-                            log.info("market source data | entity=%s | data=%s",mapping.entity_id,json.dumps(attrs.get("data"),ensure_ascii=False,default=str)[:12000])
+                            state=client.state(mapping.entity_id);attrs=state.get("attributes") or {};series=attrs.get("data") or []
+                            MARKET_SERIES.write_text(json.dumps(series,ensure_ascii=False,indent=2),encoding="utf-8")
+                            log.info("market series | entity=%s | slots=%d",mapping.entity_id,len(series))
                     last=time.time()
         if signature is not None:
             result=collector.collect(mappings)
@@ -142,7 +143,7 @@ def main():
                     for point_name,point in component.points.items():
                         if point.quality.value in ("STALE","UNAVAILABLE"):
                             log.info("collector issue | %s.%s | quality=%s | value=%s %s | source=%s",component.id,point_name,point.quality.value,point.value,point.unit or "",point.source)
-            decision=shadow_evaluate(model)
+            decision=shadow_evaluate(model,load(MARKET_SERIES,[]))
             SHADOW.write_text(json.dumps(decision.to_dict(),ensure_ascii=False,indent=2),encoding="utf-8")
             spot_input=decision.inputs.get("market_spot_price",{})
             log.info("market price | spot=%s %s | import=%.3f ct/kWh | export=%.3f ct/kWh",spot_input.get("value"),spot_input.get("unit") or "",decision.inputs.get("import_price_ct_kwh") or 0,decision.inputs.get("export_price_ct_kwh") or 0)
