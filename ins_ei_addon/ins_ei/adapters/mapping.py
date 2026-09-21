@@ -58,5 +58,5 @@ def mappings_from_dict(config:dict[str,Any])->list[EntityMapping]:
         # are intentionally ignored. max_age_seconds remains the only explicit
         # per-mapping freshness override.
         freshness=default_freshness
-        result.append(EntityMapping(component_id=cid,point=point,entity_id=entity,unit=item.get("unit") or (spec.unit if spec else None),role=DataRole(item.get("role",default_role)),scale=float(item.get("scale",1.0)),invert_sign=bool(item.get("invert_sign",False)),freshness=FreshnessPolicy(freshness),max_age_seconds=item.get("max_age_seconds")))
+        result.append(EntityMapping(component_id=cid,point=point,entity_id=entity,unit=item.get("unit") or (spec.unit if spec else None),role=DataRole(item.get("role",default_role)),scale=float(item.get("scale",1.0)),invert_sign=bool(item.get("invert_sign",False)),freshness=FreshnessPolicy(freshness),max_age_seconds=(None if freshness=="STATE" else item.get("max_age_seconds"))))
     return result
