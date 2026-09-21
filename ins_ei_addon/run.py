@@ -113,6 +113,8 @@ def main():
                             log.info("collector issue | %s.%s | quality=%s | value=%s %s | source=%s",component.id,point_name,point.quality.value,point.value,point.unit or "",point.source)
             decision=shadow_evaluate(model)
             SHADOW.write_text(json.dumps(decision.to_dict(),ensure_ascii=False,indent=2),encoding="utf-8")
+            spot_input=decision.inputs.get("market_spot_price",{})
+            log.info("market price | spot=%s %s | import=%s ct/kWh | export=%s ct/kWh",spot_input.get("value"),spot_input.get("unit") or "",decision.inputs.get("import_price_ct_kwh"),decision.inputs.get("export_price_ct_kwh"))
             log.info("shadow | action=%s | confidence=%s | reason=%s",decision.action,decision.confidence,decision.reason)
             if time.time()-last>300:snapshot(client,mappings);last=time.time()
         time.sleep(interval)
