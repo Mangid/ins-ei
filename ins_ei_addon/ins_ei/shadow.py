@@ -62,9 +62,11 @@ def evaluate(site,market_series=None):
     next_min=min(next_prices) if next_prices else None
     next_max=max(next_prices) if next_prices else None
     next_avg=sum(next_prices)/len(next_prices) if next_prices else None
+    next_min_index=next_prices.index(next_min) if next_prices and next_min is not None else None
+    next_max_index=next_prices.index(next_max) if next_prices and next_max is not None else None
     forecast_pv=_point(site,"FORECAST","pv_today");forecast_load=_point(site,"FORECAST","consumption_today")
     forecast_pv_hour=_point(site,"FORECAST","pv_current_hour");forecast_load_hour=_point(site,"FORECAST","consumption_current_hour")
-    inputs={"pv_power":_input(pv),"grid_power":_input(grid),"battery_soc":_input(soc),"battery_power":_input(batt),"power_to_heat":_input(pth),"buffer_upper":_input(buffer),"dhw_temperature":_input(dhw),"forecast_pv_today":_input(forecast_pv),"forecast_consumption_today":_input(forecast_load),"forecast_pv_current_hour":_input(forecast_pv_hour),"forecast_consumption_current_hour":_input(forecast_load_hour),"market_spot_price":_input(_point(site,"MARKET","spot_price")),"import_price_ct_kwh":import_ct,"export_price_ct_kwh":export_ct,"market_future_slots":len(next_prices),"market_future_spot_min_ct":next_min,"market_future_spot_max_ct":next_max,"market_future_spot_avg_ct":next_avg,"market_current_spot_ct":(float(_point(site,"MARKET","spot_price").value)*100.0 if _usable(_point(site,"MARKET","spot_price")) else None)}
+    inputs={"pv_power":_input(pv),"grid_power":_input(grid),"battery_soc":_input(soc),"battery_power":_input(batt),"power_to_heat":_input(pth),"buffer_upper":_input(buffer),"dhw_temperature":_input(dhw),"forecast_pv_today":_input(forecast_pv),"forecast_consumption_today":_input(forecast_load),"forecast_pv_current_hour":_input(forecast_pv_hour),"forecast_consumption_current_hour":_input(forecast_load_hour),"market_spot_price":_input(_point(site,"MARKET","spot_price")),"import_price_ct_kwh":import_ct,"export_price_ct_kwh":export_ct,"market_future_slots":len(next_prices),"market_future_spot_min_ct":next_min,"market_future_spot_max_ct":next_max,"market_future_spot_avg_ct":next_avg,"market_hours_to_min":next_min_index,"market_hours_to_max":next_max_index,"market_current_spot_ct":(float(_point(site,"MARKET","spot_price").value)*100.0 if _usable(_point(site,"MARKET","spot_price")) else None)}
     now=datetime.now(timezone.utc).isoformat();guards=[];alternatives=[]
     if market_error:guards.append(market_error)
     if import_ct is None or export_ct is None:guards.append("Tarifpreis aktuell nicht vollständig verfügbar")
@@ -95,6 +97,13 @@ def evaluate(site,market_series=None):
     inputs["market_price_class"]=price_class
     if current_spot is not None and next_min is not None and next_max is not None and next_avg is not None:
         inputs["market_price_position"]=(current_spot-next_min)/(next_max-next_min) if next_max>next_min else 0.5
+    # Temporal context: when the cheapest/most expensive known future slot occurs.
+    # This is audit context first; later the planner can combine it with battery kWh.
+    if next_min_index is not None and next_max_index is not None:
+        if next_max_index<next_min_index and soc_pct>20:
+            alternatives.append({"action":"USE_BEFORE_CHEAP_SLOT","reason":f"Teurer Slot in ca. {next_max_index} h, günstigster Slot erst in ca. {next_min_index} h."})
+        elif next_min_index<next_max_index:
+            alternatives.append({"action":"PRESERVE_FOR_EXPENSIVE_SLOT","reason":f"Günstigster Slot in ca. {next_min_index} h, teuerster Slot in ca. {next_max_index} h."})
 
     if grid_w>100:
         alternatives.append({"action":"GRID_IMPORT","reason":"Netzbezug unverändert zulassen"})
