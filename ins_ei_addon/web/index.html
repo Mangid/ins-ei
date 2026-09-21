@@ -17,7 +17,19 @@ ROOM:['Räume / Zonen','Optionale Räume oder Zonen mit Temperatur, Sollwerten u
 LOAD:['Verbraucher','Beliebig viele elektrische Einzelverbraucher oder Verbrauchergruppen.']
 };
 const multi=['HEATING_CIRCUIT','ROOM','LOAD'];const defaultOn=['GRID','PV'];
-async function init(){catalog=await(await fetch('api/catalog')).json();mappings=await(await fetch('api/mappings')).json();entities=await(await fetch('api/entities')).json();cfg=await(await fetch('api/components')).json();market=await(await fetch('api/market')).json();for(const c of catalog.components){if(!cfg[c])cfg[c]={enabled:defaultOn.includes(c)||mappings.some(x=>base(x.component_id)===c),instances:[]};if(multi.includes(c)&&!cfg[c].instances.length){let ids=[...new Set(mappings.filter(x=>base(x.component_id)===c).map(x=>x.component_id))];cfg[c].instances=ids.map((id,i)=>({id,name:prettyInstance(c,i+1)}));}}e('entitySearch').addEventListener('input',renderPicker);render()}
+async function init(){
+ try{
+  const responses=await Promise.all([fetch('api/catalog'),fetch('api/mappings'),fetch('api/entities'),fetch('api/components'),fetch('api/market')]);
+  for(const response of responses){if(!response.ok)throw new Error('API '+response.status)}
+  catalog=await responses[0].json();mappings=await responses[1].json();entities=await responses[2].json();cfg=await responses[3].json();market=await responses[4].json();
+  for(const c of catalog.components){
+   if(c==='MARKET')continue;
+   if(!cfg[c])cfg[c]={enabled:defaultOn.includes(c)||mappings.some(x=>base(x.component_id)===c),instances:[]};
+   if(multi.includes(c)&&!cfg[c].instances.length){let ids=[...new Set(mappings.filter(x=>base(x.component_id)===c).map(x=>x.component_id))];cfg[c].instances=ids.map((id,i)=>({id,name:prettyInstance(c,i+1)}));}
+  }
+  e('entitySearch').addEventListener('input',renderPicker);render();
+ }catch(err){e('groups').innerHTML='<section class="card"><b>Fehler beim Laden der Mapping-Daten:</b> '+esc(err.message)+'</section>';console.error(err)}
+}
 function base(id){let u=(id||'').toUpperCase();for(const c of catalog.components)if(u===c||u.startsWith(c+'_')||u.startsWith(c+':'))return c;return u}
 function prettyInstance(c,n){return c==='HEATING_CIRCUIT'?'Heizkreis '+n:c==='ROOM'?'Raum '+n:'Verbraucher '+n}
 function render(){e('groups').innerHTML=catalog.components.map(c=>c==='MARKET'?marketGroup():group(c)).join('')}
