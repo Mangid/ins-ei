@@ -46,9 +46,14 @@ def configured_components(component_cfg,mappings):
         elif data.get("enabled"):
             result.append((kind.lower(),kind,True,{}))
     known={x[0] for x in result}
+    configured_singletons={kind for _,kind,_,_ in result if kind not in MULTI}
     for cid in mapped_ids:
-        if cid not in known:
-            result.append((cid,base_kind(cid),True,{"legacy_mapping":True}))
+        kind=base_kind(cid)
+        if cid in known:
+            continue
+        if kind in configured_singletons and kind not in MULTI:
+            continue
+        result.append((cid,kind,True,{"legacy_mapping":True}))
     return result
 
 def build_site(options,component_cfg,mappings):
