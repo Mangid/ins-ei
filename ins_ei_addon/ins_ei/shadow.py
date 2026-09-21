@@ -45,30 +45,46 @@ def _market_prices(site):
         return adjusted*(1.0+float(tariff.get("vat_percent",0))/100.0)
     return price("import","import_price"),price("export","export_price"),None
 
+def _state_on(value):
+    return str(value).strip().lower() in ("on","ein","true","1","running","heating","heat")
+
 def _detect_profile(site):
     heating_signals=0;summer_signals=0;reasons=[]
     outdoor=_point(site,"WEATHER","outdoor_temperature")
     if _usable(outdoor):
         temp=float(outdoor.value)
-        if temp<=12:heating_signals+=2;reasons.append(f"Außentemperatur {temp:.1f} °C")
-        elif temp>=18:summer_signals+=2;reasons.append(f"Außentemperatur {temp:.1f} °C")
-        else:reasons.append(f"Außentemperatur {temp:.1f} °C im Übergangsbereich")
+        if temp<=12:
+            heating_signals+=2;reasons.append(f"Außentemperatur {temp:.1f} °C = Heizsignal")
+        elif temp>=18:
+            summer_signals+=2;reasons.append(f"Außentemperatur {temp:.1f} °C = Sommersignal")
+        else:
+            reasons.append(f"Außentemperatur {temp:.1f} °C im Übergangsbereich")
     circuits=site.components_by_kind("HEATING_CIRCUIT")
-    active_circuits=0
+    evaluated=0;requesting=0
     for circuit in circuits:
         target=circuit.point("target_flow_temperature");pump=circuit.point("pump_state")
-        if _usable(target) and float(target.value)>25:
-            heating_signals+=2;active_circuits+=1;reasons.append(f"Heizkreis-Soll {float(target.value):.1f} °C")
-        if _usable(pump) and str(pump.value).lower() in ("on","ein","true","1"):
-            heating_signals+=1;reasons.append("Heizkreispumpe aktiv")
+        circuit_request=False
+        if _usable(target):
+            evaluated+=1
+            target_c=float(target.value)
+            if target_c>25:
+                heating_signals+=2;circuit_request=True;reasons.append(f"{circuit.name or circuit.id}: Vorlauf-Soll {target_c:.1f} °C")
+        if _usable(pump):
+            evaluated+=1
+            if _state_on(pump.value):
+                heating_signals+=1;circuit_request=True;reasons.append(f"{circuit.name or circuit.id}: Heizkreispumpe aktiv")
+        if circuit_request:requesting+=1
+    if circuits and evaluated and requesting==0:
+        summer_signals+=1;reasons.append("keine Heizkreisanforderung erkannt")
     buffer=_point(site,"BUFFER","temperature_upper")
     if _usable(buffer) and float(buffer.value)<35:
         heating_signals+=1;reasons.append(f"Puffer oben {float(buffer.value):.1f} °C")
-    if circuits and active_circuits==0:
-        summer_signals+=1;reasons.append("keine Vorlaufanforderung erkannt")
-    if heating_signals>=3:return "HEATING","; ".join(reasons) or "mehrere Heizbedarfssignale"
-    if summer_signals>=1 and heating_signals==0:return "SUMMER","; ".join(reasons)
-    return "TRANSITION","; ".join(reasons) or "keine eindeutigen Heiz-/Sommersignale"
+    reasons.append(f"Score Heizen {heating_signals} / Sommer {summer_signals}")
+    if heating_signals>=3 and heating_signals>summer_signals:
+        return "HEATING","; ".join(reasons)
+    if summer_signals>=3 and summer_signals>heating_signals:
+        return "SUMMER","; ".join(reasons)
+    return "TRANSITION","; ".join(reasons)
 
 def evaluate(site,market_series=None,strategy=None):
     strategy=strategy or {}
