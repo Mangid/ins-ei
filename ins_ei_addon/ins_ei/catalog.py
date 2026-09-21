@@ -18,7 +18,7 @@ CATALOG={
   "current_l1":PointSpec("A","FAST","DIAGNOSTIC"),"current_l2":PointSpec("A","FAST","DIAGNOSTIC"),"current_l3":PointSpec("A","FAST","DIAGNOSTIC"),"frequency":PointSpec("Hz","NORMAL","DIAGNOSTIC")},
  "PV":{"power":PointSpec("W","STATE","OPTIMIZATION"),"energy_today":PointSpec("kWh","STATE"),"energy_total":PointSpec("kWh","STATE")},
  "BATTERY":{
-  "soc":PointSpec("%","STATE","OPTIMIZATION"),"power":PointSpec("W","FAST","OPTIMIZATION"),"voltage":PointSpec("V","NORMAL","DIAGNOSTIC"),
+  "soc":PointSpec("%","STATE","OPTIMIZATION"),"power":PointSpec("W","FAST","OPTIMIZATION"),"voltage":PointSpec("V","STATE","DIAGNOSTIC"),
   "current":PointSpec("A","FAST","DIAGNOSTIC"),"temperature":PointSpec("°C","STATE","DIAGNOSTIC"),"soh":PointSpec("%","STATE","DIAGNOSTIC"),
   "max_cell_voltage":PointSpec("V","NORMAL","DIAGNOSTIC"),"min_cell_voltage":PointSpec("V","NORMAL","DIAGNOSTIC"),
   "max_cell_temperature":PointSpec("°C","STATE","DIAGNOSTIC"),"min_cell_temperature":PointSpec("°C","STATE","DIAGNOSTIC"),
