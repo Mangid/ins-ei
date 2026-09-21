@@ -11,7 +11,7 @@ from ins_ei.discovery import discover
 from ins_ei.model import Component,OperatingMode,SiteLocation,SiteModel,ThermalTopology
 from ins_ei.shadow import evaluate as shadow_evaluate
 
-OPTIONS=Path("/data/options.json");UI=Path("/data/ui_mappings.json");DISC=Path("/data/discovery.json");COMPONENTS=Path("/data/components.json");SITE=Path("/data/site_model.json");SHADOW=Path("/data/shadow_decision.json");MARKET=Path("/data/market.json");MARKET_SERIES=Path("/data/market_series.json");STRATEGY=Path("/data/strategy.json")
+OPTIONS=Path("/data/options.json");UI=Path("/data/ui_mappings.json");DISC=Path("/data/discovery.json");COMPONENTS=Path("/data/components.json");SITE=Path("/data/site_model.json");SHADOW=Path("/data/shadow_decision.json");MARKET=Path("/data/market.json");MARKET_SERIES=Path("/data/market_series.json");STRATEGY=Path("/data/strategy.json");SERVER=Path("/data/server.json");TELEMETRY_STATUS=Path("/data/telemetry_status.json")
 MULTI={"HEATING_CIRCUIT","ROOM","LOAD"}
 
 def load(path,default):
@@ -128,7 +128,7 @@ def main():
     logging.basicConfig(level=getattr(logging,options.get("log_level","INFO")),format="%(asctime)s %(levelname)s %(message)s");log=logging.getLogger("ins_ei")
     token=supervisor_token()
     if not token:log.error("Supervisor token unavailable");return
-    client=HomeAssistantClient("http://supervisor/core",token);signature=None;last=0;interval=int(options.get("interval_seconds",30));telemetry_url=options.get("telemetry_url","").strip();telemetry_interval=int(options.get("telemetry_interval_seconds",30));last_telemetry=0
+    client=HomeAssistantClient("http://supervisor/core",token);signature=None;last=0;interval=int(options.get("interval_seconds",30));server_cfg=load(SERVER,{"url":"https://ins-ei.ins-enertech.net","installation_id":options.get("installation_id","pilot-local"),"interval_seconds":30,"enabled":False});telemetry_url=server_cfg.get("url","").strip() if server_cfg.get("enabled") else "";telemetry_interval=int(server_cfg.get("interval_seconds",30));last_telemetry=0
     while True:
         cfg=effective_config(options);component_cfg=load(COMPONENTS,{});market_cfg=load(MARKET,{"mode":"AWATTAR_AT","import_markup_ct":1.5,"vat_percent":20.0,"export_factor_percent":81.0});strategy_cfg=load(STRATEGY,{"profile":"AUTO","priorities":{"thermal_storage":80,"battery_economics":60,"export":40,"ev":50},"requirements":{"dhw_min_c":50.0}})
         sig=json.dumps({"mappings":cfg.get("mappings",[]),"components":component_cfg,"market":market_cfg,"strategy":strategy_cfg,"topology":options.get("thermal_topology")},sort_keys=True,ensure_ascii=False)
@@ -181,9 +181,9 @@ def main():
             log.info("profile detect | profile=%s | reason=%s",decision.inputs.get("detected_profile"),decision.inputs.get("profile_reason"))
             log.info("shadow | action=%s | confidence=%s | reason=%s",decision.action,decision.confidence,decision.reason)
             if telemetry_url and time.time()-last_telemetry>=telemetry_interval:
-                status,count=send_telemetry(telemetry_url,options.get("installation_id","pilot-local"),model,decision)
-                if isinstance(status,int):log.info("telemetry | sent=%d | status=%d | endpoint=%s",count,status,telemetry_url)
-                else:log.warning("telemetry | send failed | endpoint=%s | error=%s",telemetry_url,status)
+                status,count=send_telemetry(telemetry_url,server_cfg.get("installation_id",options.get("installation_id","pilot-local")),model,decision)
+                if isinstance(status,int):\n                    TELEMETRY_STATUS.write_text(json.dumps({"connected":True,"last_success":decision.timestamp,"points":count,"status":status,"endpoint":telemetry_url}),encoding="utf-8");log.info("telemetry | sent=%d | status=%d | endpoint=%s",count,status,telemetry_url)
+                else:\n                    TELEMETRY_STATUS.write_text(json.dumps({"connected":False,"last_error":str(status),"endpoint":telemetry_url}),encoding="utf-8");log.warning("telemetry | send failed | endpoint=%s | error=%s",telemetry_url,status)
                 last_telemetry=time.time()
             if time.time()-last>300:snapshot(client,mappings);last=time.time()
         time.sleep(interval)
