@@ -6,9 +6,9 @@ from ins_ei.adapters import HomeAssistantAdapter,HomeAssistantClient,mappings_fr
 from ins_ei.adapters.mapping import validate_mapping_config
 from ins_ei.collector import Collector
 from ins_ei.discovery import discover
-from ins_ei.model import Component,OperatingMode,SiteLocation,SiteModel,ThermalTopology
+from ins_ei.model import Component,OperatingMode,SiteLocation,SiteModel,ThermalTopology\nfrom ins_ei.shadow import evaluate as shadow_evaluate
 
-OPTIONS=Path("/data/options.json");UI=Path("/data/ui_mappings.json");DISC=Path("/data/discovery.json");COMPONENTS=Path("/data/components.json");SITE=Path("/data/site_model.json")
+OPTIONS=Path("/data/options.json");UI=Path("/data/ui_mappings.json");DISC=Path("/data/discovery.json");COMPONENTS=Path("/data/components.json");SITE=Path("/data/site_model.json");SHADOW=Path("/data/shadow_decision.json")
 MULTI={"HEATING_CIRCUIT","ROOM","LOAD"}
 
 def load(path,default):
@@ -110,6 +110,9 @@ def main():
                     for point_name,point in component.points.items():
                         if point.quality.value in ("STALE","UNAVAILABLE"):
                             log.info("collector issue | %s.%s | quality=%s | value=%s %s | source=%s",component.id,point_name,point.quality.value,point.value,point.unit or "",point.source)
+            decision=shadow_evaluate(model)
+            SHADOW.write_text(json.dumps(decision.to_dict(),ensure_ascii=False,indent=2),encoding="utf-8")
+            log.info("shadow | action=%s | confidence=%s | reason=%s",decision.action,decision.confidence,decision.reason)
             if time.time()-last>300:snapshot(client,mappings);last=time.time()
         time.sleep(interval)
 
