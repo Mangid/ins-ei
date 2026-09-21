@@ -1,52 +1,102 @@
-"""INS-EI runtime with collector and discovery snapshot."""
+"""INS-EI runtime: persistent installation model + collector."""
 from __future__ import annotations
-import json, logging, os, time
+import json,logging,os,time
 from pathlib import Path
-from ins_ei.adapters import HomeAssistantAdapter, HomeAssistantClient, mappings_from_dict
+from ins_ei.adapters import HomeAssistantAdapter,HomeAssistantClient,mappings_from_dict
 from ins_ei.adapters.mapping import validate_mapping_config
 from ins_ei.collector import Collector
 from ins_ei.discovery import discover
-from ins_ei.model import Component, OperatingMode, SiteLocation, SiteModel, ThermalTopology
-OPTIONS=Path("/data/options.json"); UI=Path("/data/ui_mappings.json"); DISC=Path("/data/discovery.json")
+from ins_ei.model import Component,OperatingMode,SiteLocation,SiteModel,ThermalTopology
+
+OPTIONS=Path("/data/options.json");UI=Path("/data/ui_mappings.json");DISC=Path("/data/discovery.json");COMPONENTS=Path("/data/components.json");SITE=Path("/data/site_model.json")
+MULTI={"HEATING_CIRCUIT","ROOM","LOAD"}
+
 def load(path,default):
     try:return json.loads(path.read_text(encoding="utf-8"))
     except (OSError,json.JSONDecodeError):return default
-def token():
+
+def supervisor_token():
     value=os.environ.get("SUPERVISOR_TOKEN")
     if value:return value
-    for p in (Path("/run/s6/container_environment/SUPERVISOR_TOKEN"),Path("/var/run/s6/container_environment/SUPERVISOR_TOKEN")):
+    for path in (Path("/run/s6/container_environment/SUPERVISOR_TOKEN"),Path("/var/run/s6/container_environment/SUPERVISOR_TOKEN")):
         try:
-            value=p.read_text().strip()
+            value=path.read_text().strip()
             if value:return value
         except OSError:pass
-def config(options):
+    return None
+
+def base_kind(component_id):
+    raw=component_id.upper()
+    for kind in ("COMBINED_STORAGE","HEATING_CIRCUIT","POWER_TO_HEAT","PELLET_BOILER","HEAT_PUMP","BATTERY","BUFFER","DHW","GRID","LOAD","PV","ROOM"):
+        if raw==kind or raw.startswith(kind+"_") or raw.startswith(kind+":"):return kind
+    return raw
+
+def effective_config(options):
     result=dict(options);rows=load(UI,None)
     if rows is not None:result["mappings"]=rows
     return result
-def site(options,mappings):
-    s=SiteModel(options["installation_id"],SiteLocation(timezone=options.get("timezone","Europe/Vienna")),OperatingMode.SHADOW,ThermalTopology(options["thermal_topology"]))
-    for cid in sorted({m.component_id for m in mappings}):s.add_component(Component(id=cid,kind=cid.upper()))
-    return s
+
+def configured_components(component_cfg,mappings):
+    result=[]
+    mapped_ids={m.component_id for m in mappings}
+    for kind,data in component_cfg.items():
+        if kind in MULTI:
+            for inst in data.get("instances",[]):
+                result.append((inst["id"],kind,True,{"name":inst.get("name",inst["id"])}))
+        elif data.get("enabled"):
+            result.append((kind.lower(),kind,True,{}))
+    known={x[0] for x in result}
+    for cid in mapped_ids:
+        if cid not in known:
+            result.append((cid,base_kind(cid),True,{"legacy_mapping":True}))
+    return result
+
+def build_site(options,component_cfg,mappings):
+    model=SiteModel(
+        installation_id=options["installation_id"],
+        location=SiteLocation(timezone=options.get("timezone","Europe/Vienna")),
+        mode=OperatingMode.SHADOW,
+        thermal_topology=ThermalTopology(options["thermal_topology"]),
+    )
+    for cid,kind,enabled,metadata in configured_components(component_cfg,mappings):
+        model.add_component(Component(id=cid,kind=kind,enabled=enabled,metadata=metadata))
+    return model
+
+def persist_site(model):
+    payload={"installation_id":model.installation_id,"mode":model.mode.value,"thermal_topology":model.thermal_topology.value if model.thermal_topology else None,"components":[{"id":c.id,"kind":c.kind,"enabled":c.enabled,"metadata":c.metadata} for c in model.components.values()]}
+    SITE.write_text(json.dumps(payload,ensure_ascii=False,indent=2),encoding="utf-8")
+
 def snapshot(client,mappings):
     mapped={m.entity_id:f"{m.component_id}.{m.point}" for m in mappings};items=discover(client.states(),mapped)
-    DISC.write_text(json.dumps([{"entity_id":x.entity_id,"name":x.name,"state":x.state,"unit":x.unit,"suggested_domain":x.suggested_domain,"suggested_point":x.suggested_point,"score":x.score,"mapped_to":x.mapped_to,"source_kind":x.source_kind} for x in items],ensure_ascii=False,indent=2))
+    DISC.write_text(json.dumps([{"entity_id":x.entity_id,"name":x.name,"state":x.state,"unit":x.unit,"suggested_domain":x.suggested_domain,"suggested_point":x.suggested_point,"score":x.score,"mapped_to":x.mapped_to,"source_kind":x.source_kind} for x in items],ensure_ascii=False,indent=2),encoding="utf-8")
+
 def main():
     options=load(OPTIONS,{});os.environ["TZ"]=options.get("timezone","Europe/Vienna")
     if hasattr(time,"tzset"):time.tzset()
     logging.basicConfig(level=getattr(logging,options.get("log_level","INFO")),format="%(asctime)s %(levelname)s %(message)s");log=logging.getLogger("ins_ei")
-    t=token()
-    if not t:log.error("Supervisor token unavailable");return
-    client=HomeAssistantClient("http://supervisor/core",t);signature=None;last=0;interval=int(options.get("interval_seconds",30))
+    token=supervisor_token()
+    if not token:log.error("Supervisor token unavailable");return
+    client=HomeAssistantClient("http://supervisor/core",token);signature=None;last=0;interval=int(options.get("interval_seconds",30))
     while True:
-        cfg=config(options);sig=json.dumps(cfg.get("mappings",[]),sort_keys=True)
+        cfg=effective_config(options);component_cfg=load(COMPONENTS,{})
+        sig=json.dumps({"mappings":cfg.get("mappings",[]),"components":component_cfg,"topology":options.get("thermal_topology")},sort_keys=True,ensure_ascii=False)
         if sig!=signature:
             check=validate_mapping_config(cfg)
             if check.errors:
-                for e in check.errors:log.error("mapping | %s",e)
+                for error in check.errors:log.error("mapping | %s",error)
             else:
-                mappings=mappings_from_dict(cfg);model=site(options,mappings);collector=Collector(model,HomeAssistantAdapter(client));signature=sig;log.info("mapping | active=%d",len(mappings));snapshot(client,mappings);last=time.time()
+                mappings=mappings_from_dict(cfg);model=build_site(options,component_cfg,mappings);errors=model.validate()
+                if errors:
+                    for error in errors:log.error("site model | %s",error)
+                else:
+                    persist_site(model);collector=Collector(model,HomeAssistantAdapter(client));signature=sig
+                    kinds={}
+                    for component in model.components.values():kinds[component.kind]=kinds.get(component.kind,0)+1
+                    log.info("site model | components=%d kinds=%s topology=%s",len(model.components),kinds,model.thermal_topology.value if model.thermal_topology else "none")
+                    log.info("mapping | active=%d",len(mappings));snapshot(client,mappings);last=time.time()
         if signature is not None:
-            r=collector.collect(mappings);log.info("collector | read=%d good=%d stale=%d unavailable=%d",r.read,r.good,r.stale,r.unavailable)
+            result=collector.collect(mappings);log.info("collector | read=%d good=%d stale=%d unavailable=%d",result.read,result.good,result.stale,result.unavailable)
             if time.time()-last>300:snapshot(client,mappings);last=time.time()
         time.sleep(interval)
+
 if __name__=="__main__":main()
