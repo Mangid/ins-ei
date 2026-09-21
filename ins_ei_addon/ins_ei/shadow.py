@@ -51,7 +51,8 @@ def evaluate(site):
     buffer=_point(site,"BUFFER","temperature_upper");dhw=_point(site,"DHW","temperature")
     import_ct,export_ct,market_error=_market_prices(site)
     forecast_pv=_point(site,"FORECAST","pv_today");forecast_load=_point(site,"FORECAST","consumption_today")
-    inputs={"pv_power":_input(pv),"grid_power":_input(grid),"battery_soc":_input(soc),"battery_power":_input(batt),"power_to_heat":_input(pth),"buffer_upper":_input(buffer),"dhw_temperature":_input(dhw),"forecast_pv_today":_input(forecast_pv),"forecast_consumption_today":_input(forecast_load),"market_spot_price":_input(_point(site,"MARKET","spot_price")),"import_price_ct_kwh":import_ct,"export_price_ct_kwh":export_ct}
+    forecast_pv_hour=_point(site,"FORECAST","pv_current_hour");forecast_load_hour=_point(site,"FORECAST","consumption_current_hour")
+    inputs={"pv_power":_input(pv),"grid_power":_input(grid),"battery_soc":_input(soc),"battery_power":_input(batt),"power_to_heat":_input(pth),"buffer_upper":_input(buffer),"dhw_temperature":_input(dhw),"forecast_pv_today":_input(forecast_pv),"forecast_consumption_today":_input(forecast_load),"forecast_pv_current_hour":_input(forecast_pv_hour),"forecast_consumption_current_hour":_input(forecast_load_hour),"market_spot_price":_input(_point(site,"MARKET","spot_price")),"import_price_ct_kwh":import_ct,"export_price_ct_kwh":export_ct}
     now=datetime.now(timezone.utc).isoformat();guards=[];alternatives=[]
     if market_error:guards.append(market_error)
     if import_ct is None or export_ct is None:guards.append("Tarifpreis aktuell nicht vollständig verfügbar")
@@ -62,11 +63,17 @@ def evaluate(site):
         return ShadowDecision("OBSERVE_ONLY","Keine Optimierungsentscheidung, weil kritische Eingangsdaten fehlen oder nicht GOOD sind: "+", ".join(missing),"LOW",inputs,alternatives,guards,now)
 
     pv_w=float(pv.value);grid_w=float(grid.value);soc_pct=float(soc.value)
+    pv_fc=float(forecast_pv.value) if _usable(forecast_pv) else None
+    load_fc=float(forecast_load.value) if _usable(forecast_load) else None
+    forecast_balance=(pv_fc-load_fc) if pv_fc is not None and load_fc is not None else None
+    inputs["forecast_balance_today_kwh"]=forecast_balance
+    if forecast_balance is None:guards.append("Tagesprognose PV/Verbrauch nicht vollständig verfügbar")
     if not _usable(pth):guards.append("Power-to-Heat aktuell nicht belastbar verfügbar")
     if not _usable(buffer):guards.append("Puffertemperatur für thermische Bewertung nicht verfügbar")
     if not _usable(dhw):guards.append("Warmwassertemperatur für thermische Bewertung nicht verfügbar")
 
     if grid_w>100:
+        if forecast_balance is not None and forecast_balance<0:alternatives.append({"action":"PRESERVE_BATTERY","reason":f"Tagesprognose zeigt {abs(forecast_balance):.2f} kWh erwartetes Energiedefizit"})
         alternatives.append({"action":"GRID_IMPORT","reason":"Netzbezug unverändert zulassen"})
         if soc_pct>20:
             action="BATTERY_SUPPORT_LOAD";reason=f"Netzbezug {grid_w:.0f} W bei SOC {soc_pct:.1f} %. Batterie könnte den Netzbezug reduzieren; SOC-Schutzgrenze 20 % wird eingehalten."
