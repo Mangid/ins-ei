@@ -12,7 +12,7 @@ DATA = Path("/data/ui_mappings.json")
 OPTIONS = Path("/data/options.json")
 DISC = Path("/data/discovery.json")
 COMPONENTS = Path("/data/components.json")
-MARKET = Path("/data/market.json")
+MARKET = Path("/data/market.json")\nSTRATEGY = Path("/data/strategy.json")
 
 MARKET_DEFAULT = {
     "import": {"mode": "DYNAMIC", "provider": "AWATTAR_AT", "markup_ct": 1.5, "adjust_percent": 0.0, "vat_percent": 20.0, "static_ct": 25.0},
