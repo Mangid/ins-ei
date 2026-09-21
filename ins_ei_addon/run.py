@@ -160,6 +160,7 @@ def main():
                 round(decision.inputs.get("market_future_spot_avg_ct"),3) if decision.inputs.get("market_future_spot_avg_ct") is not None else None,
                 round(decision.inputs.get("market_future_spot_max_ct"),3) if decision.inputs.get("market_future_spot_max_ct") is not None else None,
                 decision.inputs.get("market_price_class"))
+            log.info("price timing | cheapest_in=%s h | most_expensive_in=%s h",decision.inputs.get("market_hours_to_min"),decision.inputs.get("market_hours_to_max"))
             log.info("shadow | action=%s | confidence=%s | reason=%s",decision.action,decision.confidence,decision.reason)
             if time.time()-last>300:snapshot(client,mappings);last=time.time()
         time.sleep(interval)
