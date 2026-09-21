@@ -95,7 +95,7 @@ def build_site(options,component_cfg,mappings,market_cfg):
         market_components[0].config=market_cfg
     else:
         model.add_component(Component(id="market",kind="MARKET",enabled=True,config=market_cfg))
-    return model
+    return model,mappings
 
 def persist_site(model):
     payload={"installation_id":model.installation_id,"mode":model.mode.value,"thermal_topology":model.thermal_topology.value if model.thermal_topology else None,"components":[{"id":c.id,"kind":c.kind,"enabled":c.enabled,"name":c.name,"config":c.config} for c in model.components.values()]}
