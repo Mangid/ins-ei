@@ -153,6 +153,13 @@ def main():
                 decision.inputs.get("forecast_pv_current_hour",{}).get("value"),decision.inputs.get("forecast_pv_current_hour",{}).get("quality"),decision.inputs.get("forecast_pv_current_hour",{}).get("source"),
                 decision.inputs.get("forecast_consumption_current_hour",{}).get("value"),decision.inputs.get("forecast_consumption_current_hour",{}).get("quality"),decision.inputs.get("forecast_consumption_current_hour",{}).get("source"),
                 decision.inputs.get("forecast_balance_today_kwh"))
+            log.info("price context | current=%.3f ct/kWh | next_slots=%s | min=%s | avg=%s | max=%s | class=%s",
+                decision.inputs.get("market_current_spot_ct") or 0,
+                decision.inputs.get("market_future_slots"),
+                round(decision.inputs.get("market_future_spot_min_ct"),3) if decision.inputs.get("market_future_spot_min_ct") is not None else None,
+                round(decision.inputs.get("market_future_spot_avg_ct"),3) if decision.inputs.get("market_future_spot_avg_ct") is not None else None,
+                round(decision.inputs.get("market_future_spot_max_ct"),3) if decision.inputs.get("market_future_spot_max_ct") is not None else None,
+                decision.inputs.get("market_price_class"))
             log.info("shadow | action=%s | confidence=%s | reason=%s",decision.action,decision.confidence,decision.reason)
             if time.time()-last>300:snapshot(client,mappings);last=time.time()
         time.sleep(interval)
