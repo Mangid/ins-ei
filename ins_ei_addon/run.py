@@ -6,7 +6,8 @@ from ins_ei.adapters import HomeAssistantAdapter,HomeAssistantClient,mappings_fr
 from ins_ei.adapters.mapping import validate_mapping_config
 from ins_ei.collector import Collector
 from ins_ei.discovery import discover
-from ins_ei.model import Component,OperatingMode,SiteLocation,SiteModel,ThermalTopology\nfrom ins_ei.shadow import evaluate as shadow_evaluate
+from ins_ei.model import Component,OperatingMode,SiteLocation,SiteModel,ThermalTopology
+from ins_ei.shadow import evaluate as shadow_evaluate
 
 OPTIONS=Path("/data/options.json");UI=Path("/data/ui_mappings.json");DISC=Path("/data/discovery.json");COMPONENTS=Path("/data/components.json");SITE=Path("/data/site_model.json");SHADOW=Path("/data/shadow_decision.json")
 MULTI={"HEATING_CIRCUIT","ROOM","LOAD"}
