@@ -45,7 +45,8 @@ def _market_prices(site):
         return adjusted*(1.0+float(tariff.get("vat_percent",0))/100.0)
     return price("import","import_price"),price("export","export_price"),None
 
-def evaluate(site,market_series=None):
+def evaluate(site,market_series=None,strategy=None):
+    strategy=strategy or {}
     pv=_point(site,"PV","power");grid=_point(site,"GRID","power");soc=_point(site,"BATTERY","soc")
     batt=_point(site,"BATTERY","power");pth=_point(site,"POWER_TO_HEAT","electrical_power")
     buffer=_point(site,"BUFFER","temperature_upper");dhw=_point(site,"DHW","temperature")
@@ -66,7 +67,7 @@ def evaluate(site,market_series=None):
     next_max_index=next_prices.index(next_max) if next_prices and next_max is not None else None
     forecast_pv=_point(site,"FORECAST","pv_today");forecast_load=_point(site,"FORECAST","consumption_today")
     forecast_pv_hour=_point(site,"FORECAST","pv_current_hour");forecast_load_hour=_point(site,"FORECAST","consumption_current_hour")
-    inputs={"pv_power":_input(pv),"grid_power":_input(grid),"battery_soc":_input(soc),"battery_power":_input(batt),"power_to_heat":_input(pth),"buffer_upper":_input(buffer),"dhw_temperature":_input(dhw),"forecast_pv_today":_input(forecast_pv),"forecast_consumption_today":_input(forecast_load),"forecast_pv_current_hour":_input(forecast_pv_hour),"forecast_consumption_current_hour":_input(forecast_load_hour),"market_spot_price":_input(_point(site,"MARKET","spot_price")),"import_price_ct_kwh":import_ct,"export_price_ct_kwh":export_ct,"market_future_slots":len(next_prices),"market_future_spot_min_ct":next_min,"market_future_spot_max_ct":next_max,"market_future_spot_avg_ct":next_avg,"market_hours_to_min":next_min_index,"market_hours_to_max":next_max_index,"market_current_spot_ct":(float(_point(site,"MARKET","spot_price").value)*100.0 if _usable(_point(site,"MARKET","spot_price")) else None)}
+    inputs={"strategy":strategy,"pv_power":_input(pv),"grid_power":_input(grid),"battery_soc":_input(soc),"battery_power":_input(batt),"power_to_heat":_input(pth),"buffer_upper":_input(buffer),"dhw_temperature":_input(dhw),"forecast_pv_today":_input(forecast_pv),"forecast_consumption_today":_input(forecast_load),"forecast_pv_current_hour":_input(forecast_pv_hour),"forecast_consumption_current_hour":_input(forecast_load_hour),"market_spot_price":_input(_point(site,"MARKET","spot_price")),"import_price_ct_kwh":import_ct,"export_price_ct_kwh":export_ct,"market_future_slots":len(next_prices),"market_future_spot_min_ct":next_min,"market_future_spot_max_ct":next_max,"market_future_spot_avg_ct":next_avg,"market_hours_to_min":next_min_index,"market_hours_to_max":next_max_index,"market_current_spot_ct":(float(_point(site,"MARKET","spot_price").value)*100.0 if _usable(_point(site,"MARKET","spot_price")) else None)}
     now=datetime.now(timezone.utc).isoformat();guards=[];alternatives=[]
     if market_error:guards.append(market_error)
     if import_ct is None or export_ct is None:guards.append("Tarifpreis aktuell nicht vollständig verfügbar")
