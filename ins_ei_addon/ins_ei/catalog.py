@@ -41,7 +41,7 @@ CATALOG={
  "ROOM":{"temperature":PointSpec("°C","SLOW"),"humidity":PointSpec("%","SLOW"),"co2":PointSpec("ppm","NORMAL"),"heating_target":PointSpec("°C","STATE"),"valve_position":PointSpec("%","NORMAL")},
  "LOAD":{"power":PointSpec("W","FAST"),"energy_today":PointSpec("kWh","STATE"),"energy_total":PointSpec("kWh","STATE"),"state":PointSpec(None,"STATE")},
  "MARKET":{"spot_price":PointSpec("€/kWh","STATE","OPTIMIZATION"),"import_price":PointSpec("ct/kWh","NORMAL","OPTIMIZATION"),"export_price":PointSpec("ct/kWh","NORMAL","OPTIMIZATION")},
- "FORECAST":{"pv_current_hour":PointSpec("kWh","NORMAL","OPTIMIZATION"),"pv_today":PointSpec("kWh","NORMAL","OPTIMIZATION"),"pv_tomorrow":PointSpec("kWh","NORMAL","OPTIMIZATION"),"consumption_current_hour":PointSpec("kWh","NORMAL","OPTIMIZATION"),"consumption_today":PointSpec("kWh","NORMAL","OPTIMIZATION"),"consumption_tomorrow":PointSpec("kWh","NORMAL","OPTIMIZATION")}
+ "FORECAST":{"pv_current_hour":PointSpec("kWh","STATE","OPTIMIZATION"),"pv_today":PointSpec("kWh","STATE","OPTIMIZATION"),"pv_tomorrow":PointSpec("kWh","STATE","OPTIMIZATION"),"consumption_current_hour":PointSpec("kWh","STATE","OPTIMIZATION"),"consumption_today":PointSpec("kWh","STATE","OPTIMIZATION"),"consumption_tomorrow":PointSpec("kWh","STATE","OPTIMIZATION")}
 }
 
 ALIASES={"DHW_STORAGE":"DHW"}
