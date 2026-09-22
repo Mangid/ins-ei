@@ -114,6 +114,9 @@ class H(BaseHTTPRequestHandler):
         p = urlparse(self.path).path
         n = int(self.headers.get("Content-Length", "0"))
         body = json.loads(self.rfile.read(n) or b"{}")
+        if p.endswith("/api/server"):
+            SERVER.write_text(json.dumps(body, ensure_ascii=False, indent=2), encoding="utf-8")
+            return self.js({"saved": True})
         if p.endswith("/api/strategy"):
             STRATEGY.write_text(json.dumps(body, ensure_ascii=False, indent=2), encoding="utf-8")
             return self.js({"saved": True})
