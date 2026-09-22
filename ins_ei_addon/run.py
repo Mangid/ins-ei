@@ -182,8 +182,10 @@ def main():
             log.info("shadow | action=%s | confidence=%s | reason=%s",decision.action,decision.confidence,decision.reason)
             if telemetry_url and time.time()-last_telemetry>=telemetry_interval:
                 status,count=send_telemetry(telemetry_url,server_cfg.get("installation_id",options.get("installation_id","pilot-local")),model,decision)
-                if isinstance(status,int):\n                    TELEMETRY_STATUS.write_text(json.dumps({"connected":True,"last_success":decision.timestamp,"points":count,"status":status,"endpoint":telemetry_url}),encoding="utf-8");log.info("telemetry | sent=%d | status=%d | endpoint=%s",count,status,telemetry_url)
-                else:\n                    TELEMETRY_STATUS.write_text(json.dumps({"connected":False,"last_error":str(status),"endpoint":telemetry_url}),encoding="utf-8");log.warning("telemetry | send failed | endpoint=%s | error=%s",telemetry_url,status)
+                if isinstance(status,int):
+                    TELEMETRY_STATUS.write_text(json.dumps({"connected":True,"last_success":decision.timestamp,"points":count,"status":status,"endpoint":telemetry_url}),encoding="utf-8");log.info("telemetry | sent=%d | status=%d | endpoint=%s",count,status,telemetry_url)
+                else:
+                    TELEMETRY_STATUS.write_text(json.dumps({"connected":False,"last_error":str(status),"endpoint":telemetry_url}),encoding="utf-8");log.warning("telemetry | send failed | endpoint=%s | error=%s",telemetry_url,status)
                 last_telemetry=time.time()
             if time.time()-last>300:snapshot(client,mappings);last=time.time()
         time.sleep(interval)
