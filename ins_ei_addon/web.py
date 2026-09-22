@@ -13,7 +13,9 @@ OPTIONS = Path("/data/options.json")
 DISC = Path("/data/discovery.json")
 COMPONENTS = Path("/data/components.json")
 MARKET = Path("/data/market.json")
-STRATEGY = Path("/data/strategy.json")\nSERVER = Path("/data/server.json")\nTELEMETRY_STATUS = Path("/data/telemetry_status.json")
+STRATEGY = Path("/data/strategy.json")
+SERVER = Path("/data/server.json")
+TELEMETRY_STATUS = Path("/data/telemetry_status.json")
 
 MARKET_DEFAULT = {
     "import": {"mode": "DYNAMIC", "provider": "AWATTAR_AT", "markup_ct": 1.5, "adjust_percent": 0.0, "vat_percent": 20.0, "static_ct": 25.0},
