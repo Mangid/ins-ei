@@ -16,6 +16,7 @@ MARKET = Path("/data/market.json")
 STRATEGY = Path("/data/strategy.json")
 SERVER = Path("/data/server.json")
 TELEMETRY_STATUS = Path("/data/telemetry_status.json")
+PLUGINS = Path("/data/plugins.json")
 
 MARKET_DEFAULT = {
     "import": {"mode": "DYNAMIC", "provider": "AWATTAR_AT", "markup_ct": 1.5, "adjust_percent": 0.0, "vat_percent": 20.0, "static_ct": 25.0},
@@ -77,6 +78,8 @@ class H(BaseHTTPRequestHandler):
             return self.js(rows())
         if p.endswith("/api/components"):
             return self.js(load(COMPONENTS, {}))
+        if p.endswith("/api/plugins"):
+            return self.js(load(PLUGINS, {"oekofen": {"enabled": False, "host": "", "port": 4321, "password": ""}, "mypv": {"enabled": False, "host": "", "port": 502, "unit_id": 1, "http_enabled": True}}))
         if p.endswith("/api/market"):
             return self.js(load(MARKET, MARKET_DEFAULT))
         if p.endswith("/api/strategy"):
@@ -122,6 +125,9 @@ class H(BaseHTTPRequestHandler):
             return self.js({"saved": True})
         if p.endswith("/api/components"):
             COMPONENTS.write_text(json.dumps(body, ensure_ascii=False, indent=2), encoding="utf-8")
+            return self.js({"saved": True})
+        if p.endswith("/api/plugins"):
+            PLUGINS.write_text(json.dumps(body, ensure_ascii=False, indent=2), encoding="utf-8")
             return self.js({"saved": True})
         if p.endswith("/api/discovery/accept"):
             x = body["item"]
