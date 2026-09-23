@@ -23,6 +23,9 @@ class SHRDZMModbusTransport:
     def read_smartmeter(self):
         # SHRDZM SMARTMETER firmware 1.3.x: FC03, registers 0x0000-0x001A.
         r=self.read_registers(0x0000,27)
+        # Temporary diagnostic: expose the complete raw register block so
+        # unknown SHRDZM firmware layouts can be identified without guessing.
+        print("SHRDZM_RAW | " + " ".join(f"0x{i:04X}={v} (0x{v:04X})" for i,v in enumerate(r)), flush=True)
         if r[0]==0:raise RuntimeError("SHRDZM_DATA_INVALID")
         return {
             "valid":r[0],
