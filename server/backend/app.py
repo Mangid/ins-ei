@@ -2045,6 +2045,98 @@ from(bucket: "{INFLUX_BUCKET}")
     return values
 
 
+
+def influx_history(
+    installation_id: str,
+    period: str = "24h",
+) -> dict[str, Any]:
+    """Return downsampled numeric telemetry history for the frontend."""
+
+    periods = {
+        "24h": ("-24h", "5m"),
+        "7d": ("-7d", "30m"),
+        "30d": ("-30d", "2h"),
+    }
+
+    if period not in periods:
+        raise ValueError("period must be 24h, 7d or 30d")
+
+    start, window = periods[period]
+    token = INFLUX_TOKEN.read_text().strip()
+    safe_id = installation_id.replace('"', '\\"')
+
+    fields = (
+        "battery.soc",
+        "battery.power",
+        "pv.power",
+        "grid.power",
+        "buffer.temperature_upper",
+        "dhw.temperature",
+        "weather.outdoor_temperature",
+    )
+
+    field_filter = " or ".join(
+        f'r._field == "{field}"'
+        for field in fields
+    )
+
+    flux = f"""
+from(bucket: "{INFLUX_BUCKET}")
+  |> range(start: {start})
+  |> filter(fn: (r) =>
+    r._measurement == "ins_ei_telemetry"
+  )
+  |> filter(fn: (r) =>
+    r.installation_id == "{safe_id}"
+  )
+  |> filter(fn: (r) => {field_filter})
+  |> aggregateWindow(every: {window}, fn: mean, createEmpty: false)
+  |> keep(columns: ["_time", "_field", "_value"])
+"""
+
+    request = Request(
+        INFLUX_URL + "/api/v2/query?org=" + INFLUX_ORG,
+        data=json.dumps({
+            "query": flux,
+            "type": "flux",
+        }).encode(),
+        method="POST",
+        headers={
+            "Authorization": f"Token {token}",
+            "Content-Type": "application/json",
+            "Accept": "application/csv",
+        },
+    )
+
+    raw = urlopen(request, timeout=15).read().decode()
+    series = {field: [] for field in fields}
+
+    for row in csv.DictReader(io.StringIO(raw)):
+        field = row.get("_field")
+        timestamp = row.get("_time")
+        value = row.get("_value")
+
+        if field not in series or not timestamp or value is None:
+            continue
+
+        try:
+            numeric = round(float(value), 3)
+        except ValueError:
+            continue
+
+        series[field].append({
+            "time": timestamp,
+            "value": numeric,
+        })
+
+    return {
+        "installation_id": installation_id,
+        "period": period,
+        "window": window,
+        "series": series,
+    }
+
+
 def telemetry_status() -> dict[str, Any]:
     """Return status of all INS-EI telemetry installations."""
 
@@ -2242,6 +2334,18 @@ def health():
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
+
+
+
+@app.get("/api/v1/telemetry/history/{installation_id}")
+def get_telemetry_history(
+    installation_id: str,
+    period: str = "24h",
+):
+    try:
+        return influx_history(installation_id, period)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @app.get("/api/v1/telemetry/status")
