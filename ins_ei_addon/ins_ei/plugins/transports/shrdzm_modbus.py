@@ -16,16 +16,14 @@ class SHRDZMModbusTransport:
         if not payload or payload[0]&0x80:raise RuntimeError("SHRDZM_MODBUS_EXCEPTION")
         if payload[0]!=0x03 or payload[1]!=count*2:raise RuntimeError("SHRDZM_MODBUS_LENGTH")
         return list(struct.unpack(">"+("H"*count),payload[2:]))
+    # SHRDZM 1.3.x exposes 32-bit values low-word first.
     @staticmethod
-    def u32(words,index):return (words[index]<<16)|words[index+1]
+    def u32(words,index):return (words[index+1]<<16)|words[index]
     @staticmethod
-    def s32(words,index):return struct.unpack(">i",struct.pack(">HH",words[index],words[index+1]))[0]
+    def s32(words,index):return struct.unpack(">i",struct.pack(">HH",words[index+1],words[index]))[0]
     def read_smartmeter(self):
         # SHRDZM SMARTMETER firmware 1.3.x: FC03, registers 0x0000-0x001A.
         r=self.read_registers(0x0000,27)
-        # Temporary diagnostic: expose the complete raw register block so
-        # unknown SHRDZM firmware layouts can be identified without guessing.
-        print("SHRDZM_RAW | " + " ".join(f"0x{i:04X}={v} (0x{v:04X})" for i,v in enumerate(r)), flush=True)
         if r[0]==0:raise RuntimeError("SHRDZM_DATA_INVALID")
         return {
             "valid":r[0],
