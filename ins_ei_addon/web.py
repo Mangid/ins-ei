@@ -75,9 +75,6 @@ class H(BaseHTTPRequestHandler):
             })
         if p.endswith("/api/mappings"):
             return self.js(rows())
-        if p.endswith("/api/server"):
-            SERVER.write_text(json.dumps(body, ensure_ascii=False, indent=2), encoding="utf-8")
-            return self.js({"saved": True})
         if p.endswith("/api/components"):
             return self.js(load(COMPONENTS, {}))
         if p.endswith("/api/market"):
