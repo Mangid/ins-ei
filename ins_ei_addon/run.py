@@ -36,6 +36,8 @@ def send_telemetry(url,installation_id,model,decision,timeout=5):
         with urlopen(req,timeout=timeout) as response:return response.status,len(data)
     except (URLError,HTTPError,TimeoutError,OSError) as exc:return exc,None
 
+_PLUGIN_CACHE={};_PLUGIN_SIGNATURES={}
+
 def apply_plugin_probe(model,probe):
     for item in probe.points:
         component=model.component(item.component_id)
@@ -51,14 +53,22 @@ def read_plugins(model,config,log):
     o=config.get("oekofen") or {}
     if o.get("enabled") and o.get("host") and o.get("password"):
         try:
-            probe=OekoFENPlugin(o["host"],o["password"],o.get("port",4321)).read()
+            plugin=_PLUGIN_CACHE.get("oekofen")
+            signature=(o["host"],o["password"],o.get("port",4321))
+            if plugin is None or _PLUGIN_SIGNATURES.get("oekofen")!=signature:
+                plugin=OekoFENPlugin(*signature);_PLUGIN_CACHE["oekofen"]=plugin;_PLUGIN_SIGNATURES["oekofen"]=signature
+            probe=plugin.read()
             count+=apply_plugin_probe(model,probe)
             log.info("plugin | oekofen | model=%s profile=%s points=%d unmapped=%d",probe.identity.model,probe.identity.profile,len(probe.points),len(probe.unmapped))
         except Exception as exc:log.warning("plugin | oekofen failed | %s",exc)
     m=config.get("mypv") or {}
     if m.get("enabled") and m.get("host"):
         try:
-            probe=MyPVPlugin(m["host"],m.get("port",502),m.get("unit_id",1),m.get("http_enabled",True)).read()
+            signature=(m["host"],m.get("port",502),m.get("unit_id",1),m.get("http_enabled",True))
+            plugin=_PLUGIN_CACHE.get("mypv")
+            if plugin is None or _PLUGIN_SIGNATURES.get("mypv")!=signature:
+                plugin=MyPVPlugin(*signature);_PLUGIN_CACHE["mypv"]=plugin;_PLUGIN_SIGNATURES["mypv"]=signature
+            probe=plugin.read()
             count+=apply_plugin_probe(model,probe)
             log.info("plugin | mypv | model=%s profile=%s points=%d unmapped=%d",probe.identity.model,probe.identity.profile,len(probe.points),len(probe.unmapped))
         except Exception as exc:log.warning("plugin | mypv failed | %s",exc)
