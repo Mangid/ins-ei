@@ -1,12 +1,16 @@
-const API="/api/v1/telemetry/status";
-const val=(o,k,u="")=>o?.current?.[k]===undefined?"–":`${o.current[k]}${u}`;
-function card(x){return `<article class="card"><div class="card-head"><div><h2>${x.installation_id}</h2><span class="status ${x.online?"online":"offline"}">● ${x.online?"Online":"Offline"}</span></div></div><div class="metrics">
-<div class="metric"><small>Batterie SOC</small><strong>${val(x,"battery.soc"," %")}</strong></div>
-<div class="metric"><small>Batterieleistung</small><strong>${val(x,"battery.power"," W")}</strong></div>
-<div class="metric"><small>PV</small><strong>${val(x,"pv.power"," W")}</strong></div>
-<div class="metric"><small>Netz</small><strong>${val(x,"grid.power"," W")}</strong></div>
-<div class="metric"><small>Puffer oben</small><strong>${val(x,"buffer.temperature_upper"," °C")}</strong></div>
-<div class="metric"><small>Warmwasser</small><strong>${val(x,"dhw.temperature"," °C")}</strong></div>
-</div><div class="meta">Letzter Kontakt vor ${x.age_seconds}s · Samples: ${x.sample_count}<br>Optimierer: ${val(x,"shadow.action")}</div></article>`}
-async function load(){try{const r=await fetch(API);if(!r.ok)throw Error(r.status);const d=await r.json();count.textContent=d.count;online.textContent=d.online;offline.textContent=d.count-d.online;cards.innerHTML=d.installations.map(card).join("")||'<div class="loading">Noch keine Instanzen.</div>';api.textContent="API online";api.classList.add("ok")}catch(e){api.textContent="API offline";cards.innerHTML='<div class="loading">INS-EI API nicht erreichbar.</div>'}}
-load();setInterval(load,30000);
+const API="/api/v1/telemetry/status";let latest={};
+const fmt=(v,u="")=>v===undefined||v===null?"–":`${typeof v==="number"?Math.round(v*100)/100:v}${u}`;
+const cv=(x,k,u="")=>fmt(x?.current?.[k],u);
+const metric=(n,v)=>`<div class="metric"><small>${n}</small><strong>${v}</strong></div>`;
+function card(x){return `<article class="card clickable" data-id="${x.installation_id}"><div class="card-head"><div><h2>${x.installation_id}</h2><span class="status ${x.online?"online":"offline"}">● ${x.online?"Online":"Offline"}</span></div><span class="open">Details →</span></div><div class="metrics">${metric("Batterie SOC",cv(x,"battery.soc"," %"))}${metric("Batterieleistung",cv(x,"battery.power"," W"))}${metric("PV",cv(x,"pv.power"," W"))}${metric("Netz",cv(x,"grid.power"," W"))}${metric("Puffer oben",cv(x,"buffer.temperature_upper"," °C"))}${metric("Warmwasser",cv(x,"dhw.temperature"," °C"))}</div><div class="meta">Letzter Kontakt vor ${x.age_seconds}s · Samples: ${x.sample_count}<br>Optimierer: ${cv(x,"shadow.action")}</div></article>`}
+const groups=[
+["Energie",[["PV","pv.power"," W"],["Netz","grid.power"," W"],["Batterie","battery.power"," W"],["Spotpreis","MARKET.spot_price"," €/kWh"]]],
+["Batterie",[["SOC","battery.soc"," %"],["SOH","battery.soh"," %"],["Spannung","battery.voltage"," V"],["Strom","battery.current"," A"],["Temperatur","battery.temperature"," °C"],["Module online","battery.modules_online",""]]],
+["Wärme",[["Puffer oben","buffer.temperature_upper"," °C"],["Warmwasser","dhw.temperature"," °C"],["Außen","weather.outdoor_temperature"," °C"]]],
+["Prognose",[["PV heute","forecast.pv_today"," kWh"],["PV aktuelle Stunde","forecast.pv_current_hour"," kWh"],["Verbrauch heute","forecast.consumption_today"," kWh"],["Verbrauch aktuelle Stunde","forecast.consumption_current_hour"," kWh"]]],
+["Optimierer",[["Aktion","shadow.action",""],["Konfidenz","shadow.confidence",""]]]
+];
+function openDetail(id){const x=latest.installations.find(i=>i.installation_id===id);if(!x)return;detailBody.innerHTML=`<div class="detail-head"><div><h1>${id}</h1><span class="status ${x.online?"online":"offline"}">● ${x.online?"Online":"Offline"}</span></div><div class="meta">Letzter Kontakt vor ${x.age_seconds}s<br>${x.sample_count} Samples</div></div><div class="group-grid">${groups.map(([title,items])=>`<section class="group"><h3>${title}</h3><div class="metrics">${items.map(([n,k,u])=>metric(n,cv(x,k,u))).join("")}</div></section>`).join("")}</div><section class="group"><h3>Batteriealarme</h3><div class="alarm-list">${Object.entries(x.current||{}).filter(([k])=>k.startsWith("battery.alarm")).map(([k,v])=>`<span class="${v==="no_alarm"?"good":"bad"}">${k.replace("battery.alarm_","").replaceAll("_"," ")}: ${v}</span>`).join("")||"–"}</div></section>`;detail.classList.remove("hidden")}
+function bind(){document.querySelectorAll(".clickable").forEach(c=>c.onclick=()=>openDetail(c.dataset.id))}
+async function load(){try{const r=await fetch(API);if(!r.ok)throw Error(r.status);latest=await r.json();count.textContent=latest.count;online.textContent=latest.online;offline.textContent=latest.count-latest.online;cards.innerHTML=latest.installations.map(card).join("")||'<div class="loading">Noch keine Instanzen.</div>';api.textContent="API online";api.classList.add("ok");bind()}catch(e){api.textContent="API offline";api.classList.remove("ok");cards.innerHTML='<div class="loading">INS-EI API nicht erreichbar.</div>'}}
+close.onclick=()=>detail.classList.add("hidden");detail.onclick=e=>{if(e.target===detail)detail.classList.add("hidden")};load();setInterval(load,30000);
