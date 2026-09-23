@@ -15,12 +15,20 @@ class OekoFENPlugin:
     plugin_id="oekofen";manufacturer="OekoFEN"
     def __init__(self,host,password,port=4321):
         self.transport=OekoFENTransport(host,password,port)
+        self._last_data=None
+        self._last_read=0.0
+    def _data(self):
+        import time
+        now=time.monotonic()
+        if self._last_data is None or now-self._last_read>=2.6:
+            self._last_data=self.transport.read_all();self._last_read=now
+        return self._last_data
     def detect(self):
-        data=self.transport.read_all()
+        data=self._data()
         caps={k for k in ("pe1","pu1","ww1","hk1","hk2") if isinstance(data.get(k),dict)}
         return DeviceIdentity("OekoFEN","Pellematic",profile="json_all",capabilities=caps,raw={"sections":sorted(data)})
     def read(self):
-        d=self.transport.read_all();points=[];used=set()
+        d=self._data();points=[];used=set()
         def add(section,key,cid,point,unit=None,factor=1.0,text=False):
             sec=d.get(section) or {}
             if key not in sec:return
