@@ -1,8 +1,4 @@
-"""SHRDZM Smartmeter plugin using Modbus TCP as the primary transport.
-
-The register map is configurable because SHRDZM firmware/device profiles can
-differ. No HTTP credentials are required for normal operation.
-"""
+"""SHRDZM SMARTMETER Modbus TCP plugin."""
 from __future__ import annotations
 from .base import DeviceIdentity,PluginPoint,PluginProbe
 from .transports.shrdzm_modbus import SHRDZMModbusTransport
@@ -11,32 +7,25 @@ class SHRDZMPlugin:
     plugin_id="shrdzm";manufacturer="SHRDZM"
     def __init__(self,host,port=502,unit_id=1,registers=None):
         self.transport=SHRDZMModbusTransport(host,port,unit_id)
-        self.registers=registers or {}
     def detect(self):
-        return DeviceIdentity("SHRDZM","SMARTMETER",profile="modbus_tcp",capabilities={"grid_meter","modbus_tcp"})
+        return DeviceIdentity("SHRDZM","SMARTMETER",profile="smartmeter_1_3x_modbus",capabilities={"grid_meter","modbus_tcp"})
     def read(self):
-        points=[];unmapped={}
-        specs={
-          "power":("grid","power","W"),
-          "import_energy":("grid","import_energy","kWh"),
-          "export_energy":("grid","export_energy","kWh"),
-          "frequency":("grid","frequency","Hz"),
-          "voltage_l1":("grid","voltage_l1","V"),
-          "voltage_l2":("grid","voltage_l2","V"),
-          "voltage_l3":("grid","voltage_l3","V"),
-          "current_l1":("grid","current_l1","A"),
-          "current_l2":("grid","current_l2","A"),
-          "current_l3":("grid","current_l3","A"),
+        d=self.transport.read_smartmeter()
+        points=[
+            PluginPoint("grid","power",d["power_w"],"W","modbus:0x0005"),
+            PluginPoint("grid","import_energy",d["import_energy_kwh"],"kWh","modbus:0x0007"),
+            PluginPoint("grid","export_energy",d["export_energy_kwh"],"kWh","modbus:0x0009"),
+            PluginPoint("grid","voltage_l1",d["voltage_l1_v"],"V","modbus:0x000B"),
+            PluginPoint("grid","voltage_l2",d["voltage_l2_v"],"V","modbus:0x000D"),
+            PluginPoint("grid","voltage_l3",d["voltage_l3_v"],"V","modbus:0x000F"),
+            PluginPoint("grid","current_l1",d["current_l1_a"],"A","modbus:0x0011"),
+            PluginPoint("grid","current_l2",d["current_l2_a"],"A","modbus:0x0013"),
+            PluginPoint("grid","current_l3",d["current_l3_a"],"A","modbus:0x0015"),
+        ]
+        diagnostics={
+            "power_import_w":d["power_import_w"],
+            "power_export_w":d["power_export_w"],
+            "reactive_power_import_var":d["reactive_power_import_var"],
+            "reactive_power_export_var":d["reactive_power_export_var"],
         }
-        for name,cfg in self.registers.items():
-            if name not in specs or not isinstance(cfg,dict) or "address" not in cfg:continue
-            try:
-                value=self.transport.read_value(
-                    int(cfg["address"]),str(cfg.get("type","s16")),
-                    float(cfg.get("scale",1.0)),str(cfg.get("word_order","big"))
-                )
-                if cfg.get("invert_sign"):value=-value
-                cid,point,unit=specs[name]
-                points.append(PluginPoint(cid,point,value,unit,f"modbus:{cfg['address']}"))
-            except Exception as exc:unmapped[f"error.{name}"]=str(exc)
-        return PluginProbe(self.detect(),points,unmapped)
+        return PluginProbe(self.detect(),points,diagnostics)
