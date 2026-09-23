@@ -81,7 +81,7 @@ def read_plugins(model,config,log):
             if plugin is None or _PLUGIN_SIGNATURES.get("shrdzm")!=signature:
                 plugin=SHRDZMPlugin(z["host"],z.get("port",502),z.get("unit_id",1),z.get("registers",{}));_PLUGIN_CACHE["shrdzm"]=plugin;_PLUGIN_SIGNATURES["shrdzm"]=signature
             probe=plugin.read();count+=apply_plugin_probe(model,probe)
-            log.info("plugin | shrdzm | model=%s profile=%s points=%d errors=%d",probe.identity.family,probe.identity.profile,len(probe.points),len(probe.unmapped))
+            log.info("plugin | shrdzm | model=%s profile=%s points=%d diagnostics=%d",probe.identity.family,probe.identity.profile,len(probe.points),len(probe.unmapped))
         except Exception as exc:log.warning("plugin | shrdzm failed | %s",exc)
     return count
 
