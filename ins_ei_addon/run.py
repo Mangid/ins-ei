@@ -10,8 +10,11 @@ from ins_ei.collector import Collector
 from ins_ei.discovery import discover
 from ins_ei.model import Component,OperatingMode,SiteLocation,SiteModel,ThermalTopology
 from ins_ei.shadow import evaluate as shadow_evaluate
+from ins_ei.plugins.oekofen import OekoFENPlugin
+from ins_ei.plugins.mypv import MyPVPlugin
+from ins_ei.model import DataPoint,DataQuality,DataRole
 
-OPTIONS=Path("/data/options.json");UI=Path("/data/ui_mappings.json");DISC=Path("/data/discovery.json");COMPONENTS=Path("/data/components.json");SITE=Path("/data/site_model.json");SHADOW=Path("/data/shadow_decision.json");MARKET=Path("/data/market.json");MARKET_SERIES=Path("/data/market_series.json");STRATEGY=Path("/data/strategy.json");SERVER=Path("/data/server.json");TELEMETRY_STATUS=Path("/data/telemetry_status.json")
+OPTIONS=Path("/data/options.json");UI=Path("/data/ui_mappings.json");DISC=Path("/data/discovery.json");COMPONENTS=Path("/data/components.json");SITE=Path("/data/site_model.json");SHADOW=Path("/data/shadow_decision.json");MARKET=Path("/data/market.json");MARKET_SERIES=Path("/data/market_series.json");STRATEGY=Path("/data/strategy.json");SERVER=Path("/data/server.json");TELEMETRY_STATUS=Path("/data/telemetry_status.json");PLUGINS=Path("/data/plugins.json")
 MULTI={"HEATING_CIRCUIT","ROOM","LOAD"}
 
 def load(path,default):
@@ -32,6 +35,34 @@ def send_telemetry(url,installation_id,model,decision,timeout=5):
     try:
         with urlopen(req,timeout=timeout) as response:return response.status,len(data)
     except (URLError,HTTPError,TimeoutError,OSError) as exc:return exc,None
+
+def apply_plugin_probe(model,probe):
+    for item in probe.points:
+        component=model.component(item.component_id)
+        if component is None:
+            kind=base_kind(item.component_id)
+            component=Component(id=item.component_id,kind=kind,enabled=True,config={"plugin":probe.identity.manufacturer,"model":probe.identity.model})
+            model.add_component(component)
+        component.points[item.point]=DataPoint(key=f"{item.component_id}.{item.point}",value=item.value,unit=item.unit,quality=DataQuality.GOOD,source=item.source,role=DataRole.MONITORING)
+    return len(probe.points)
+
+def read_plugins(model,config,log):
+    count=0
+    o=config.get("oekofen") or {}
+    if o.get("enabled") and o.get("host") and o.get("password"):
+        try:
+            probe=OekoFENPlugin(o["host"],o["password"],o.get("port",4321)).read()
+            count+=apply_plugin_probe(model,probe)
+            log.info("plugin | oekofen | model=%s profile=%s points=%d unmapped=%d",probe.identity.model,probe.identity.profile,len(probe.points),len(probe.unmapped))
+        except Exception as exc:log.warning("plugin | oekofen failed | %s",exc)
+    m=config.get("mypv") or {}
+    if m.get("enabled") and m.get("host"):
+        try:
+            probe=MyPVPlugin(m["host"],m.get("port",502),m.get("unit_id",1),m.get("http_enabled",True)).read()
+            count+=apply_plugin_probe(model,probe)
+            log.info("plugin | mypv | model=%s profile=%s points=%d unmapped=%d",probe.identity.model,probe.identity.profile,len(probe.points),len(probe.unmapped))
+        except Exception as exc:log.warning("plugin | mypv failed | %s",exc)
+    return count
 
 def supervisor_token():
     value=os.environ.get("SUPERVISOR_TOKEN")
@@ -154,7 +185,8 @@ def main():
                     last=time.time()
         if signature is not None:
             result=collector.collect(mappings)
-            log.info("collector | read=%d good=%d stale=%d unavailable=%d",result.read,result.good,result.stale,result.unavailable)
+            plugin_points=read_plugins(model,load(PLUGINS,{}),log)
+            log.info("collector | read=%d good=%d stale=%d unavailable=%d plugin_points=%d",result.read,result.good,result.stale,result.unavailable,plugin_points)
             if result.stale or result.unavailable:
                 for component in model.components.values():
                     for point_name,point in component.points.items():
