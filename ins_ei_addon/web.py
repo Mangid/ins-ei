@@ -79,7 +79,7 @@ class H(BaseHTTPRequestHandler):
         if p.endswith("/api/components"):
             return self.js(load(COMPONENTS, {}))
         if p.endswith("/api/plugins"):
-            return self.js(load(PLUGINS, {"oekofen": {"enabled": False, "host": "", "port": 4321, "password": ""}, "mypv": {"enabled": False, "host": "", "port": 502, "unit_id": 1, "http_enabled": True}}))
+            return self.js(load(PLUGINS, {"oekofen": {"enabled": False, "host": "", "port": 4321, "password": ""}, "mypv": {"enabled": False, "host": "", "port": 502, "unit_id": 1, "http_enabled": True}, "shrdzm": {"enabled": False, "host": "", "port": 502, "unit_id": 1, "registers": {}}}))
         if p.endswith("/api/market"):
             return self.js(load(MARKET, MARKET_DEFAULT))
         if p.endswith("/api/strategy"):
