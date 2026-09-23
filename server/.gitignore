@@ -1,0 +1,22 @@
+# Secrets
+secrets/
+*.key
+*.token
+
+# Databases / runtime data
+*.db
+*.db-shm
+*.db-wal
+data/
+
+# Backups
+*.backup*
+*.bak
+*.tar.gz
+
+# Python
+__pycache__/
+*.pyc
+
+# Environment
+.env
