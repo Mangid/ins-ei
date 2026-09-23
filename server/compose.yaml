@@ -16,6 +16,17 @@ services:
     networks:
       - ins-platform
 
+  ins-ei-frontend:
+    build: ./frontend
+    container_name: ins-ei-frontend
+    restart: unless-stopped
+    ports:
+      - "10.10.0.20:8080:80"
+    depends_on:
+      - ins-ei-api
+    networks:
+      - ins-platform
+
 volumes:
   ins_ei_data:
 
