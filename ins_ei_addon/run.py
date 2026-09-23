@@ -12,6 +12,7 @@ from ins_ei.model import Component,OperatingMode,SiteLocation,SiteModel,ThermalT
 from ins_ei.shadow import evaluate as shadow_evaluate
 from ins_ei.plugins.oekofen import OekoFENPlugin
 from ins_ei.plugins.mypv import MyPVPlugin
+from ins_ei.plugins.shrdzm import SHRDZMPlugin
 from ins_ei.model import DataPoint,DataQuality,DataRole
 
 OPTIONS=Path("/data/options.json");UI=Path("/data/ui_mappings.json");DISC=Path("/data/discovery.json");COMPONENTS=Path("/data/components.json");SITE=Path("/data/site_model.json");SHADOW=Path("/data/shadow_decision.json");MARKET=Path("/data/market.json");MARKET_SERIES=Path("/data/market_series.json");STRATEGY=Path("/data/strategy.json");SERVER=Path("/data/server.json");TELEMETRY_STATUS=Path("/data/telemetry_status.json");PLUGINS=Path("/data/plugins.json")
@@ -72,6 +73,16 @@ def read_plugins(model,config,log):
             count+=apply_plugin_probe(model,probe)
             log.info("plugin | mypv | model=%s profile=%s points=%d unmapped=%d",probe.identity.model,probe.identity.profile,len(probe.points),len(probe.unmapped))
         except Exception as exc:log.warning("plugin | mypv failed | %s",exc)
+    z=config.get("shrdzm") or {}
+    if z.get("enabled") and z.get("host"):
+        try:
+            signature=(z["host"],z.get("port",502),z.get("unit_id",1),json.dumps(z.get("registers",{}),sort_keys=True))
+            plugin=_PLUGIN_CACHE.get("shrdzm")
+            if plugin is None or _PLUGIN_SIGNATURES.get("shrdzm")!=signature:
+                plugin=SHRDZMPlugin(z["host"],z.get("port",502),z.get("unit_id",1),z.get("registers",{}));_PLUGIN_CACHE["shrdzm"]=plugin;_PLUGIN_SIGNATURES["shrdzm"]=signature
+            probe=plugin.read();count+=apply_plugin_probe(model,probe)
+            log.info("plugin | shrdzm | model=%s profile=%s points=%d errors=%d",probe.identity.family,probe.identity.profile,len(probe.points),len(probe.unmapped))
+        except Exception as exc:log.warning("plugin | shrdzm failed | %s",exc)
     return count
 
 def supervisor_token():
