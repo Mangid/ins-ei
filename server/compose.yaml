@@ -1,0 +1,24 @@
+services:
+  ins-ei-api:
+    build: ./backend
+    container_name: ins-ei-api
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8100:8100"
+    volumes:
+      - ins_ei_data:/data
+      - ./secrets/pushsafer_private_key:/run/secrets/pushsafer_private_key:ro
+      - ./secrets/management_api_key:/run/secrets/management_api_key:ro
+      - ./secrets/oekofen_username:/run/secrets/oekofen_username:ro
+      - ./secrets/oekofen_password:/run/secrets/oekofen_password:ro
+      - ./secrets/oekofen_client_secret:/run/secrets/oekofen_client_secret:ro
+      - ./secrets/influxdb_token:/run/secrets/influxdb_token:ro
+    networks:
+      - ins-platform
+
+volumes:
+  ins_ei_data:
+
+networks:
+  ins-platform:
+    external: true
