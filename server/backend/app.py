@@ -2743,6 +2743,32 @@ def get_customer_file(file_id: int):
     return FileResponse(path,media_type=row["content_type"],filename=row["file_name"])
 
 
+class PlannedVisitCreate(BaseModel):
+    customer_id: int
+    scheduled_at: str
+    title: str
+    visit_type: str = "service"
+    priority: str = "normal"
+    description: str | None = None
+    preparation: str | None = None
+
+
+@app.post("/api/v1/visits")
+def create_planned_visit(visit: PlannedVisitCreate):
+    now=datetime.now(timezone.utc).isoformat()
+    visit_date=(visit.scheduled_at or "")[:10] or now[:10]
+    with db() as con:
+        if con.execute("SELECT 1 FROM customers WHERE id=?",(visit.customer_id,)).fetchone() is None:
+            raise HTTPException(404,"Customer not found")
+        cur=con.execute("""INSERT INTO service_visits
+          (customer_id,visit_date,scheduled_at,title,visit_type,priority,status,
+           description,preparation,created_at,updated_at)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+          (visit.customer_id,visit_date,visit.scheduled_at,visit.title,visit.visit_type,
+           visit.priority,"planned",visit.description,visit.preparation,now,now))
+    return {"status":"created","id":cur.lastrowid}
+
+
 @app.get("/api/v1/visits")
 def list_all_visits(status: str | None = None):
     with db() as con:
