@@ -2924,6 +2924,39 @@ def create_maintenance(item: MaintenanceCreate):
               VALUES (?,?,?,?,?,?)""",(mid,section,key,label,unit,order))
     return {"status":"created","id":mid}
 
+class MaintenanceCheckUpdate(BaseModel):
+    id: int
+    status: str | None = None
+    value: str | None = None
+    note: str | None = None
+
+class MaintenanceSave(BaseModel):
+    status: str = "in_progress"
+    burner_runtime: float | None = None
+    average_runtime: float | None = None
+    software_version: str | None = None
+    plant_online: bool | None = None
+    system_pressure: float | None = None
+    remarks: str | None = None
+    material: str | None = None
+    checks: list[MaintenanceCheckUpdate] = []
+
+@app.put("/api/v1/maintenances/{maintenance_id}")
+def save_maintenance(maintenance_id: int, item: MaintenanceSave):
+    completed_at=datetime.now(timezone.utc).isoformat() if item.status=="completed" else None
+    with db() as con:
+        cur=con.execute("""UPDATE maintenance_jobs SET status=?,burner_runtime=?,average_runtime=?,
+          software_version=?,plant_online=?,system_pressure=?,remarks=?,material=?,completed_at=?,updated_at=?
+          WHERE id=?""",(item.status,item.burner_runtime,item.average_runtime,item.software_version,
+          None if item.plant_online is None else int(item.plant_online),item.system_pressure,
+          item.remarks,item.material,completed_at,datetime.now(timezone.utc).isoformat(),maintenance_id))
+        if cur.rowcount==0: raise HTTPException(404,"Maintenance not found")
+        for x in item.checks:
+            con.execute("""UPDATE maintenance_checks SET status=?,value=?,note=?
+              WHERE id=? AND maintenance_id=?""",(x.status,x.value,x.note,x.id,maintenance_id))
+    return {"status":"updated","id":maintenance_id}
+
+
 @app.get("/api/v1/maintenances/{maintenance_id}")
 def get_maintenance(maintenance_id: int):
     with db() as con:
