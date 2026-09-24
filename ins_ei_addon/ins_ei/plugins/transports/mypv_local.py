@@ -41,7 +41,14 @@ class MyPVTransport:
         if not isinstance(data,dict):raise RuntimeError("MYPV_HTTP_JSON")
         return data
     def read(self)->dict:
-        m=self.read_modbus();reg=lambda n:m.get(n)
+        # HTTP /data.jsn is the stable local telemetry source. Modbus telemetry
+        # is optional because register maps differ between AC-THOR firmware.
+        http=self.read_http() if self.http_enabled else {}
+        try:
+            m=self.read_modbus()
+        except (OSError, RuntimeError):
+            m={}
+        reg=lambda n:m.get(n)
         return {
           "stratification_flag":reg(1057),"relay1_status":reg(1058),"load_state":reg(1059),"load_nominal_power_w":reg(1060),
           "voltage_l1_v":reg(1061),"current_l1_a":reg(1062)/10 if reg(1062)!=None else None,"voltage_out_v":reg(1063),
@@ -51,5 +58,5 @@ class MyPVTransport:
           "voltage_l3_v":reg(1072),"current_l3_a":reg(1073)/10 if reg(1073)!=None else None,
           "power_out1_w":reg(1074),"power_out2_w":reg(1075),"power_out3_w":reg(1076),"operation_state":reg(1077),
           "device_state":reg(1081),"device_power_w":reg(1082),"solar_power_w":reg(1083),"grid_power_w":reg(1084),
-          "http":self.read_http() if self.http_enabled else {},
+          "http":http,
         }
