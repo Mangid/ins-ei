@@ -2821,7 +2821,14 @@ def list_all_visits(status: str | None = None):
             sql+=" WHERE v.status=?";args.append(status)
         sql+=" ORDER BY COALESCE(v.scheduled_at,v.visit_date) ASC,v.id DESC"
         rows=con.execute(sql,args).fetchall()
-    return {"visits":[dict(r) for r in rows]}
+        result=[]
+        for row in rows:
+            item=dict(row)
+            files=con.execute("""SELECT id,file_name,content_type,description,created_at
+                FROM customer_files WHERE visit_id=? ORDER BY id DESC""",(row["id"],)).fetchall()
+            item["files"]=[dict(f) for f in files]
+            result.append(item)
+    return {"visits":result}
 
 
 @app.get("/api/v1/customers/{customer_id}/visits")
