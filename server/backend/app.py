@@ -14,9 +14,12 @@ import sqlite3
 import threading
 import time
 import urllib.error
+import uuid
+import shutil
 
-from fastapi import FastAPI, HTTPException, Header, Depends
+from fastapi import FastAPI, HTTPException, Header, Depends, UploadFile, File, Form
 from pydantic import BaseModel, Field
+from fastapi.responses import FileResponse
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
@@ -858,6 +861,24 @@ def init_customer_db():
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 FOREIGN KEY (installation_id) REFERENCES installations(id)
+            )
+            """
+        )
+
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS customer_files (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                customer_id INTEGER NOT NULL,
+                visit_id INTEGER,
+                maintenance_id INTEGER,
+                file_name TEXT NOT NULL,
+                stored_name TEXT NOT NULL,
+                content_type TEXT,
+                description TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (customer_id) REFERENCES customers(id),
+                FOREIGN KEY (visit_id) REFERENCES service_visits(id)
             )
             """
         )
@@ -2647,6 +2668,56 @@ class ServiceVisitCreate(BaseModel):
     travel_km: float | None = None
     material: str | None = None
     invoice_reference: str | None = None
+
+
+FILES_PATH = Path("/data/customer_files")
+
+
+@app.post("/api/v1/customers/{customer_id}/files")
+async def upload_customer_file(
+    customer_id: int,
+    file: UploadFile = File(...),
+    visit_id: int | None = Form(default=None),
+    maintenance_id: int | None = Form(default=None),
+    description: str | None = Form(default=None),
+):
+    FILES_PATH.mkdir(parents=True, exist_ok=True)
+    with db() as con:
+        if con.execute("SELECT 1 FROM customers WHERE id=?",(customer_id,)).fetchone() is None:
+            raise HTTPException(404,"Customer not found")
+    suffix=Path(file.filename or "").suffix.lower()
+    stored_name=f"{uuid.uuid4().hex}{suffix}"
+    target=FILES_PATH/stored_name
+    with target.open("wb") as out:
+        shutil.copyfileobj(file.file,out)
+    now=datetime.now(timezone.utc).isoformat()
+    with db() as con:
+        cur=con.execute("""INSERT INTO customer_files
+            (customer_id,visit_id,maintenance_id,file_name,stored_name,content_type,description,created_at)
+            VALUES (?,?,?,?,?,?,?,?)""",
+            (customer_id,visit_id,maintenance_id,file.filename or stored_name,stored_name,
+             file.content_type,description,now))
+    return {"status":"stored","id":cur.lastrowid}
+
+
+@app.get("/api/v1/customers/{customer_id}/files")
+def list_customer_files(customer_id: int, visit_id: int | None = None):
+    with db() as con:
+        if visit_id is None:
+            rows=con.execute("SELECT * FROM customer_files WHERE customer_id=? ORDER BY id DESC",(customer_id,)).fetchall()
+        else:
+            rows=con.execute("SELECT * FROM customer_files WHERE customer_id=? AND visit_id=? ORDER BY id DESC",(customer_id,visit_id)).fetchall()
+    return {"files":[dict(r) for r in rows]}
+
+
+@app.get("/api/v1/customer-files/{file_id}")
+def get_customer_file(file_id: int):
+    with db() as con:
+        row=con.execute("SELECT * FROM customer_files WHERE id=?",(file_id,)).fetchone()
+    if row is None: raise HTTPException(404,"File not found")
+    path=FILES_PATH/row["stored_name"]
+    if not path.exists(): raise HTTPException(404,"Stored file not found")
+    return FileResponse(path,media_type=row["content_type"],filename=row["file_name"])
 
 
 @app.get("/api/v1/customers/{customer_id}/visits")
