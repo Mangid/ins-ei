@@ -2728,6 +2728,19 @@ def list_customer_visits(customer_id: int):
     return {"visits":[dict(r) for r in rows]}
 
 
+@app.put("/api/v1/customers/{customer_id}/visits/{visit_id}")
+def update_customer_visit(customer_id: int, visit_id: int, visit: ServiceVisitCreate):
+    with db() as con:
+        cur=con.execute("""UPDATE service_visits SET visit_date=?,title=?,description=?,
+            duration_hours=?,travel_km=?,material=?,invoice_reference=?,updated_at=?
+            WHERE id=? AND customer_id=?""",
+            (visit.visit_date,visit.title,visit.description,visit.duration_hours,visit.travel_km,
+             visit.material,visit.invoice_reference,datetime.now(timezone.utc).isoformat(),
+             visit_id,customer_id))
+        if cur.rowcount==0: raise HTTPException(404,"Visit not found")
+    return {"status":"updated","id":visit_id}
+
+
 @app.post("/api/v1/customers/{customer_id}/visits")
 def create_customer_visit(customer_id: int, visit: ServiceVisitCreate):
     now=datetime.now(timezone.utc).isoformat()
