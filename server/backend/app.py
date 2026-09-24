@@ -2988,6 +2988,46 @@ class TaskCreate(BaseModel):
     project_name: str | None = None
     customer_id: int | None = None
 
+@app.post("/api/v1/tasks/seed-ins-ei-backlog")
+def seed_ins_ei_backlog():
+    backlog=[
+      ("PWA + Offline-Grundgerüst","Servicezentrale installierbar machen; Kunden, Anlagen, Einsätze und Wartungen offline verfügbar; lokale Änderungen und Fotos synchronisieren.","urgent","PWA / Offline"),
+      ("Offline-Sync für Einsätze und Störungen","Störungseinsätze im Keller vollständig offline dokumentieren und später automatisch synchronisieren.","urgent","PWA / Offline"),
+      ("Offline-Sync für Wartungen","Wartungscheckliste, Messwerte, Material und Fotos ohne Empfang erfassen und später synchronisieren.","urgent","PWA / Offline"),
+      ("Web Push Benachrichtigungen","PWA Push für Termine, Wartungen, Aufgaben und Anlagenwarnungen; Pushsafer erst nach erfolgreichem Praxistest ablösen.","high","Benachrichtigungen"),
+      ("Login und Sicherheit","Sichere Anmeldung, Sessions und Schutz der Servicezentrale; Grundlage für Handy/Tablet und verschlüsselte Zugangsdaten.","high","Sicherheit"),
+      ("Kunden-Projekte","Projektstruktur Kunde → Projekt → Anlagen/Einsätze/Aufgaben/Fotos/Dokumente; Kaufmann Umbau 2026 als Pilot.","high","Projekte"),
+      ("Wartungsmodul fertigstellen","Fälligkeiten, Vorwartungswerte, Fotos, Abschluss, Historie und Praxistest mit den nächsten echten Wartungen.","high","Wartungen"),
+      ("Kalender / Outlook Synchronisation","Einsätze, Wartungen und Aufgaben mit Servicekalender bzw. Outlook verbinden; Änderungen und Erinnerungen berücksichtigen.","high","Kalender"),
+      ("Erinnerungen in INS-EI","Aufgaben-, Einsatz- und Wartungserinnerungen zentral verwalten und später per Web Push zustellen.","high","Erinnerungen"),
+      ("sevdesk Read-only Finanzcheck fertigstellen","Finanzdaten, offene Forderungen/Verbindlichkeiten, Liquidität und Kennzahl zur möglichen Privatentnahme weiter automatisieren.","normal","sevdesk"),
+      ("sevdesk Schreibintegration","Angebote/Rechnungen bzw. Verknüpfungen aus Kunde, Projekt und Einsatz vorbereiten; erst nach stabiler Read-only-Integration.","normal","sevdesk"),
+      ("ChatGPT ↔ INS-EI API","Kunden, Anlagen, Projekte, Einsätze, Wartungen und Aufgaben aus ChatGPT lesen und später kontrolliert schreiben können.","high","ChatGPT"),
+      ("Beschaffung / Nachbestellung","Verbrauchs- und Kleinmaterial direkt aus Einsatz/Wartung zur Nachbestellung markieren.","normal","Material"),
+      ("Lagerverwaltung","Bestände, Verbrauch und Nachbestellung für häufig benötigtes Material aufbauen.","normal","Lager"),
+      ("Kunden- und ÖkoFEN-Import","Bestehende Kunden gesammelt übernehmen und ÖkoFEN-Anlagen möglichst automatisch über Kesselnummer/Touch-ID zuordnen.","normal","Kunden"),
+      ("Dokumentenverwaltung ausbauen","Fotos/PDF/Word zentral pro Kunde speichern und mit Anlage, Projekt, Einsatz und Wartung verknüpfen.","normal","Dokumente"),
+      ("Zugangsdaten-Tresor","Kundenzugangsdaten verschlüsselt speichern und im Frontend nur gezielt anzeigen.","normal","Sicherheit"),
+      ("Service-Dashboard","Heute/nächste Einsätze, fällige Wartungen, offene Aufgaben, Folgearbeiten und wichtige Warnungen zusammenfassen.","normal","Servicezentrale"),
+      ("INS-EI Energy / Thermal Shadow weiterentwickeln","Niki-Home, JoWu und Kaufmann weiter validieren; Forecast, Preise, Optimierung und nachvollziehbare Einsparungen ausbauen.","high","Energy / Thermal Shadow"),
+      ("Kaufmann Pilotprojekt weiterführen","Umbau dokumentieren und anschließend INS-EI Energy/Service inkl. Brennstoffverbrauch und Einsparungsnachweis weiterführen.","high","Pilot Kaufmann"),
+      ("JoWu Pilot weiterführen","Datenzugriff KNV, Verbrauchserfassung und INS-EI Aufzeichnung/Analyse weiterführen.","normal","Pilot JoWu"),
+      ("Deployment, Backup und Restore härten","Deploy-Prüfungen erweitern, echten API-Starttest ergänzen und Backup/Restore für Datenbank und Kundendateien absichern.","high","Betrieb")
+    ]
+    now=datetime.now(timezone.utc).isoformat()
+    inserted=0
+    with db() as con:
+        for title,description,priority,category in backlog:
+            exists=con.execute("SELECT 1 FROM tasks WHERE title=? AND project_name='INS-EI Entwicklung'",(title,)).fetchone()
+            if exists: continue
+            con.execute("""INSERT INTO tasks
+              (title,description,status,priority,category,project_name,created_at,updated_at)
+              VALUES (?,?,'open',?,?, 'INS-EI Entwicklung',?,?)""",
+              (title,description,priority,category,now,now))
+            inserted+=1
+    return {"status":"ok","inserted":inserted,"total":len(backlog)}
+
+
 @app.get("/api/v1/tasks")
 def list_tasks(status: str | None = None):
     with db() as con:
