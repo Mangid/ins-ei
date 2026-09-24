@@ -39,6 +39,14 @@ OEKOFEN_TOKEN_URL = "https://my.oekofen.info/api/pwa/v1/oauth2/token"
 OEKOFEN_PLANTS_URL = "https://my.oekofen.info/api/pwa/v3/plants"
 
 app = FastAPI(
+
+def require_management_api_key(x_api_key: str | None = Header(default=None)):
+    key_path=Path("/run/secrets/management_api_key")
+    expected=key_path.read_text().strip() if key_path.exists() else ""
+    if not expected or x_api_key != expected:
+        raise HTTPException(401,"Invalid management API key")
+    return True
+
     title="INS-EI API",
     description="Backend API for INS Energy Intelligence",
     version=VERSION,
@@ -3026,6 +3034,27 @@ def seed_ins_ei_backlog():
               (title,description,priority,category,now,now))
             inserted+=1
     return {"status":"ok","inserted":inserted,"total":len(backlog)}
+
+
+@app.get("/api/v1/chatgpt/tasks", dependencies=[Depends(require_management_api_key)])
+def chatgpt_list_tasks(status: str | None = None, project: str | None = None, category: str | None = None):
+    with db() as con:
+        sql="""SELECT t.*,c.name customer_name FROM tasks t LEFT JOIN customers c ON c.id=t.customer_id WHERE 1=1"""
+        args=[]
+        if status: sql+=" AND t.status=?";args.append(status)
+        if project: sql+=" AND t.project_name=?";args.append(project)
+        if category: sql+=" AND t.category=?";args.append(category)
+        sql+=" ORDER BY CASE t.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END,COALESCE(t.due_at,'9999')"
+        rows=con.execute(sql,args).fetchall()
+    return {"tasks":[dict(r) for r in rows]}
+
+@app.post("/api/v1/chatgpt/tasks", dependencies=[Depends(require_management_api_key)])
+def chatgpt_create_task(item: TaskCreate):
+    return create_task(item)
+
+@app.put("/api/v1/chatgpt/tasks/{task_id}", dependencies=[Depends(require_management_api_key)])
+def chatgpt_update_task(task_id: int, item: TaskCreate):
+    return update_task(task_id,item)
 
 
 @app.get("/api/v1/tasks")
