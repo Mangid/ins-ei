@@ -883,6 +883,13 @@ def init_customer_db():
             """
         )
 
+        if not column_exists(con, "customer_files", "file_category"):
+            con.execute("ALTER TABLE customer_files ADD COLUMN file_category TEXT NOT NULL DEFAULT 'document'")
+        if not column_exists(con, "customer_files", "project_id"):
+            con.execute("ALTER TABLE customer_files ADD COLUMN project_id INTEGER")
+        if not column_exists(con, "customer_files", "device_id"):
+            con.execute("ALTER TABLE customer_files ADD COLUMN device_id INTEGER")
+
         con.execute(
             """
             CREATE TABLE IF NOT EXISTS service_visits (
@@ -2716,10 +2723,10 @@ async def upload_customer_file(
     now=datetime.now(timezone.utc).isoformat()
     with db() as con:
         cur=con.execute("""INSERT INTO customer_files
-            (customer_id,visit_id,maintenance_id,file_name,stored_name,content_type,description,created_at)
-            VALUES (?,?,?,?,?,?,?,?)""",
+            (customer_id,visit_id,maintenance_id,file_name,stored_name,content_type,description,created_at,file_category)
+            VALUES (?,?,?,?,?,?,?,?,?)""",
             (customer_id,visit_id,maintenance_id,file.filename or stored_name,stored_name,
-             file.content_type,description,now))
+             file.content_type,description,now,"photo" if (file.content_type or "").startswith("image/") else "document"))
     return {"status":"stored","id":cur.lastrowid}
 
 
