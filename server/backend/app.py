@@ -2776,6 +2776,10 @@ def get_customer(customer_id: int):
         visits=con.execute("""SELECT * FROM service_visits WHERE customer_id=?
             ORDER BY visit_date DESC,id DESC""",(customer_id,)).fetchall()
     result["visits"]=[dict(r) for r in visits]
+    with db() as con:
+        files=con.execute("""SELECT * FROM customer_files WHERE customer_id=?
+            ORDER BY created_at DESC,id DESC""",(customer_id,)).fetchall()
+    result["files"]=[dict(r) for r in files]
     return result
 
 
