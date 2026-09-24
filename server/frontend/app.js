@@ -27,8 +27,9 @@ const maintenancesPage=document.getElementById("maintenances"),navMaintenances=d
 function setView(view){
   detail.classList.add("hidden");
   customerPage.classList.toggle("hidden",view!=="customers");visitsPage.classList.toggle("hidden",view!=="visits");maintenancesPage.classList.toggle("hidden",view!=="maintenances");
-  instanceSection.classList.toggle("hidden",view==="customers"||view==="visits"||view==="maintenances");
-  statsSection.classList.toggle("hidden",view==="customers"||view==="visits");
+  const showInstances=view==="dashboard"||view==="instances";
+  instanceSection.classList.toggle("hidden",!showInstances);
+  statsSection.classList.toggle("hidden",!showInstances);
   document.querySelectorAll("nav a").forEach(x=>x.classList.remove("active"));
   (view==="customers"?navCustomers:(view==="visits"?navVisits:(view==="maintenances"?navMaintenances:(view==="instances"?navInstances:navDashboard)))).classList.add("active");
   if(view==="customers") loadCustomers(customerSearch.value.trim());if(view==="visits") loadVisitBoard();if(view==="maintenances") loadMaintenances();
