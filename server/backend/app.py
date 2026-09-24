@@ -39,18 +39,16 @@ OEKOFEN_TOKEN_URL = "https://my.oekofen.info/api/pwa/v1/oauth2/token"
 OEKOFEN_PLANTS_URL = "https://my.oekofen.info/api/pwa/v3/plants"
 
 app = FastAPI(
-
-def require_management_api_key(x_api_key: str | None = Header(default=None)):
-    key_path=Path("/run/secrets/management_api_key")
-    expected=key_path.read_text().strip() if key_path.exists() else ""
-    if not expected or x_api_key != expected:
-        raise HTTPException(401,"Invalid management API key")
-    return True
-
     title="INS-EI API",
     description="Backend API for INS Energy Intelligence",
     version=VERSION,
 )
+
+def require_management_api_key(x_api_key: str | None = Header(default=None)):
+    expected=MANAGEMENT_KEY.read_text().strip() if MANAGEMENT_KEY.exists() else ""
+    if not expected or x_api_key != expected:
+        raise HTTPException(401,"Invalid management API key")
+    return True
 
 mcp = FastMCP(
     "INS-EI",
