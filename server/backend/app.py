@@ -2769,6 +2769,36 @@ def create_planned_visit(visit: PlannedVisitCreate):
     return {"status":"created","id":cur.lastrowid}
 
 
+class VisitWorkflowUpdate(BaseModel):
+    status: str
+    diagnosis: str | None = None
+    cause: str | None = None
+    solution: str | None = None
+    resolution_status: str | None = None
+    follow_up: str | None = None
+    duration_hours: float | None = None
+    material: str | None = None
+    invoice_reference: str | None = None
+
+
+@app.put("/api/v1/visits/{visit_id}/workflow")
+def update_visit_workflow(visit_id: int, workflow: VisitWorkflowUpdate):
+    allowed={"planned","in_progress","completed"}
+    if workflow.status not in allowed:
+        raise HTTPException(400,"Invalid visit status")
+    completed_at=datetime.now(timezone.utc).isoformat() if workflow.status=="completed" else None
+    with db() as con:
+        cur=con.execute("""UPDATE service_visits SET status=?,diagnosis=?,cause=?,solution=?,
+            resolution_status=?,follow_up=?,duration_hours=?,material=?,invoice_reference=?,
+            completed_at=?,updated_at=? WHERE id=?""",
+            (workflow.status,workflow.diagnosis,workflow.cause,workflow.solution,
+             workflow.resolution_status,workflow.follow_up,workflow.duration_hours,
+             workflow.material,workflow.invoice_reference,completed_at,
+             datetime.now(timezone.utc).isoformat(),visit_id))
+        if cur.rowcount==0: raise HTTPException(404,"Visit not found")
+    return {"status":"updated","id":visit_id,"visit_status":workflow.status}
+
+
 @app.put("/api/v1/visits/{visit_id}")
 def update_planned_visit(visit_id: int, visit: PlannedVisitCreate):
     with db() as con:
