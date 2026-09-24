@@ -1,3 +1,4 @@
+from dateutil.relativedelta import relativedelta
 from datetime import datetime, timezone, timedelta
 from calendar import monthrange
 from zoneinfo import ZoneInfo
@@ -2938,6 +2939,8 @@ class MaintenanceCheckUpdate(BaseModel):
 
 class MaintenanceSave(BaseModel):
     status: str = "in_progress"
+    interval_months: int = 12
+    next_due_date: str | None = None
     burner_runtime: float | None = None
     average_runtime: float | None = None
     software_version: str | None = None
@@ -2950,12 +2953,15 @@ class MaintenanceSave(BaseModel):
 @app.put("/api/v1/maintenances/{maintenance_id}")
 def save_maintenance(maintenance_id: int, item: MaintenanceSave):
     completed_at=datetime.now(timezone.utc).isoformat() if item.status=="completed" else None
+    next_due=item.next_due_date
+    if item.status=="completed" and not next_due:
+        next_due=(datetime.now(timezone.utc)+relativedelta(months=item.interval_months)).date().isoformat()
     with db() as con:
         cur=con.execute("""UPDATE maintenance_jobs SET status=?,burner_runtime=?,average_runtime=?,
-          software_version=?,plant_online=?,system_pressure=?,remarks=?,material=?,completed_at=?,updated_at=?
+          software_version=?,plant_online=?,system_pressure=?,remarks=?,material=?,completed_at=?,interval_months=?,next_due_date=?,updated_at=?
           WHERE id=?""",(item.status,item.burner_runtime,item.average_runtime,item.software_version,
           None if item.plant_online is None else int(item.plant_online),item.system_pressure,
-          item.remarks,item.material,completed_at,datetime.now(timezone.utc).isoformat(),maintenance_id))
+          item.remarks,item.material,completed_at,item.interval_months,next_due,datetime.now(timezone.utc).isoformat(),maintenance_id))
         if cur.rowcount==0: raise HTTPException(404,"Maintenance not found")
         for x in item.checks:
             con.execute("""UPDATE maintenance_checks SET status=?,value=?,note=?
