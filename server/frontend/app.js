@@ -68,10 +68,11 @@ async function loadVisitBoard(status=""){
     <article class="service-card">
       <div class="device-title">
         <div><strong>${v.customer_name}</strong><span class="service-status ${v.status||"planned"}">${v.status==="completed"?"Erledigt":v.status==="in_progress"?"In Arbeit":"Geplant"}</span></div>
-        <div><span>${v.scheduled_at||v.visit_date||"–"}</span> <button type="button" class="secondary workflow-visit" data-visit="${v.id}">Durchführen</button> <button type="button" class="secondary edit-global-visit" data-visit="${v.id}">Bearbeiten</button></div>
+        <div><span>${v.scheduled_at||v.visit_date||"–"}</span> <button type="button" class="secondary workflow-visit" data-visit="${v.id}">${v.status==="completed"?"Details":"Durchführen"}</button> <button type="button" class="secondary edit-global-visit" data-visit="${v.id}">Bearbeiten</button></div>
       </div>
       <h3>${v.title}</h3><p>${v.description||""}</p>
-      <small>${v.visit_type||"Einsatz"} · Priorität ${v.priority||"normal"}</small>${v.files?.length?`<div class="photo-grid">${v.files.map(fileThumb).join("")}</div>`:""}
+      <small>${v.visit_type||"Einsatz"} · Priorität ${v.priority||"normal"}</small>
+      ${v.status==="completed"?`<div class="completion-summary">${v.cause?`<span><b>Ursache:</b> ${v.cause}</span>`:""}${v.solution?`<span><b>Lösung:</b> ${v.solution}</span>`:""}${v.resolution_status?`<span><b>Ergebnis:</b> ${v.resolution_status==="resolved"?"Problem behoben":v.resolution_status==="partial"?"Teilweise behoben":"Nicht behoben"}</span>`:""}${v.completed_at?`<span><b>Abgeschlossen:</b> ${new Date(v.completed_at).toLocaleString("de-AT")}</span>`:""}</div>`:""}${v.files?.length?`<div class="photo-grid">${v.files.map(fileThumb).join("")}</div>`:""}
     </article>`).join("")||'<div class="loading">Keine Einsätze.</div>';
   bindPhotos();
   document.querySelectorAll(".workflow-visit").forEach(button=>{button.addEventListener("click",()=>{const visit=window._allVisits.find(v=>String(v.id)===button.dataset.visit);if(visit)workflowVisitForm(visit);});});
