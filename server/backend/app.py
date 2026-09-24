@@ -802,6 +802,11 @@ def init_customer_db():
         if not column_exists(con, "devices", "touch_id"):
             con.execute("ALTER TABLE devices ADD COLUMN touch_id TEXT")
 
+        if not column_exists(con, "devices", "maintenance_interval_months"):
+            con.execute("ALTER TABLE devices ADD COLUMN maintenance_interval_months INTEGER NOT NULL DEFAULT 12")
+        if not column_exists(con, "devices", "maintenance_next_due_date"):
+            con.execute("ALTER TABLE devices ADD COLUMN maintenance_next_due_date TEXT")
+
         if not column_exists(con, "devices", "oekofen_plant_id"):
             con.execute("ALTER TABLE devices ADD COLUMN oekofen_plant_id TEXT")
         if not column_exists(con, "devices", "ins_installation_id"):
@@ -2666,6 +2671,8 @@ class DeviceCreate(BaseModel):
     construction_year: int | None = None
     commissioning_date: str | None = None
     power_kw: float | None = None
+    maintenance_interval_months: int = 12
+    maintenance_next_due_date: str | None = None
     notes: str | None = None
 
 
@@ -2690,10 +2697,11 @@ def create_customer_device(customer_id: int, device: DeviceCreate):
             installation_id = installation["id"]
         cur = con.execute("""INSERT INTO devices
             (installation_id,device_type,manufacturer,model,serial_number,touch_id,
-             construction_year,commissioning_date,power_kw,online_capable,notes,created_at,updated_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+             construction_year,commissioning_date,power_kw,maintenance_interval_months,maintenance_next_due_date,online_capable,notes,created_at,updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (installation_id,"heating",device.manufacturer,device.model,device.serial_number,
              device.touch_id,device.construction_year,device.commissioning_date,device.power_kw,
+             device.maintenance_interval_months,device.maintenance_next_due_date,
              1 if device.manufacturer.lower() in ("ökofen","oekofen") else 0,
              device.notes,now,now))
         device_id=cur.lastrowid
@@ -2703,6 +2711,23 @@ def create_customer_device(customer_id: int, device: DeviceCreate):
 class DeviceLinks(BaseModel):
     oekofen_plant_id: str | None = None
     ins_installation_id: str | None = None
+
+
+class DeviceMaintenanceSettings(BaseModel):
+    maintenance_interval_months: int
+    maintenance_next_due_date: str | None = None
+
+@app.put("/api/v1/devices/{device_id}/maintenance-settings")
+def update_device_maintenance_settings(device_id: int, item: DeviceMaintenanceSettings):
+    if item.maintenance_interval_months < 1:
+        raise HTTPException(400,"Invalid maintenance interval")
+    with db() as con:
+        cur=con.execute("""UPDATE devices SET maintenance_interval_months=?,
+          maintenance_next_due_date=?,updated_at=? WHERE id=?""",
+          (item.maintenance_interval_months,item.maintenance_next_due_date,
+           datetime.now(timezone.utc).isoformat(),device_id))
+        if cur.rowcount==0: raise HTTPException(404,"Device not found")
+    return {"status":"updated","id":device_id}
 
 
 @app.get("/api/v1/devices/{device_id}/link-options")
@@ -2952,10 +2977,16 @@ class MaintenanceSave(BaseModel):
 @app.put("/api/v1/maintenances/{maintenance_id}")
 def save_maintenance(maintenance_id: int, item: MaintenanceSave):
     completed_at=datetime.now(timezone.utc).isoformat() if item.status=="completed" else None
-    next_due=item.next_due_date
-    if item.status=="completed" and not next_due:
+    next_due=None
+    interval_months=12
+    if item.status=="completed":
+        with db() as con:
+            job=con.execute("SELECT device_id FROM maintenance_jobs WHERE id=?",(maintenance_id,)).fetchone()
+            if job and job["device_id"]:
+                dev=con.execute("SELECT maintenance_interval_months FROM devices WHERE id=?",(job["device_id"],)).fetchone()
+                if dev: interval_months=dev["maintenance_interval_months"] or 12
         base=datetime.now(timezone.utc)
-        month0=base.month-1+item.interval_months
+        month0=base.month-1+interval_months
         year=base.year+month0//12
         month=month0%12+1
         import calendar
@@ -2966,8 +2997,13 @@ def save_maintenance(maintenance_id: int, item: MaintenanceSave):
           software_version=?,plant_online=?,system_pressure=?,remarks=?,material=?,completed_at=?,interval_months=?,next_due_date=?,updated_at=?
           WHERE id=?""",(item.status,item.burner_runtime,item.average_runtime,item.software_version,
           None if item.plant_online is None else int(item.plant_online),item.system_pressure,
-          item.remarks,item.material,completed_at,item.interval_months,next_due,datetime.now(timezone.utc).isoformat(),maintenance_id))
+          item.remarks,item.material,completed_at,interval_months,next_due,datetime.now(timezone.utc).isoformat(),maintenance_id))
         if cur.rowcount==0: raise HTTPException(404,"Maintenance not found")
+        if item.status=="completed":
+            job=con.execute("SELECT device_id FROM maintenance_jobs WHERE id=?",(maintenance_id,)).fetchone()
+            if job and job["device_id"]:
+                con.execute("UPDATE devices SET maintenance_next_due_date=?,updated_at=? WHERE id=?",
+                    (next_due,datetime.now(timezone.utc).isoformat(),job["device_id"]))
         for x in item.checks:
             con.execute("""UPDATE maintenance_checks SET status=?,value=?,note=?
               WHERE id=? AND maintenance_id=?""",(x.status,x.value,x.note,x.id,maintenance_id))
