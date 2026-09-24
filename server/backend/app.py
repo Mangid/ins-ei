@@ -864,6 +864,25 @@ def init_customer_db():
 
         con.execute(
             """
+            CREATE TABLE IF NOT EXISTS service_visits (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                customer_id INTEGER NOT NULL,
+                visit_date TEXT NOT NULL,
+                title TEXT NOT NULL,
+                description TEXT,
+                duration_hours REAL,
+                travel_km REAL,
+                material TEXT,
+                invoice_reference TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (customer_id) REFERENCES customers(id)
+            )
+            """
+        )
+
+        con.execute(
+            """
             CREATE TABLE IF NOT EXISTS maintenance_records (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 installation_id INTEGER NOT NULL,
@@ -2620,6 +2639,38 @@ def list_customer_devices(customer_id: int):
     return {"devices":[dict(r) for r in rows]}
 
 
+class ServiceVisitCreate(BaseModel):
+    visit_date: str
+    title: str
+    description: str | None = None
+    duration_hours: float | None = None
+    travel_km: float | None = None
+    material: str | None = None
+    invoice_reference: str | None = None
+
+
+@app.get("/api/v1/customers/{customer_id}/visits")
+def list_customer_visits(customer_id: int):
+    with db() as con:
+        rows=con.execute("""SELECT * FROM service_visits WHERE customer_id=?
+            ORDER BY visit_date DESC,id DESC""",(customer_id,)).fetchall()
+    return {"visits":[dict(r) for r in rows]}
+
+
+@app.post("/api/v1/customers/{customer_id}/visits")
+def create_customer_visit(customer_id: int, visit: ServiceVisitCreate):
+    now=datetime.now(timezone.utc).isoformat()
+    with db() as con:
+        if con.execute("SELECT 1 FROM customers WHERE id=?",(customer_id,)).fetchone() is None:
+            raise HTTPException(404,"Customer not found")
+        cur=con.execute("""INSERT INTO service_visits
+            (customer_id,visit_date,title,description,duration_hours,travel_km,material,
+             invoice_reference,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            (customer_id,visit.visit_date,visit.title,visit.description,visit.duration_hours,
+             visit.travel_km,visit.material,visit.invoice_reference,now,now))
+    return {"status":"created","id":cur.lastrowid}
+
+
 @app.get("/api/v1/customers/{customer_id}")
 def get_customer(customer_id: int):
     with db() as con:
@@ -2637,6 +2688,10 @@ def get_customer(customer_id: int):
             JOIN installations i ON i.id=d.installation_id
             WHERE i.customer_id=? ORDER BY d.id""",(customer_id,)).fetchall()
     result["devices"] = [dict(r) for r in devices]
+    with db() as con:
+        visits=con.execute("""SELECT * FROM service_visits WHERE customer_id=?
+            ORDER BY visit_date DESC,id DESC""",(customer_id,)).fetchall()
+    result["visits"]=[dict(r) for r in visits]
     return result
 
 
