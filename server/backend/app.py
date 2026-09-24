@@ -3107,7 +3107,16 @@ def get_customer(customer_id: int):
         devices = con.execute("""SELECT d.* FROM devices d
             JOIN installations i ON i.id=d.installation_id
             WHERE i.customer_id=? ORDER BY d.id""",(customer_id,)).fetchall()
-    result["devices"] = [dict(r) for r in devices]
+    device_list=[]
+    with db() as con:
+        for d in devices:
+            item=dict(d)
+            last=con.execute("""SELECT completed_at FROM maintenance_jobs
+                WHERE device_id=? AND status='completed' AND completed_at IS NOT NULL
+                ORDER BY completed_at DESC LIMIT 1""",(d["id"],)).fetchone()
+            item["maintenance_last_completed_at"]=last["completed_at"] if last else None
+            device_list.append(item)
+    result["devices"] = device_list
     with db() as con:
         visits=con.execute("""SELECT * FROM service_visits WHERE customer_id=?
             ORDER BY visit_date DESC,id DESC""",(customer_id,)).fetchall()
