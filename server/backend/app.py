@@ -2486,6 +2486,30 @@ class CustomerCreate(BaseModel):
     notes: str | None = None
 
 
+class CustomerUpdate(CustomerCreate):
+    pass
+
+
+@app.put("/api/v1/customers/{customer_id}")
+def update_customer(customer_id: int, customer: CustomerUpdate):
+    name = customer.name.strip()
+    if not name:
+        raise HTTPException(400, "Name is required")
+    now = datetime.now(timezone.utc).isoformat()
+    with db() as con:
+        cur = con.execute("""
+            UPDATE customers SET
+                name=?, address=?, postal_code=?, city=?, country=?,
+                phone=?, mobile=?, email=?, notes=?, updated_at=?
+            WHERE id=?
+        """, (name, customer.address, customer.postal_code, customer.city,
+              customer.country, customer.phone, customer.mobile, customer.email,
+              customer.notes, now, customer_id))
+        if cur.rowcount == 0:
+            raise HTTPException(404, "Customer not found")
+    return {"status":"updated","id":customer_id}
+
+
 @app.get("/api/v1/customers")
 def list_customers(q: str | None = None):
     with db() as con:
