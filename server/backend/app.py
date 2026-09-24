@@ -955,6 +955,11 @@ def init_customer_db():
             )
             """
         )
+        if not column_exists(con, "maintenance_jobs", "next_due_date"):
+            con.execute("ALTER TABLE maintenance_jobs ADD COLUMN next_due_date TEXT")
+        if not column_exists(con, "maintenance_jobs", "interval_months"):
+            con.execute("ALTER TABLE maintenance_jobs ADD COLUMN interval_months INTEGER NOT NULL DEFAULT 12")
+
         con.execute(
             """
             CREATE TABLE IF NOT EXISTS maintenance_checks (
@@ -2900,6 +2905,7 @@ class MaintenanceCreate(BaseModel):
     customer_id: int
     device_id: int | None = None
     scheduled_at: str | None = None
+    interval_months: int = 12
 
 @app.get("/api/v1/maintenances")
 def list_maintenances():
