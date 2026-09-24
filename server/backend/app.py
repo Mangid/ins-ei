@@ -2965,7 +2965,22 @@ def get_maintenance(maintenance_id: int):
           LEFT JOIN devices d ON d.id=m.device_id WHERE m.id=?""",(maintenance_id,)).fetchone()
         if row is None: raise HTTPException(404,"Maintenance not found")
         checks=con.execute("SELECT * FROM maintenance_checks WHERE maintenance_id=? ORDER BY sort_order",(maintenance_id,)).fetchall()
-    result=dict(row);result["checks"]=[dict(x) for x in checks];return result
+    result=dict(row);result["checks"]=[dict(x) for x in checks]
+    with db() as con:
+        prev=con.execute("""SELECT id,completed_at FROM maintenance_jobs
+          WHERE customer_id=? AND id<>? AND status='completed'
+          AND (? IS NULL OR device_id=?)
+          ORDER BY completed_at DESC LIMIT 1""",
+          (row["customer_id"],maintenance_id,row["device_id"],row["device_id"])).fetchone()
+        files=con.execute("""SELECT * FROM customer_files WHERE maintenance_id=?
+          ORDER BY id DESC""",(maintenance_id,)).fetchall()
+        previous_checks=[]
+        if prev:
+            previous_checks=con.execute("""SELECT item_key,status,value,note FROM maintenance_checks
+              WHERE maintenance_id=?""",(prev["id"],)).fetchall()
+    result["previous"]={"id":prev["id"],"completed_at":prev["completed_at"],"checks":[dict(x) for x in previous_checks]} if prev else None
+    result["files"]=[dict(x) for x in files]
+    return result
 
 
 @app.get("/api/v1/visits")
