@@ -939,6 +939,29 @@ def init_customer_db():
 
         con.execute(
             """
+            CREATE TABLE IF NOT EXISTS tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                description TEXT,
+                status TEXT NOT NULL DEFAULT 'open',
+                priority TEXT NOT NULL DEFAULT 'normal',
+                due_at TEXT,
+                category TEXT,
+                project_name TEXT,
+                customer_id INTEGER,
+                device_id INTEGER,
+                visit_id INTEGER,
+                maintenance_id INTEGER,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                completed_at TEXT,
+                FOREIGN KEY (customer_id) REFERENCES customers(id)
+            )
+            """
+        )
+
+        con.execute(
+            """
             CREATE TABLE IF NOT EXISTS maintenance_jobs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 customer_id INTEGER NOT NULL,
@@ -2953,6 +2976,50 @@ def maintenance_due():
         x["days_until"]=(due-today).days
         result.append(x)
     return {"items":result}
+
+
+class TaskCreate(BaseModel):
+    title: str
+    description: str | None = None
+    status: str = "open"
+    priority: str = "normal"
+    due_at: str | None = None
+    category: str | None = None
+    project_name: str | None = None
+    customer_id: int | None = None
+
+@app.get("/api/v1/tasks")
+def list_tasks(status: str | None = None):
+    with db() as con:
+        sql="""SELECT t.*,c.name customer_name FROM tasks t
+               LEFT JOIN customers c ON c.id=t.customer_id"""
+        args=[]
+        if status: sql+=" WHERE t.status=?";args.append(status)
+        sql+=" ORDER BY CASE t.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END, COALESCE(t.due_at,'9999')"
+        rows=con.execute(sql,args).fetchall()
+    return {"tasks":[dict(r) for r in rows]}
+
+@app.post("/api/v1/tasks")
+def create_task(item: TaskCreate):
+    now=datetime.now(timezone.utc).isoformat()
+    with db() as con:
+        cur=con.execute("""INSERT INTO tasks
+          (title,description,status,priority,due_at,category,project_name,customer_id,created_at,updated_at)
+          VALUES (?,?,?,?,?,?,?,?,?,?)""",(item.title,item.description,item.status,item.priority,
+          item.due_at,item.category,item.project_name,item.customer_id,now,now))
+    return {"status":"created","id":cur.lastrowid}
+
+@app.put("/api/v1/tasks/{task_id}")
+def update_task(task_id: int, item: TaskCreate):
+    now=datetime.now(timezone.utc).isoformat()
+    completed=now if item.status=="completed" else None
+    with db() as con:
+        cur=con.execute("""UPDATE tasks SET title=?,description=?,status=?,priority=?,due_at=?,
+          category=?,project_name=?,customer_id=?,updated_at=?,completed_at=? WHERE id=?""",
+          (item.title,item.description,item.status,item.priority,item.due_at,item.category,
+           item.project_name,item.customer_id,now,completed,task_id))
+        if cur.rowcount==0: raise HTTPException(404,"Task not found")
+    return {"status":"updated","id":task_id}
 
 
 @app.get("/api/v1/maintenances")
