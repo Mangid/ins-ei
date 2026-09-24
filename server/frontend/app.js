@@ -68,11 +68,12 @@ async function loadVisitBoard(status=""){
     <article class="service-card">
       <div class="device-title">
         <div><strong>${v.customer_name}</strong><span class="service-status ${v.status||"planned"}">${v.status==="completed"?"Erledigt":v.status==="in_progress"?"In Arbeit":"Geplant"}</span></div>
-        <div><span>${v.scheduled_at||v.visit_date||"–"}</span> <button type="button" class="secondary edit-global-visit" data-visit="${v.id}">Bearbeiten</button></div>
+        <div><span>${v.scheduled_at||v.visit_date||"–"}</span> <button type="button" class="secondary workflow-visit" data-visit="${v.id}">Durchführen</button> <button type="button" class="secondary edit-global-visit" data-visit="${v.id}">Bearbeiten</button></div>
       </div>
       <h3>${v.title}</h3><p>${v.description||""}</p>
       <small>${v.visit_type||"Einsatz"} · Priorität ${v.priority||"normal"}</small>
     </article>`).join("")||'<div class="loading">Keine Einsätze.</div>';
+  document.querySelectorAll(".workflow-visit").forEach(button=>{button.addEventListener("click",()=>{const visit=window._allVisits.find(v=>String(v.id)===button.dataset.visit);if(visit)workflowVisitForm(visit);});});
   document.querySelectorAll(".edit-global-visit").forEach(button=>{
     button.addEventListener("click",()=>{
       const visit=window._allVisits.find(v=>String(v.id)===button.dataset.visit);
@@ -86,6 +87,36 @@ document.querySelectorAll(".visit-filters button").forEach(button=>{
     loadVisitBoard(button.dataset.status);
   };
 });
+function workflowVisitForm(v){
+  detailBody.innerHTML=`<div class="detail-head"><div><h1>Einsatz durchführen</h1><span class="meta">${esc(v.customer_name)} · ${esc(v.title)}</span></div></div>
+  <form id="workflowForm" class="customer-form">
+    <label>Status<select name="status"><option value="planned">Geplant</option><option value="in_progress">In Arbeit</option><option value="completed">Erledigt</option></select></label>
+    <label>Diagnose<textarea name="diagnosis" rows="4">${esc(v.diagnosis)}</textarea></label>
+    <label>Ursache<textarea name="cause" rows="4">${esc(v.cause)}</textarea></label>
+    <label>Lösung / durchgeführte Arbeiten<textarea name="solution" rows="5">${esc(v.solution)}</textarea></label>
+    <label>Ergebnis<select name="resolution_status"><option value="">–</option><option value="resolved">Problem behoben</option><option value="partial">Teilweise behoben</option><option value="unresolved">Nicht behoben</option></select></label>
+    <label>Folgearbeit / offen<textarea name="follow_up" rows="3">${esc(v.follow_up)}</textarea></label>
+    <label>Arbeitszeit (h)<input name="duration_hours" type="number" step="0.25" min="0" value="${v.duration_hours??""}"></label>
+    <label>Material<textarea name="material" rows="3">${esc(v.material)}</textarea></label>
+    <label>Rechnung / Beleg<input name="invoice_reference" value="${esc(v.invoice_reference)}"></label>
+    <label>Fotos<input id="workflowPhotos" type="file" accept="image/*" capture="environment" multiple></label>
+    <div class="form-actions"><button type="button" class="secondary" id="cancelWorkflow">Abbrechen</button><button type="submit" class="primary">Einsatz speichern</button></div>
+  </form>`;
+  workflowForm.status.value=v.status||"planned";
+  workflowForm.resolution_status.value=v.resolution_status||"";
+  detail.classList.remove("hidden");
+  cancelWorkflow.onclick=()=>detail.classList.add("hidden");
+  workflowForm.onsubmit=async e=>{
+    e.preventDefault();
+    const data=Object.fromEntries(new FormData(workflowForm).entries());
+    delete data.workflowPhotos;
+    if(data.duration_hours==="")delete data.duration_hours;else data.duration_hours=Number(data.duration_hours);
+    const r=await fetch("/api/v1/visits/"+v.id+"/workflow",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});
+    if(!r.ok){alert("Einsatz konnte nicht gespeichert werden.");return}
+    for(const file of workflowPhotos.files){const fd=new FormData();fd.append("file",file);fd.append("visit_id",v.id);await fetch("/api/v1/customers/"+v.customer_id+"/files",{method:"POST",body:fd})}
+    detail.classList.add("hidden");loadVisitBoard();
+  };
+}
 async function editGlobalVisit(v){
   const r=await fetch("/api/v1/customers");
   if(!r.ok)return;
