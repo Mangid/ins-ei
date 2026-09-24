@@ -539,6 +539,86 @@ def ins_ei_oekofen_csv_info(
 
 
 @mcp.tool()
+def ins_ei_tasks(
+    status: str | None = None,
+    project: str | None = None,
+    category: str | None = None,
+) -> dict[str, Any]:
+    """List INS-EI tasks, optionally filtered by status, project/area and category."""
+    with db() as con:
+        sql = """SELECT t.*, c.name AS customer_name
+                 FROM tasks t LEFT JOIN customers c ON c.id=t.customer_id
+                 WHERE 1=1"""
+        args: list[Any] = []
+        if status:
+            sql += " AND t.status=?"; args.append(status)
+        if project:
+            sql += " AND t.project_name=?"; args.append(project)
+        if category:
+            sql += " AND t.category=?"; args.append(category)
+        sql += """ ORDER BY CASE t.priority
+                   WHEN 'urgent' THEN 0 WHEN 'high' THEN 1
+                   WHEN 'normal' THEN 2 ELSE 3 END,
+                   COALESCE(t.due_at,'9999'), t.id"""
+        rows = con.execute(sql, args).fetchall()
+    return {"tasks": [dict(row) for row in rows]}
+
+
+@mcp.tool()
+def ins_ei_task_create(
+    title: str,
+    description: str | None = None,
+    priority: str = "normal",
+    project: str | None = None,
+    category: str | None = None,
+    due_at: str | None = None,
+    customer_id: int | None = None,
+) -> dict[str, Any]:
+    """Create a task in the INS-EI service center."""
+    allowed = {"low", "normal", "high", "urgent"}
+    if priority not in allowed:
+        return {"status": "error", "error": "invalid_priority"}
+    now = datetime.now(timezone.utc).isoformat()
+    with db() as con:
+        cur = con.execute("""INSERT INTO tasks
+          (title,description,status,priority,due_at,category,project_name,customer_id,created_at,updated_at)
+          VALUES (?,?,'open',?,?,?,?,?,?,?)""",
+          (title,description,priority,due_at,category,project,customer_id,now,now))
+    return {"status": "created", "id": cur.lastrowid}
+
+
+@mcp.tool()
+def ins_ei_task_update(
+    task_id: int,
+    status: str | None = None,
+    priority: str | None = None,
+    due_at: str | None = None,
+    description: str | None = None,
+    project: str | None = None,
+    category: str | None = None,
+) -> dict[str, Any]:
+    """Update status, priority, due date or metadata of an INS-EI task."""
+    with db() as con:
+        row = con.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+        if row is None:
+            return {"status": "error", "error": "task_not_found"}
+        values = dict(row)
+        if status is not None: values["status"] = status
+        if priority is not None: values["priority"] = priority
+        if due_at is not None: values["due_at"] = due_at or None
+        if description is not None: values["description"] = description
+        if project is not None: values["project_name"] = project
+        if category is not None: values["category"] = category
+        now = datetime.now(timezone.utc).isoformat()
+        completed = now if values["status"] == "completed" else None
+        con.execute("""UPDATE tasks SET description=?,status=?,priority=?,due_at=?,
+          category=?,project_name=?,updated_at=?,completed_at=? WHERE id=?""",
+          (values["description"],values["status"],values["priority"],values["due_at"],
+           values["category"],values["project_name"],now,completed,task_id))
+    return {"status": "updated", "id": task_id}
+
+
+@mcp.tool()
 def ins_ei_telemetry_status() -> dict[str, Any]:
     """Return online status of all INS-EI installations."""
     return telemetry_status()
