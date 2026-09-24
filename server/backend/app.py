@@ -790,6 +790,15 @@ def init_customer_db():
             """
         )
 
+        if not column_exists(con, "devices", "construction_year"):
+            con.execute("ALTER TABLE devices ADD COLUMN construction_year INTEGER")
+        if not column_exists(con, "devices", "commissioning_date"):
+            con.execute("ALTER TABLE devices ADD COLUMN commissioning_date TEXT")
+        if not column_exists(con, "devices", "power_kw"):
+            con.execute("ALTER TABLE devices ADD COLUMN power_kw REAL")
+        if not column_exists(con, "devices", "touch_id"):
+            con.execute("ALTER TABLE devices ADD COLUMN touch_id TEXT")
+
         con.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_devices_installation
@@ -2528,6 +2537,57 @@ def list_customers(q: str | None = None):
     return {"count": len(rows), "customers": [dict(r) for r in rows]}
 
 
+class DeviceCreate(BaseModel):
+    manufacturer: str
+    model: str | None = None
+    serial_number: str | None = None
+    touch_id: str | None = None
+    construction_year: int | None = None
+    commissioning_date: str | None = None
+    power_kw: float | None = None
+    notes: str | None = None
+
+
+@app.post("/api/v1/customers/{customer_id}/devices")
+def create_customer_device(customer_id: int, device: DeviceCreate):
+    now = datetime.now(timezone.utc).isoformat()
+    with db() as con:
+        customer = con.execute("SELECT id,name FROM customers WHERE id=?", (customer_id,)).fetchone()
+        if customer is None:
+            raise HTTPException(404, "Customer not found")
+        installation = con.execute(
+            "SELECT id FROM installations WHERE customer_id=? ORDER BY id LIMIT 1",
+            (customer_id,),
+        ).fetchone()
+        if installation is None:
+            cur = con.execute("""INSERT INTO installations
+                (customer_id,name,installation_type,created_at,updated_at)
+                VALUES (?,?,?,?,?)""",
+                (customer_id, f"Anlage {customer['name']}", "heating", now, now))
+            installation_id = cur.lastrowid
+        else:
+            installation_id = installation["id"]
+        cur = con.execute("""INSERT INTO devices
+            (installation_id,device_type,manufacturer,model,serial_number,touch_id,
+             construction_year,commissioning_date,power_kw,online_capable,notes,created_at,updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (installation_id,"heating",device.manufacturer,device.model,device.serial_number,
+             device.touch_id,device.construction_year,device.commissioning_date,device.power_kw,
+             1 if device.manufacturer.lower() in ("ökofen","oekofen") else 0,
+             device.notes,now,now))
+        device_id=cur.lastrowid
+    return {"status":"created","id":device_id,"installation_id":installation_id}
+
+
+@app.get("/api/v1/customers/{customer_id}/devices")
+def list_customer_devices(customer_id: int):
+    with db() as con:
+        rows=con.execute("""SELECT d.* FROM devices d
+            JOIN installations i ON i.id=d.installation_id
+            WHERE i.customer_id=? ORDER BY d.id""",(customer_id,)).fetchall()
+    return {"devices":[dict(r) for r in rows]}
+
+
 @app.get("/api/v1/customers/{customer_id}")
 def get_customer(customer_id: int):
     with db() as con:
@@ -2540,6 +2600,11 @@ def get_customer(customer_id: int):
         ).fetchall()
     result = dict(row)
     result["installations"] = [dict(r) for r in installations]
+    with db() as con:
+        devices = con.execute("""SELECT d.* FROM devices d
+            JOIN installations i ON i.id=d.installation_id
+            WHERE i.customer_id=? ORDER BY d.id""",(customer_id,)).fetchall()
+    result["devices"] = [dict(r) for r in devices]
     return result
 
 
