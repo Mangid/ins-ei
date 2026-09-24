@@ -29,6 +29,8 @@ services:
 
 volumes:
   ins_ei_data:
+    external: true
+    name: ins-ei_ins_ei_data
 
 networks:
   ins-platform:
