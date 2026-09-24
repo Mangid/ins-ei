@@ -902,6 +902,29 @@ def init_customer_db():
             """
         )
 
+        if not column_exists(con, "service_visits", "status"):
+            con.execute("ALTER TABLE service_visits ADD COLUMN status TEXT NOT NULL DEFAULT 'planned'")
+        if not column_exists(con, "service_visits", "visit_type"):
+            con.execute("ALTER TABLE service_visits ADD COLUMN visit_type TEXT")
+        if not column_exists(con, "service_visits", "priority"):
+            con.execute("ALTER TABLE service_visits ADD COLUMN priority TEXT NOT NULL DEFAULT 'normal'")
+        if not column_exists(con, "service_visits", "scheduled_at"):
+            con.execute("ALTER TABLE service_visits ADD COLUMN scheduled_at TEXT")
+        if not column_exists(con, "service_visits", "preparation"):
+            con.execute("ALTER TABLE service_visits ADD COLUMN preparation TEXT")
+        if not column_exists(con, "service_visits", "diagnosis"):
+            con.execute("ALTER TABLE service_visits ADD COLUMN diagnosis TEXT")
+        if not column_exists(con, "service_visits", "cause"):
+            con.execute("ALTER TABLE service_visits ADD COLUMN cause TEXT")
+        if not column_exists(con, "service_visits", "solution"):
+            con.execute("ALTER TABLE service_visits ADD COLUMN solution TEXT")
+        if not column_exists(con, "service_visits", "resolution_status"):
+            con.execute("ALTER TABLE service_visits ADD COLUMN resolution_status TEXT")
+        if not column_exists(con, "service_visits", "follow_up"):
+            con.execute("ALTER TABLE service_visits ADD COLUMN follow_up TEXT")
+        if not column_exists(con, "service_visits", "completed_at"):
+            con.execute("ALTER TABLE service_visits ADD COLUMN completed_at TEXT")
+
         con.execute(
             """
             CREATE TABLE IF NOT EXISTS maintenance_records (
@@ -2718,6 +2741,19 @@ def get_customer_file(file_id: int):
     path=FILES_PATH/row["stored_name"]
     if not path.exists(): raise HTTPException(404,"Stored file not found")
     return FileResponse(path,media_type=row["content_type"],filename=row["file_name"])
+
+
+@app.get("/api/v1/visits")
+def list_all_visits(status: str | None = None):
+    with db() as con:
+        sql="""SELECT v.*,c.name AS customer_name,c.city AS customer_city
+               FROM service_visits v JOIN customers c ON c.id=v.customer_id"""
+        args=[]
+        if status:
+            sql+=" WHERE v.status=?";args.append(status)
+        sql+=" ORDER BY COALESCE(v.scheduled_at,v.visit_date) ASC,v.id DESC"
+        rows=con.execute(sql,args).fetchall()
+    return {"visits":[dict(r) for r in rows]}
 
 
 @app.get("/api/v1/customers/{customer_id}/visits")
