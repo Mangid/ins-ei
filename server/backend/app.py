@@ -2471,6 +2471,67 @@ def create_reminder(
 
 
 
+class CustomerCreate(BaseModel):
+    name: str
+    address: str | None = None
+    postal_code: str | None = None
+    city: str | None = None
+    country: str = "AT"
+    phone: str | None = None
+    email: str | None = None
+    notes: str | None = None
+
+
+@app.get("/api/v1/customers")
+def list_customers(q: str | None = None):
+    with db() as con:
+        if q:
+            term = f"%{q.strip()}%"
+            rows = con.execute("""
+                SELECT * FROM customers
+                WHERE name LIKE ? OR address LIKE ? OR postal_code LIKE ?
+                   OR city LIKE ? OR phone LIKE ? OR email LIKE ?
+                ORDER BY name COLLATE NOCASE
+            """, (term, term, term, term, term, term)).fetchall()
+        else:
+            rows = con.execute(
+                "SELECT * FROM customers ORDER BY name COLLATE NOCASE"
+            ).fetchall()
+    return {"count": len(rows), "customers": [dict(r) for r in rows]}
+
+
+@app.get("/api/v1/customers/{customer_id}")
+def get_customer(customer_id: int):
+    with db() as con:
+        row = con.execute("SELECT * FROM customers WHERE id = ?", (customer_id,)).fetchone()
+        if row is None:
+            raise HTTPException(404, "Customer not found")
+        installations = con.execute(
+            "SELECT * FROM installations WHERE customer_id = ? ORDER BY name COLLATE NOCASE",
+            (customer_id,),
+        ).fetchall()
+    result = dict(row)
+    result["installations"] = [dict(r) for r in installations]
+    return result
+
+
+@app.post("/api/v1/customers")
+def create_customer(customer: CustomerCreate):
+    name = customer.name.strip()
+    if not name:
+        raise HTTPException(400, "Name is required")
+    now = datetime.now(timezone.utc).isoformat()
+    with db() as con:
+        cur = con.execute("""
+            INSERT INTO customers
+            (name,address,postal_code,city,country,phone,email,notes,created_at,updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?)
+        """, (name,customer.address,customer.postal_code,customer.city,customer.country,
+              customer.phone,customer.email,customer.notes,now,now))
+        customer_id = cur.lastrowid
+    return {"status":"created","id":customer_id}
+
+
 @app.get("/api/v1/reminders")
 def list_reminders(status: str = "open", _: None = Depends(require_management_key)):
     with db() as con:
