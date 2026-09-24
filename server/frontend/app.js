@@ -55,7 +55,64 @@ function addDeviceForm(customer){detailBody.innerHTML=`<div class="detail-head">
 function editCustomerForm(c){detailBody.innerHTML=`<div class="detail-head"><div><h1>Kunde bearbeiten</h1><span class="meta">#${c.id}</span></div></div><form id="customerEditForm" class="customer-form"><label>Name / Firma<input name="name" required value="${esc(c.name)}"></label><label>Adresse<input name="address" value="${esc(c.address)}"></label><div class="form-row"><label>PLZ<input name="postal_code" value="${esc(c.postal_code)}"></label><label>Ort<input name="city" value="${esc(c.city)}"></label></div><label>Telefon<input name="phone" type="tel" value="${esc(c.phone)}"></label><label>E-Mail<input name="email" type="email" value="${esc(c.email)}"></label><label>Notizen<textarea name="notes" rows="5">${esc(c.notes)}</textarea></label><div class="form-actions"><button type="button" class="secondary" id="cancelEdit">Abbrechen</button><button type="submit" class="primary">Änderungen speichern</button></div></form>`;cancelEdit.onclick=()=>openCustomer(c.id);customerEditForm.onsubmit=async e=>{e.preventDefault();const data=Object.fromEntries(new FormData(customerEditForm).entries());const r=await fetch("/api/v1/customers/"+c.id,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});if(r.ok){await loadCustomers(customerSearch.value.trim());openCustomer(c.id)}else alert("Änderungen konnten nicht gespeichert werden.")}}
 function esc(v){return String(v??"").replaceAll("&","&amp;").replaceAll('"',"&quot;").replaceAll("<","&lt;").replaceAll(">","&gt;")}
 newCustomer.onclick=()=>{detailBody.innerHTML=`<div class="detail-head"><div><h1>Kunde anlegen</h1><span class="meta">Stammdaten</span></div></div><form id="customerForm" class="customer-form"><label>Name / Firma<input name="name" required autofocus></label><label>Ansprechpartner<input name="contact_person"></label><label>Adresse<input name="address"></label><div class="form-row"><label>PLZ<input name="postal_code"></label><label>Ort<input name="city"></label></div><label>Telefon<input name="phone" type="tel"></label><label>E-Mail<input name="email" type="email"></label><label>Notizen<textarea name="notes" rows="5"></textarea></label><div class="form-actions"><button type="button" class="secondary" id="cancelCustomer">Abbrechen</button><button type="submit" class="primary">Kunde speichern</button></div></form>`;detail.classList.remove("hidden");cancelCustomer.onclick=()=>detail.classList.add("hidden");customerForm.onsubmit=async e=>{e.preventDefault();const fd=new FormData(customerForm),data=Object.fromEntries(fd.entries());delete data.contact_person;const r=await fetch("/api/v1/customers",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});if(r.ok){detail.classList.add("hidden");loadCustomers(customerSearch.value.trim())}else alert("Kunde konnte nicht gespeichert werden.")}};
-async function loadVisitBoard(status=""){const r=await fetch("/api/v1/visits"+(status?"?status="+status:""));if(!r.ok){visitBoard.innerHTML='<div class="loading">Einsätze konnten nicht geladen werden.</div>';return}const d=await r.json();visitCount.textContent=d.visits.length+" Einsätze";visitBoard.innerHTML=d.visits.map(v=>`<article class="service-card"><div class="device-title"><div><strong>${v.customer_name}</strong><span class="service-status ${v.status||"planned"}">${v.status==="completed"?"Erledigt":v.status==="in_progress"?"In Arbeit":"Geplant"}</span></div><span>${v.scheduled_at||v.visit_date||"–"}</span></div><h3>${v.title}</h3><p>${v.description||""}</p><small>${v.visit_type||"Einsatz"} · Priorität ${v.priority||"normal"}</small></article>`).join("")||'<div class="loading">Keine Einsätze.</div>'}
-document.querySelectorAll(".visit-filters button").forEach(b=>b.onclick=()=>{document.querySelectorAll(".visit-filters button").forEach(x=>x.classList.toggle("selected",x===b));loadVisitBoard(b.dataset.status)});
+async function loadVisitBoard(status=""){
+  const r=await fetch("/api/v1/visits"+(status?"?status="+status:""));
+  if(!r.ok){
+    visitBoard.innerHTML='<div class="loading">Einsätze konnten nicht geladen werden.</div>';
+    return;
+  }
+  const d=await r.json();
+  visitCount.textContent=d.visits.length+" Einsätze";
+  window._allVisits=d.visits;
+  visitBoard.innerHTML=d.visits.map(v=>`
+    <article class="service-card">
+      <div class="device-title">
+        <div><strong>${v.customer_name}</strong><span class="service-status ${v.status||"planned"}">${v.status==="completed"?"Erledigt":v.status==="in_progress"?"In Arbeit":"Geplant"}</span></div>
+        <div><span>${v.scheduled_at||v.visit_date||"–"}</span> <button type="button" class="secondary edit-global-visit" data-visit="${v.id}">Bearbeiten</button></div>
+      </div>
+      <h3>${v.title}</h3><p>${v.description||""}</p>
+      <small>${v.visit_type||"Einsatz"} · Priorität ${v.priority||"normal"}</small>
+    </article>`).join("")||'<div class="loading">Keine Einsätze.</div>';
+  document.querySelectorAll(".edit-global-visit").forEach(button=>{
+    button.addEventListener("click",()=>{
+      const visit=window._allVisits.find(v=>String(v.id)===button.dataset.visit);
+      if(visit) editGlobalVisit(visit);
+    });
+  });
+}
+document.querySelectorAll(".visit-filters button").forEach(button=>{
+  button.onclick=()=>{
+    document.querySelectorAll(".visit-filters button").forEach(x=>x.classList.toggle("selected",x===button));
+    loadVisitBoard(button.dataset.status);
+  };
+});
+async function editGlobalVisit(v){
+  const r=await fetch("/api/v1/customers");
+  if(!r.ok)return;
+  const d=await r.json();
+  detailBody.innerHTML=`<div class="detail-head"><div><h1>Einsatz bearbeiten</h1><span class="meta">${esc(v.customer_name)}</span></div></div>
+  <form id="globalVisitEditForm" class="customer-form">
+    <label>Kunde<select name="customer_id" required>${d.customers.map(c=>`<option value="${c.id}" ${c.id===v.customer_id?"selected":""}>${esc(c.name)} · ${esc(c.city||"")}</option>`).join("")}</select></label>
+    <label>Termin<input name="scheduled_at" type="datetime-local" required value="${esc((v.scheduled_at||"").slice(0,16))}"></label>
+    <div class="form-row"><label>Art<select name="visit_type"><option value="fault">Störung</option><option value="maintenance">Wartung</option><option value="installation">Montage</option><option value="service">Service</option><option value="other">Sonstiges</option></select></label>
+    <label>Priorität<select name="priority"><option value="low">Niedrig</option><option value="normal">Normal</option><option value="high">Hoch</option><option value="urgent">Dringend</option></select></label></div>
+    <label>Titel<input name="title" required value="${esc(v.title)}"></label>
+    <label>Problembeschreibung<textarea name="description" rows="5">${esc(v.description)}</textarea></label>
+    <label>Vorbereitung / Material mitnehmen<textarea name="preparation" rows="4">${esc(v.preparation)}</textarea></label>
+    <div class="form-actions"><button type="button" class="secondary" id="cancelGlobalEdit">Abbrechen</button><button type="submit" class="primary">Änderungen speichern</button></div>
+  </form>`;
+  globalVisitEditForm.visit_type.value=v.visit_type||"service";
+  globalVisitEditForm.priority.value=v.priority||"normal";
+  detail.classList.remove("hidden");
+  cancelGlobalEdit.onclick=()=>detail.classList.add("hidden");
+  globalVisitEditForm.onsubmit=async e=>{
+    e.preventDefault();
+    const data=Object.fromEntries(new FormData(globalVisitEditForm).entries());
+    data.customer_id=Number(data.customer_id);
+    const x=await fetch("/api/v1/visits/"+v.id,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});
+    if(x.ok){detail.classList.add("hidden");loadVisitBoard();}
+    else alert("Einsatz konnte nicht geändert werden.");
+  };
+}
 newGlobalVisit.onclick=async()=>{const r=await fetch("/api/v1/customers");if(!r.ok)return;const d=await r.json();detailBody.innerHTML=`<div class="detail-head"><div><h1>Einsatz planen</h1><span class="meta">Servicezentrale</span></div></div><form id="planVisitForm" class="customer-form"><label>Kunde<select name="customer_id" required><option value="">Kunde auswählen …</option>${d.customers.map(c=>`<option value="${c.id}">${esc(c.name)} · ${esc(c.city||"")}</option>`).join("")}</select></label><label>Termin<input name="scheduled_at" type="datetime-local" required></label><div class="form-row"><label>Art<select name="visit_type"><option value="fault">Störung</option><option value="maintenance">Wartung</option><option value="installation">Montage</option><option value="service" selected>Service</option><option value="other">Sonstiges</option></select></label><label>Priorität<select name="priority"><option value="low">Niedrig</option><option value="normal" selected>Normal</option><option value="high">Hoch</option><option value="urgent">Dringend</option></select></label></div><label>Titel<input name="title" required placeholder="z. B. Aschewarnung prüfen"></label><label>Problembeschreibung<textarea name="description" rows="5"></textarea></label><label>Vorbereitung / Material mitnehmen<textarea name="preparation" rows="4"></textarea></label><div class="form-actions"><button type="button" class="secondary" id="cancelPlanVisit">Abbrechen</button><button type="submit" class="primary">Einsatz planen</button></div></form>`;detail.classList.remove("hidden");cancelPlanVisit.onclick=()=>detail.classList.add("hidden");planVisitForm.onsubmit=async e=>{e.preventDefault();const data=Object.fromEntries(new FormData(planVisitForm).entries());data.customer_id=Number(data.customer_id);const x=await fetch("/api/v1/visits",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});if(x.ok){detail.classList.add("hidden");loadVisitBoard()}else alert("Einsatz konnte nicht geplant werden.")}};
 setView(["customers","instances","visits"].includes(location.hash.slice(1))?location.hash.slice(1):"dashboard");
