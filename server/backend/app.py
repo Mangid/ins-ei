@@ -736,6 +736,9 @@ def init_customer_db():
             """
         )
 
+        if not column_exists(con, "customers", "mobile"):
+            con.execute("ALTER TABLE customers ADD COLUMN mobile TEXT")
+
         con.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_customers_name
@@ -2478,6 +2481,7 @@ class CustomerCreate(BaseModel):
     city: str | None = None
     country: str = "AT"
     phone: str | None = None
+    mobile: str | None = None
     email: str | None = None
     notes: str | None = None
 
@@ -2490,9 +2494,9 @@ def list_customers(q: str | None = None):
             rows = con.execute("""
                 SELECT * FROM customers
                 WHERE name LIKE ? OR address LIKE ? OR postal_code LIKE ?
-                   OR city LIKE ? OR phone LIKE ? OR email LIKE ?
+                   OR city LIKE ? OR phone LIKE ? OR mobile LIKE ? OR email LIKE ?
                 ORDER BY name COLLATE NOCASE
-            """, (term, term, term, term, term, term)).fetchall()
+            """, (term, term, term, term, term, term, term)).fetchall()
         else:
             rows = con.execute(
                 "SELECT * FROM customers ORDER BY name COLLATE NOCASE"
@@ -2524,10 +2528,10 @@ def create_customer(customer: CustomerCreate):
     with db() as con:
         cur = con.execute("""
             INSERT INTO customers
-            (name,address,postal_code,city,country,phone,email,notes,created_at,updated_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?)
+            (name,address,postal_code,city,country,phone,mobile,email,notes,created_at,updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)
         """, (name,customer.address,customer.postal_code,customer.city,customer.country,
-              customer.phone,customer.email,customer.notes,now,now))
+              customer.phone,customer.mobile,customer.email,customer.notes,now,now))
         customer_id = cur.lastrowid
     return {"status":"created","id":customer_id}
 
