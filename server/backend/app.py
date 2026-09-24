@@ -934,6 +934,47 @@ def init_customer_db():
 
         con.execute(
             """
+            CREATE TABLE IF NOT EXISTS maintenance_jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                customer_id INTEGER NOT NULL,
+                device_id INTEGER,
+                scheduled_at TEXT,
+                status TEXT NOT NULL DEFAULT 'planned',
+                burner_runtime REAL,
+                average_runtime REAL,
+                software_version TEXT,
+                plant_online INTEGER,
+                system_pressure REAL,
+                remarks TEXT,
+                material TEXT,
+                completed_at TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (customer_id) REFERENCES customers(id),
+                FOREIGN KEY (device_id) REFERENCES devices(id)
+            )
+            """
+        )
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS maintenance_checks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                maintenance_id INTEGER NOT NULL,
+                section TEXT NOT NULL,
+                item_key TEXT NOT NULL,
+                label TEXT NOT NULL,
+                status TEXT,
+                value TEXT,
+                unit TEXT,
+                note TEXT,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (maintenance_id) REFERENCES maintenance_jobs(id)
+            )
+            """
+        )
+
+        con.execute(
+            """
             CREATE TABLE IF NOT EXISTS maintenance_records (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 installation_id INTEGER NOT NULL,
@@ -2816,6 +2857,82 @@ def update_planned_visit(visit_id: int, visit: PlannedVisitCreate):
           datetime.now(timezone.utc).isoformat(),visit_id))
         if cur.rowcount==0: raise HTTPException(404,"Visit not found")
     return {"status":"updated","id":visit_id}
+
+
+MAINTENANCE_TEMPLATE = [
+("Brennraum","waermetauscher","Wärmetauscher / Federn gereinigt",None),
+("Brennraum","dichtungen","Dichtungen kontrolliert",None),
+("Brennraum","feuerraumfuehlerrohr","Feuerraumfühlerrohr gereinigt",None),
+("Brennraum","reinigungseinrichtung","Reinigungseinrichtung kontrolliert, eingestellt und geschmiert",None),
+("Brennraum","sichtkontrolle","Sichtkontrolle - sauber oder verpecht",None),
+("Brenner","brennteller","Brennteller gereinigt",None),
+("Brenner","brennteller_eingestellt","Brennteller eingestellt (Compact / Condens)",None),
+("Brenner","rueckbrandsicherung","Rückbrandsicherung kontrolliert (Belimo)",None),
+("Brenner","gluehstab","Glühstab (195 - 215 Ohm)","Ω"),
+("Brenner","zuendrohr","Zündrohr gereinigt (Bohrung)",None),
+("Brenner","brennerhals","Brennerhals gereinigt (Verkrustungen)",None),
+("Brenner","primaer_sekundaerluft","Primär- Sekundärluft gereinigt",None),
+("Brenner","flammrohr","Flammrohr / Betonteile gereinigt",None),
+("Brenner","aschetransport","Aschetransport gereinigt",None),
+("Brenner","brennermotor_kondensator","Brennermotor Kondensator",None),
+("Brenner","radialgeblaese_kondensator","Radialgebläse Kondensator",None),
+("Raumentnahme / Tagesbehälter","raumentnahmemotor","Raumentnahmemotor (Kondensator)",None),
+("Raumentnahme / Tagesbehälter","saugschlaeuche","Saugschläuche Sichtkontrolle",None),
+("Raumentnahme / Tagesbehälter","tagesbehaelter","Tagesbehälter entleert und gereinigt",None),
+("Raumentnahme / Tagesbehälter","sieb","Sieb gereinigt",None),
+("Raumentnahme / Tagesbehälter","saugturbine","Saugturbine Kohlebürsten",None),
+("Kamin / Rauchrohr","saugzug","Saugzug gereinigt",None),
+("Kamin / Rauchrohr","rauchgasfuehler","Rauchgasfühler gereinigt",None),
+("Kamin / Rauchrohr","zugregler","Zugregler kontrolliert",None),
+("Kamin / Rauchrohr","rauchrohr","Rauchrohr gereinigt",None),
+("Kamin / Rauchrohr","kamin_sicht","Kamin Sichtkontrolle verpecht",None),
+("Brennwert","waschduese","Waschdüse kontrolliert",None),
+("Brennwert","siphon","Siphonablauf kontrolliert",None),
+("Brennwert","hebepumpe","Hebepumpe gereinigt (Störkontakt)",None),
+("Probelauf / Funktionstest","reinigung","Reinigung",None),
+("Probelauf / Funktionstest","rueckbrandsicherung_test","Rückbrandsicherung",None),
+("Probelauf / Funktionstest","saugzug_test","Saugzug / Radialgebläse",None),
+("Probelauf / Funktionstest","ascheaustragung","Ascheaustragung",None),
+("Probelauf / Funktionstest","unterdruck","Unterdruck kontrollieren",None),
+]
+
+class MaintenanceCreate(BaseModel):
+    customer_id: int
+    device_id: int | None = None
+    scheduled_at: str | None = None
+
+@app.get("/api/v1/maintenances")
+def list_maintenances():
+    with db() as con:
+        rows=con.execute("""SELECT m.*,c.name customer_name,d.model device_model
+          FROM maintenance_jobs m JOIN customers c ON c.id=m.customer_id
+          LEFT JOIN devices d ON d.id=m.device_id
+          ORDER BY COALESCE(m.scheduled_at,m.created_at)""").fetchall()
+    return {"maintenances":[dict(r) for r in rows]}
+
+@app.post("/api/v1/maintenances")
+def create_maintenance(item: MaintenanceCreate):
+    now=datetime.now(timezone.utc).isoformat()
+    with db() as con:
+        cur=con.execute("""INSERT INTO maintenance_jobs
+          (customer_id,device_id,scheduled_at,status,created_at,updated_at)
+          VALUES (?,?,?,'planned',?,?)""",(item.customer_id,item.device_id,item.scheduled_at,now,now))
+        mid=cur.lastrowid
+        for order,(section,key,label,unit) in enumerate(MAINTENANCE_TEMPLATE):
+            con.execute("""INSERT INTO maintenance_checks
+              (maintenance_id,section,item_key,label,unit,sort_order)
+              VALUES (?,?,?,?,?,?)""",(mid,section,key,label,unit,order))
+    return {"status":"created","id":mid}
+
+@app.get("/api/v1/maintenances/{maintenance_id}")
+def get_maintenance(maintenance_id: int):
+    with db() as con:
+        row=con.execute("""SELECT m.*,c.name customer_name,d.model device_model
+          FROM maintenance_jobs m JOIN customers c ON c.id=m.customer_id
+          LEFT JOIN devices d ON d.id=m.device_id WHERE m.id=?""",(maintenance_id,)).fetchone()
+        if row is None: raise HTTPException(404,"Maintenance not found")
+        checks=con.execute("SELECT * FROM maintenance_checks WHERE maintenance_id=? ORDER BY sort_order",(maintenance_id,)).fetchall()
+    result=dict(row);result["checks"]=[dict(x) for x in checks];return result
 
 
 @app.get("/api/v1/visits")
