@@ -2932,6 +2932,29 @@ class MaintenanceCreate(BaseModel):
     scheduled_at: str | None = None
     interval_months: int = 12
 
+@app.get("/api/v1/maintenance-due")
+def maintenance_due():
+    today=datetime.now(timezone.utc).date()
+    soon=today+timedelta(days=45)
+    with db() as con:
+        rows=con.execute("""SELECT d.id device_id,d.manufacturer,d.model,d.serial_number,
+          d.maintenance_interval_months,d.maintenance_next_due_date,
+          i.customer_id,c.name customer_name,c.city customer_city
+          FROM devices d JOIN installations i ON i.id=d.installation_id
+          JOIN customers c ON c.id=i.customer_id
+          WHERE d.maintenance_next_due_date IS NOT NULL
+          ORDER BY d.maintenance_next_due_date""").fetchall()
+    result=[]
+    for r in rows:
+        x=dict(r)
+        try: due=date.fromisoformat(x["maintenance_next_due_date"])
+        except Exception: continue
+        x["due_state"]="overdue" if due<today else "soon" if due<=soon else "future"
+        x["days_until"]=(due-today).days
+        result.append(x)
+    return {"items":result}
+
+
 @app.get("/api/v1/maintenances")
 def list_maintenances():
     with db() as con:
