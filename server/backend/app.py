@@ -2769,6 +2769,18 @@ def create_planned_visit(visit: PlannedVisitCreate):
     return {"status":"created","id":cur.lastrowid}
 
 
+@app.put("/api/v1/visits/{visit_id}")
+def update_planned_visit(visit_id: int, visit: PlannedVisitCreate):
+    with db() as con:
+        cur=con.execute("""UPDATE service_visits SET customer_id=?,visit_date=?,
+          scheduled_at=?,title=?,visit_type=?,priority=?,description=?,preparation=?,updated_at=?
+          WHERE id=?""",(visit.customer_id,(visit.scheduled_at or "")[:10],visit.scheduled_at,
+          visit.title,visit.visit_type,visit.priority,visit.description,visit.preparation,
+          datetime.now(timezone.utc).isoformat(),visit_id))
+        if cur.rowcount==0: raise HTTPException(404,"Visit not found")
+    return {"status":"updated","id":visit_id}
+
+
 @app.get("/api/v1/visits")
 def list_all_visits(status: str | None = None):
     with db() as con:
