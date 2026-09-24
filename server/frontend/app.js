@@ -71,8 +71,9 @@ async function loadVisitBoard(status=""){
         <div><span>${v.scheduled_at||v.visit_date||"–"}</span> <button type="button" class="secondary workflow-visit" data-visit="${v.id}">Durchführen</button> <button type="button" class="secondary edit-global-visit" data-visit="${v.id}">Bearbeiten</button></div>
       </div>
       <h3>${v.title}</h3><p>${v.description||""}</p>
-      <small>${v.visit_type||"Einsatz"} · Priorität ${v.priority||"normal"}</small>
+      <small>${v.visit_type||"Einsatz"} · Priorität ${v.priority||"normal"}</small>${v.files?.length?`<div class="photo-grid">${v.files.map(fileThumb).join("")}</div>`:""}
     </article>`).join("")||'<div class="loading">Keine Einsätze.</div>';
+  bindPhotos();
   document.querySelectorAll(".workflow-visit").forEach(button=>{button.addEventListener("click",()=>{const visit=window._allVisits.find(v=>String(v.id)===button.dataset.visit);if(visit)workflowVisitForm(visit);});});
   document.querySelectorAll(".edit-global-visit").forEach(button=>{
     button.addEventListener("click",()=>{
