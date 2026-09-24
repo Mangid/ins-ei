@@ -799,6 +799,11 @@ def init_customer_db():
         if not column_exists(con, "devices", "touch_id"):
             con.execute("ALTER TABLE devices ADD COLUMN touch_id TEXT")
 
+        if not column_exists(con, "devices", "oekofen_plant_id"):
+            con.execute("ALTER TABLE devices ADD COLUMN oekofen_plant_id TEXT")
+        if not column_exists(con, "devices", "ins_installation_id"):
+            con.execute("ALTER TABLE devices ADD COLUMN ins_installation_id TEXT")
+
         con.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_devices_installation
@@ -2577,6 +2582,33 @@ def create_customer_device(customer_id: int, device: DeviceCreate):
              device.notes,now,now))
         device_id=cur.lastrowid
     return {"status":"created","id":device_id,"installation_id":installation_id}
+
+
+class DeviceLinks(BaseModel):
+    oekofen_plant_id: str | None = None
+    ins_installation_id: str | None = None
+
+
+@app.get("/api/v1/devices/{device_id}/link-options")
+def device_link_options(device_id: int):
+    with db() as con:
+        device=con.execute("SELECT * FROM devices WHERE id=?",(device_id,)).fetchone()
+        if device is None: raise HTTPException(404,"Device not found")
+        plants=con.execute("""SELECT plant_id,plant_name,serial_number,version,problem_count,last_sync_at
+            FROM oekofen_plants ORDER BY plant_name COLLATE NOCASE""").fetchall()
+        ins=con.execute("""SELECT installation_id,last_seen_at,last_data_at,sample_count
+            FROM telemetry_installations ORDER BY installation_id COLLATE NOCASE""").fetchall()
+    return {"device":dict(device),"oekofen":[dict(r) for r in plants],"ins_ei":[dict(r) for r in ins]}
+
+
+@app.put("/api/v1/devices/{device_id}/links")
+def update_device_links(device_id: int, links: DeviceLinks):
+    with db() as con:
+        cur=con.execute("""UPDATE devices SET oekofen_plant_id=?,ins_installation_id=?,updated_at=?
+            WHERE id=?""",(links.oekofen_plant_id or None,links.ins_installation_id or None,
+            datetime.now(timezone.utc).isoformat(),device_id))
+        if cur.rowcount==0: raise HTTPException(404,"Device not found")
+    return {"status":"updated","id":device_id}
 
 
 @app.get("/api/v1/customers/{customer_id}/devices")
