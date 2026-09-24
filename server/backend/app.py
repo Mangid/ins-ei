@@ -1,4 +1,3 @@
-from dateutil.relativedelta import relativedelta
 from datetime import datetime, timezone, timedelta
 from calendar import monthrange
 from zoneinfo import ZoneInfo
@@ -2955,7 +2954,13 @@ def save_maintenance(maintenance_id: int, item: MaintenanceSave):
     completed_at=datetime.now(timezone.utc).isoformat() if item.status=="completed" else None
     next_due=item.next_due_date
     if item.status=="completed" and not next_due:
-        next_due=(datetime.now(timezone.utc)+relativedelta(months=item.interval_months)).date().isoformat()
+        base=datetime.now(timezone.utc)
+        month0=base.month-1+item.interval_months
+        year=base.year+month0//12
+        month=month0%12+1
+        import calendar
+        day=min(base.day,calendar.monthrange(year,month)[1])
+        next_due=base.replace(year=year,month=month,day=day).date().isoformat()
     with db() as con:
         cur=con.execute("""UPDATE maintenance_jobs SET status=?,burner_runtime=?,average_runtime=?,
           software_version=?,plant_online=?,system_pressure=?,remarks=?,material=?,completed_at=?,interval_months=?,next_due_date=?,updated_at=?
