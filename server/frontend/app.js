@@ -248,3 +248,43 @@ mobileMenu?.addEventListener("click",()=>document.body.classList.toggle("nav-ope
 navBackdrop?.addEventListener("click",closeMobileNav);
 sidebar?.querySelectorAll("nav a").forEach(link=>link.addEventListener("click",()=>{if(window.innerWidth<=760)closeMobileNav()}));
 window.addEventListener("resize",()=>{if(window.innerWidth>760)closeMobileNav()});
+
+
+function pushKeyBytes(value){
+  const pad="=".repeat((4-value.length%4)%4),base=(value+pad).replace(/-/g,"+").replace(/_/g,"/");
+  return Uint8Array.from(atob(base),c=>c.charCodeAt(0));
+}
+async function enablePush(){
+  const button=document.getElementById("pushButton");
+  if(!("serviceWorker" in navigator)||!("PushManager" in window)){alert("Push wird auf diesem Gerät nicht unterstützt.");return}
+  try{
+    button.disabled=true;button.textContent="Push …";
+    const permission=await Notification.requestPermission();
+    if(permission!=="granted"){alert("Benachrichtigungen wurden nicht erlaubt.");return}
+    const reg=await navigator.serviceWorker.ready;
+    const keyResponse=await fetch("/api/v1/push/public-key",{cache:"no-store"});
+    if(!keyResponse.ok)throw Error("Push-Konfiguration fehlt");
+    const {public_key}=await keyResponse.json();
+    let sub=await reg.pushManager.getSubscription();
+    if(!sub)sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:pushKeyBytes(public_key)});
+    const save=await fetch("/api/v1/push/subscribe",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(sub.toJSON())});
+    if(!save.ok)throw Error("Subscription konnte nicht gespeichert werden");
+    button.textContent="Test-Push senden";button.disabled=false;
+    button.onclick=sendTestPush;
+  }catch(e){button.disabled=false;button.textContent="Push aktivieren";alert("Push konnte nicht aktiviert werden: "+e.message)}
+}
+async function sendTestPush(){
+  const button=document.getElementById("pushButton");button.disabled=true;button.textContent="Sende …";
+  try{
+    const r=await fetch("/api/v1/push/test",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({title:"INS-EI Test",message:"Push-Benachrichtigungen funktionieren."})});
+    if(!r.ok)throw Error(r.status);
+    const d=await r.json();button.textContent="Test-Push senden";
+    if(!d.sent)alert("Keine Push-Nachricht konnte zugestellt werden.");
+  }catch(e){alert("Test-Push fehlgeschlagen.");button.textContent="Test-Push senden"}
+  button.disabled=false;
+}
+const pushButton=document.getElementById("pushButton");
+if(pushButton){
+  pushButton.onclick=enablePush;
+  if("serviceWorker" in navigator&&"PushManager" in window)navigator.serviceWorker.ready.then(r=>r.pushManager.getSubscription()).then(s=>{if(s){pushButton.textContent="Test-Push senden";pushButton.onclick=sendTestPush}}).catch(()=>{});
+}
