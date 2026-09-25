@@ -1,4 +1,4 @@
-const CACHE_NAME = "ins-ei-shell-v4";
+const CACHE_NAME = "ins-ei-shell-v5";
 const PHOTO_CACHE = "ins-ei-photos-v1";
 
 const APP_SHELL = [
@@ -78,4 +78,22 @@ self.addEventListener("fetch", event => {
         return Response.error();
       })
   );
+});
+
+self.addEventListener("push", event => {
+  let data={title:"INS-EI",body:"Neue Benachrichtigung",url:"/"};
+  try{data={...data,...event.data.json()}}catch(e){}
+  event.waitUntil(self.registration.showNotification(data.title,{
+    body:data.body,
+    icon:"/icon-192.png",
+    badge:"/icon-192.png",
+    data:{url:data.url||"/"}
+  }));
+});
+self.addEventListener("notificationclick", event => {
+  event.notification.close();
+  event.waitUntil(clients.matchAll({type:"window",includeUncontrolled:true}).then(list=>{
+    for(const client of list){if("focus" in client)return client.focus()}
+    return clients.openWindow(event.notification.data?.url||"/");
+  }));
 });
