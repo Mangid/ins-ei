@@ -45,8 +45,10 @@ function customerPicker(customers,name="customer_id",selected="",required=false,
 function bindCustomerPickers(root=document){
   root.querySelectorAll(".customer-picker").forEach(box=>{const input=box.querySelector(".customer-picker-search"),hidden=box.querySelector('input[type="hidden"]'),list=document.getElementById(input.getAttribute("list"));const sync=()=>{const opt=[...list.options].find(o=>o.value===input.value);hidden.value=opt?.dataset.id||"";box.querySelector(".customer-picker-hint").textContent=opt?"Kunde ausgewählt":"Bitte Kunde aus der Trefferliste wählen"};input.addEventListener("input",sync);input.addEventListener("change",sync)});
 }
+const pageTitles={dashboard:["Mein Tag","INS-EI Arbeitsübersicht"],instances:["INS-EI Instanzen","Live-Status"],customers:["Kunden","Kundenverwaltung"],visits:["Einsätze","Service & Dokumentation"],maintenances:["Wartungen","Wartungsverwaltung"],tasks:["Aufgaben","Offene Arbeiten & Termine"],projects:["Projekte","Projektübersicht"],oekofen:["ÖkoFEN Anlagen","Überwachung · automatischer Sync alle 5 Minuten"]};
+function setPageTitle(view){const x=pageTitles[view]||["INS-EI","Servicezentrale"];document.getElementById("pageTitle").textContent=x[0];document.getElementById("todayLabel").textContent=x[1]}
 function setView(view){
-  detail.classList.add("hidden");
+  detail.classList.add("hidden");setPageTitle(view);
   customerPage.classList.toggle("hidden",view!=="customers");visitsPage.classList.toggle("hidden",view!=="visits");maintenancesPage.classList.toggle("hidden",view!=="maintenances");tasksPage.classList.toggle("hidden",view!=="tasks");projectsPage.classList.toggle("hidden",view!=="projects");oekofenPage.classList.toggle("hidden",view!=="oekofen");
   dashboardSection.classList.toggle("hidden",view!=="dashboard");
   instanceSection.classList.toggle("hidden",view!=="instances");
@@ -480,7 +482,4 @@ async function sendTestPush(){
   button.disabled=false;
 }
 const pushButton=document.getElementById("pushButton");
-if(pushButton){
-  pushButton.onclick=enablePush;
-  if("serviceWorker" in navigator&&"PushManager" in window)navigator.serviceWorker.ready.then(r=>r.pushManager.getSubscription()).then(s=>{if(s){pushButton.textContent="Test-Push senden";pushButton.onclick=sendTestPush}}).catch(()=>{});
-}
+if(pushButton){pushButton.remove()}
