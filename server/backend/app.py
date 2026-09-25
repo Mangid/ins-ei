@@ -2860,10 +2860,15 @@ def api_oekofen_link(plant_id: str,item: OekofenPlantLink):
                     (installation_id,"heating","ÖkoFEN",model,serial,plant_id,now,now))
                 device_id=cur.lastrowid
         if device_id is not None:
-            cur=con.execute("UPDATE devices SET oekofen_plant_id=?,updated_at=? WHERE id=?",
-                            (plant_id,datetime.now(timezone.utc).isoformat(),device_id))
+            plant=con.execute("SELECT plant_name,serial_number,version FROM oekofen_plants WHERE plant_id=?",(plant_id,)).fetchone()
+            if plant is None: raise HTTPException(404,"OekoFEN plant not found")
+            model=(plant["plant_name"] or "").strip() or None
+            serial=(plant["serial_number"] or "").strip() or None
+            cur=con.execute("""UPDATE devices SET oekofen_plant_id=?,manufacturer='ÖkoFEN',
+                model=COALESCE(?,model),serial_number=COALESCE(?,serial_number),updated_at=? WHERE id=?""",
+                (plant_id,model,serial,datetime.now(timezone.utc).isoformat(),device_id))
             if cur.rowcount==0: raise HTTPException(404,"Device not found")
-    return {"status":"updated","plant_id":plant_id,"device_id":device_id}
+    return {"status":"updated","plant_id":plant_id,"device_id":device_id,"synced_fields":["manufacturer","model","serial_number"] if device_id is not None else []}
 
 
 @app.post("/api/v1/oekofen/sync")
