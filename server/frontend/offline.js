@@ -46,7 +46,7 @@ async function insOfflineDelete(store,id){
 }
 async function insUpdateStatus(){
   const el=document.getElementById("syncStatus");if(!el)return;
-  let n=0;try{n=(await insOfflineGetAll("syncQueue")).length}catch(e){}
+  let n=0;try{n=(await insOfflineGetAll("syncQueue")).length+(await insOfflineGetAll("fileQueue")).length}catch(e){}
   el.classList.toggle("offline",!navigator.onLine);el.classList.toggle("pending",navigator.onLine&&n>0);el.classList.toggle("synced",navigator.onLine&&n===0);
   el.textContent=!navigator.onLine?(n?`Offline · ${n} offen`:"Offline"):(n?`${n} Änderung${n===1?"":"en"} offen`:"Synchronisiert");
 }
@@ -67,12 +67,34 @@ async function insQueueFile(customerId,file,meta={}){
   return item;
 }
 
+function insQueuedFileBlob(item){
+  const parts=item.data.split(",");
+  const raw=atob(parts[1]);
+  const bytes=new Uint8Array(raw.length);
+  for(let i=0;i<raw.length;i++)bytes[i]=raw.charCodeAt(i);
+  return new Blob([bytes],{type:item.type});
+}
+async function insSyncFiles(){
+  if(!navigator.onLine)return;
+  const items=await insOfflineGetAll("fileQueue");
+  for(const item of items){
+    try{
+      const fd=new FormData();
+      fd.append("file",insQueuedFileBlob(item),item.name);
+      Object.entries(item.meta||{}).forEach(([key,value])=>{if(value!==null&&value!==undefined&&value!=="")fd.append(key,value)});
+      const r=await fetch("/api/v1/customers/"+item.customer_id+"/files",{method:"POST",body:fd});
+      if(r.ok)await insOfflineDelete("fileQueue",item.id);
+    }catch(e){}
+  }
+}
+
 async function insSync(){
   if(!navigator.onLine){await insUpdateStatus();return;}
   const items=await insOfflineGetAll("syncQueue");
   for(const item of items){
     try{const r=await fetch(item.url,{method:item.method,headers:{"Content-Type":"application/json"},body:JSON.stringify(item.body)});if(r.ok)await insOfflineDelete("syncQueue",item.id)}catch(e){}
   }
+  await insSyncFiles();
   await insUpdateStatus();
 }
 window.addEventListener("online",()=>insSync());
