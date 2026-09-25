@@ -3712,6 +3712,19 @@ def save_maintenance(maintenance_id: int, item: MaintenanceSave):
     return {"status":"updated","id":maintenance_id}
 
 
+@app.delete("/api/v1/maintenances/{maintenance_id}")
+def delete_maintenance(maintenance_id: int):
+    with db() as con:
+        row=con.execute("SELECT id FROM maintenance_jobs WHERE id=?",(maintenance_id,)).fetchone()
+        if row is None:
+            raise HTTPException(404,"Maintenance not found")
+        con.execute("DELETE FROM tasks WHERE maintenance_id=?",(maintenance_id,))
+        con.execute("UPDATE customer_files SET maintenance_id=NULL WHERE maintenance_id=?",(maintenance_id,))
+        con.execute("DELETE FROM maintenance_checks WHERE maintenance_id=?",(maintenance_id,))
+        con.execute("DELETE FROM maintenance_jobs WHERE id=?",(maintenance_id,))
+    return {"status":"deleted","id":maintenance_id}
+
+
 @app.get("/api/v1/maintenances/{maintenance_id}")
 def get_maintenance(maintenance_id: int):
     with db() as con:
