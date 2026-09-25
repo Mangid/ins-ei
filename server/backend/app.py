@@ -3096,7 +3096,7 @@ def get_customer_file(file_id: int):
     if row is None: raise HTTPException(404,"File not found")
     path=FILES_PATH/row["stored_name"]
     if not path.exists(): raise HTTPException(404,"Stored file not found")
-    return FileResponse(path,media_type=row["content_type"],filename=row["file_name"])
+    return FileResponse(path,media_type=row["content_type"] or "application/octet-stream",headers={"Content-Disposition": f'inline; filename="{row["file_name"]}"'})
 
 
 class PlannedVisitCreate(BaseModel):
