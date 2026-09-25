@@ -3333,6 +3333,18 @@ def create_project(item: ProjectCreate):
     return {"status":"created","id":cur.lastrowid}
 
 
+@app.put("/api/v1/projects/{project_id}")
+def update_project(project_id: int, item: ProjectCreate):
+    now=datetime.now(timezone.utc).isoformat()
+    completed=now if item.status=="completed" else None
+    with db() as con:
+        cur=con.execute("""UPDATE projects SET name=?,description=?,status=?,customer_id=?,
+          updated_at=?,completed_at=? WHERE id=?""",
+          (item.name,item.description,item.status,item.customer_id,now,completed,project_id))
+        if cur.rowcount==0: raise HTTPException(404,"Project not found")
+    return {"status":"updated","id":project_id}
+
+
 @app.get("/api/v1/projects/{project_id}")
 def get_project(project_id: int):
     with db() as con:
