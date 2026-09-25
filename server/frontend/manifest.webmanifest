@@ -1,0 +1,12 @@
+{
+  "name": "INS-EI Servicezentrale",
+  "short_name": "INS-EI",
+  "description": "INS-EI Servicezentrale für Kunden, Anlagen, Einsätze und Wartungen",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#111827",
+  "theme_color": "#111827",
+  "lang": "de",
+  "orientation": "any"
+}
