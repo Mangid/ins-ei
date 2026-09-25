@@ -1,4 +1,4 @@
-const CACHE_NAME = "ins-ei-shell-v2";
+const CACHE_NAME = "ins-ei-shell-v3";
 
 const APP_SHELL = [
   "/",
@@ -34,8 +34,11 @@ self.addEventListener("fetch", event => {
 
   if (request.method !== "GET") return;
 
-  // API wird in diesem Schritt bewusst nicht gecacht.
-  if (url.pathname.startsWith("/api/")) return;
+  // API-Anfragen niemals durch den Service Worker behandeln.
+  if (url.pathname.startsWith("/api/")) {
+    event.respondWith(fetch(request, { cache: "no-store" }));
+    return;
+  }
 
   event.respondWith(
     fetch(request)
