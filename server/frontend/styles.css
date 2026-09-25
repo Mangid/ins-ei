@@ -101,3 +101,5 @@
 .customer-picker{display:grid;gap:4px}.customer-picker-search{width:100%}.customer-picker-hint{color:#8194a5;font-size:11px}
 
 .import-warning{color:#f0d985;font-size:12px;margin-top:10px}.import-row.possible span{color:#ffb86b}
+
+.import-details{margin-top:14px}.import-details summary{cursor:pointer;color:#8194a5;font-size:12px;margin-bottom:8px}
