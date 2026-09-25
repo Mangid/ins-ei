@@ -1046,6 +1046,8 @@ def init_customer_db():
             con.execute("ALTER TABLE service_visits ADD COLUMN follow_up TEXT")
         if not column_exists(con, "service_visits", "completed_at"):
             con.execute("ALTER TABLE service_visits ADD COLUMN completed_at TEXT")
+        if not column_exists(con, "service_visits", "started_at"):
+            con.execute("ALTER TABLE service_visits ADD COLUMN started_at TEXT")
 
         con.execute(
             """
@@ -3220,6 +3222,9 @@ class ServiceVisitCreate(BaseModel):
     travel_km: float | None = None
     material: str | None = None
     invoice_reference: str | None = None
+    status: str | None = None
+    started_at: str | None = None
+    completed_at: str | None = None
 
 
 FILES_PATH = Path("/data/customer_files")
@@ -3761,11 +3766,12 @@ def list_customer_visits(customer_id: int):
 def update_customer_visit(customer_id: int, visit_id: int, visit: ServiceVisitCreate):
     with db() as con:
         cur=con.execute("""UPDATE service_visits SET visit_date=?,title=?,description=?,
-            duration_hours=?,travel_km=?,material=?,invoice_reference=?,updated_at=?
+            duration_hours=?,travel_km=?,material=?,invoice_reference=?,status=COALESCE(?,status),
+            started_at=COALESCE(?,started_at),completed_at=COALESCE(?,completed_at),updated_at=?
             WHERE id=? AND customer_id=?""",
             (visit.visit_date,visit.title,visit.description,visit.duration_hours,visit.travel_km,
-             visit.material,visit.invoice_reference,datetime.now(timezone.utc).isoformat(),
-             visit_id,customer_id))
+             visit.material,visit.invoice_reference,visit.status,visit.started_at,visit.completed_at,
+             datetime.now(timezone.utc).isoformat(),visit_id,customer_id))
         if cur.rowcount==0: raise HTTPException(404,"Visit not found")
     return {"status":"updated","id":visit_id}
 
@@ -3778,9 +3784,10 @@ def create_customer_visit(customer_id: int, visit: ServiceVisitCreate):
             raise HTTPException(404,"Customer not found")
         cur=con.execute("""INSERT INTO service_visits
             (customer_id,visit_date,title,description,duration_hours,travel_km,material,
-             invoice_reference,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)""",
+             invoice_reference,status,started_at,completed_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (customer_id,visit.visit_date,visit.title,visit.description,visit.duration_hours,
-             visit.travel_km,visit.material,visit.invoice_reference,now,now))
+             visit.travel_km,visit.material,visit.invoice_reference,visit.status or "planned",
+             visit.started_at,visit.completed_at,now,now))
     return {"status":"created","id":cur.lastrowid}
 
 
