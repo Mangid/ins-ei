@@ -2692,7 +2692,7 @@ def process_task_reminders():
             if remind.tzinfo is None: remind=remind.replace(tzinfo=ZoneInfo("Europe/Vienna"))
             if remind.astimezone(timezone.utc)>now: continue
             prefix=(row["customer_name"]+": ") if row["customer_name"] else ""
-            send_native_push_all("Aufgabe · "+row["title"],prefix+(row["description"] or "Erinnerung"),"/#tasks")
+            send_native_push_all("Aufgabe · "+row["title"],prefix+(row["description"] or "Erinnerung"),"/#tasks/task/"+str(row["id"]))
             with db() as con: con.execute("UPDATE tasks SET reminded_at=? WHERE id=?",(now.isoformat(),row["id"]))
         except Exception as exc:
             print(f"TASK reminder error id={row['id']}: {exc}",flush=True)
