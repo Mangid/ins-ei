@@ -282,24 +282,43 @@ newProject.onclick=async()=>{
   detail.classList.remove("hidden");cancelProject.onclick=()=>detail.classList.add("hidden");projectForm.onsubmit=async e=>{e.preventDefault();const data=Object.fromEntries(new FormData(projectForm).entries());data.customer_id=data.customer_id?Number(data.customer_id):null;const x=await fetch("/api/v1/projects",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});if(x.ok){detail.classList.add("hidden");loadProjects()}else alert("Projekt konnte nicht angelegt werden.")};
 }
 
-let activeTaskStatus="",activeTaskGroup="";
+let activeTaskStatus="",taskFilters={project:"",customer:"",priority:""};
 function taskDueState(t){
   if(t.status==="completed")return "completed";if(!t.due_at)return "none";
   const due=new Date(t.due_at),now=new Date(),today=new Date(now.getFullYear(),now.getMonth(),now.getDate()),tomorrow=new Date(today);tomorrow.setDate(tomorrow.getDate()+1);
   if(due<today)return "overdue";if(due<tomorrow)return "today";return "upcoming";
 }
-async function loadTasks(status=activeTaskStatus,group=activeTaskGroup){
-  activeTaskStatus=status;activeTaskGroup=group;
-  const r=await fetch("/api/v1/tasks");if(!r.ok)return;const d=await r.json();let all=d.tasks;
-  const counts={overdue:0,today:0,open:0,in_progress:0,completed:0};all.forEach(t=>{const ds=taskDueState(t);if(ds==="overdue")counts.overdue++;if(ds==="today")counts.today++;if(t.status!=="completed")counts.open++;if(t.status==="in_progress")counts.in_progress++;if(t.status==="completed")counts.completed++});
-  taskSummary.innerHTML=`<span class="task-stat overdue"><b>${counts.overdue}</b> überfällig</span><span class="task-stat today"><b>${counts.today}</b> heute</span><span class="task-stat"><b>${counts.open}</b> offen</span><span class="task-stat"><b>${counts.completed}</b> erledigt</span>`;
-  let tasks=all;if(status==="completed"||status==="in_progress")tasks=tasks.filter(t=>t.status===status);else if(["overdue","today","upcoming"].includes(status))tasks=tasks.filter(t=>t.status!=="completed"&&taskDueState(t)===status);else tasks=tasks.filter(t=>t.status!=="completed");
-  if(group)tasks=tasks.filter(t=>t.project_name===group);window._tasks=tasks;taskCount.textContent=tasks.length+" Aufgaben";
-  taskBoard.innerHTML=tasks.map(t=>{const due=taskDueState(t);return `<article class="service-card task-card priority-${t.priority} due-${due}"><div class="device-title"><div><strong>${esc(t.title)}</strong><span class="service-status ${t.status}">${t.status==="completed"?"Erledigt":t.status==="in_progress"?"In Arbeit":"Offen"}</span>${due==="overdue"?'<span class="due-badge overdue">Überfällig</span>':due==="today"?'<span class="due-badge today">Heute</span>':""}</div><button class="secondary edit-task" data-id="${t.id}">Bearbeiten</button></div><p>${esc(t.description)}</p><small>${esc(t.project_name||t.category||"Allgemein")}${t.customer_name?" · "+esc(t.customer_name):""}${t.due_at?" · fällig "+new Date(t.due_at).toLocaleString("de-AT"):""}${t.remind_at?" · 🔔 "+new Date(t.remind_at).toLocaleString("de-AT"):""} · Priorität ${t.priority}</small></article>`}).join("")||'<div class="loading">Keine Aufgaben.</div>';
+function taskPriorityLabel(p){return p==="urgent"?"Dringend":p==="high"?"Hoch":p==="low"?"Niedrig":"Normal"}
+function taskSortKey(t){
+  const due=taskDueState(t),dueRank={overdue:0,today:1,upcoming:2,none:3,completed:4}[due]??3,priority={urgent:0,high:1,normal:2,low:3}[t.priority]??2;
+  return [dueRank,t.due_at||"9999",priority,t.title||""];
+}
+function compareTasks(a,b){const x=taskSortKey(a),y=taskSortKey(b);for(let i=0;i<x.length;i++){if(x[i]<y[i])return -1;if(x[i]>y[i])return 1}return 0}
+async function loadTasks(status=activeTaskStatus){
+  activeTaskStatus=status;
+  const r=await fetch("/api/v1/tasks?t="+Date.now(),{cache:"no-store"});if(!r.ok)return;
+  const all=(await r.json()).tasks||[];
+  const open=all.filter(t=>t.status!=="completed"),counts={overdue:0,today:0,upcoming:0,none:0,in_progress:0,completed:0};
+  all.forEach(t=>{const ds=taskDueState(t);if(counts[ds]!==undefined)counts[ds]++;if(t.status==="in_progress")counts.in_progress++;if(t.status==="completed")counts.completed++});
+  taskSummary.innerHTML=`<button class="task-stat overdue" data-summary="overdue"><b>${counts.overdue}</b><span>Überfällig</span></button><button class="task-stat today" data-summary="today"><b>${counts.today}</b><span>Heute</span></button><button class="task-stat" data-summary="upcoming"><b>${counts.upcoming}</b><span>Demnächst</span></button><button class="task-stat" data-summary="none"><b>${counts.none}</b><span>Ohne Termin</span></button><button class="task-stat" data-summary=""><b>${open.length}</b><span>Offen gesamt</span></button>`;
+  document.querySelectorAll("[data-summary]").forEach(b=>b.onclick=()=>{activeTaskStatus=b.dataset.summary;document.querySelectorAll(".task-filters button").forEach(x=>x.classList.toggle("selected",x.dataset.taskFilter===activeTaskStatus));loadTasks(activeTaskStatus)});
+  const projects=[...new Map(all.filter(t=>t.project_id||t.project_name).map(t=>[String(t.project_id||t.project_name),{id:String(t.project_id||t.project_name),name:t.project_name||("Projekt #"+t.project_id)}])).values()].sort((a,b)=>a.name.localeCompare(b.name,"de"));
+  const customers=[...new Map(all.filter(t=>t.customer_id).map(t=>[String(t.customer_id),{id:String(t.customer_id),name:t.customer_name||("Kunde #"+t.customer_id)}])).values()].sort((a,b)=>a.name.localeCompare(b.name,"de"));
+  const pf=document.getElementById("taskProjectFilter"),cf=document.getElementById("taskCustomerFilter");
+  const pv=taskFilters.project,cv=taskFilters.customer;pf.innerHTML='<option value="">Alle Projekte</option>'+projects.map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join("");cf.innerHTML='<option value="">Alle Kunden</option>'+customers.map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join("");pf.value=pv;cf.value=cv;
+  let tasks=all;
+  if(status==="completed"||status==="in_progress")tasks=tasks.filter(t=>t.status===status);else if(["overdue","today","upcoming","none"].includes(status))tasks=tasks.filter(t=>t.status!=="completed"&&taskDueState(t)===status);else tasks=tasks.filter(t=>t.status!=="completed");
+  if(taskFilters.project)tasks=tasks.filter(t=>String(t.project_id||t.project_name)===taskFilters.project);
+  if(taskFilters.customer)tasks=tasks.filter(t=>String(t.customer_id)===taskFilters.customer);
+  if(taskFilters.priority)tasks=tasks.filter(t=>t.priority===taskFilters.priority);
+  tasks.sort(compareTasks);window._tasks=tasks;taskCount.textContent=tasks.length+" Aufgaben";
+  taskBoard.innerHTML=tasks.map(t=>{const due=taskDueState(t),project=t.project_name||(t.project_id?"Projekt #"+t.project_id:"Allgemein");return `<article class="service-card task-card priority-${t.priority} due-${due}"><div class="task-card-top"><div><strong class="task-title">${esc(t.title)}</strong><div class="task-badges"><span class="priority-badge ${t.priority}">${taskPriorityLabel(t.priority)}</span>${due==="overdue"?'<span class="due-badge overdue">Überfällig</span>':due==="today"?'<span class="due-badge today">Heute</span>':t.status==="in_progress"?'<span class="service-status in_progress">In Arbeit</span>':""}</div></div><button class="secondary edit-task" data-id="${t.id}">Öffnen</button></div>${t.description?`<p>${esc(t.description)}</p>`:""}<div class="task-meta"><span>📁 ${esc(project)}</span>${t.customer_name?`<span>👤 ${esc(t.customer_name)}</span>`:""}${t.due_at?`<span>📅 ${new Date(t.due_at).toLocaleString("de-AT")}</span>`:'<span>📅 Ohne Termin</span>'}${t.remind_at?`<span>🔔 ${new Date(t.remind_at).toLocaleString("de-AT")}</span>`:""}</div></article>`}).join("")||'<div class="task-empty">Keine Aufgaben in dieser Ansicht.</div>';
   document.querySelectorAll(".edit-task").forEach(b=>b.onclick=()=>taskForm(window._tasks.find(t=>String(t.id)===b.dataset.id)));
 }
-document.querySelectorAll(".task-filters button").forEach(b=>b.onclick=()=>{document.querySelectorAll(".task-filters button").forEach(x=>x.classList.toggle("selected",x===b));loadTasks(b.dataset.taskFilter,activeTaskGroup)});
-document.querySelectorAll(".task-groups button").forEach(b=>b.onclick=()=>{document.querySelectorAll(".task-groups button").forEach(x=>x.classList.toggle("selected",x===b));loadTasks(activeTaskStatus,b.dataset.taskGroup)});
+document.querySelectorAll(".task-filters button").forEach(b=>b.onclick=()=>{document.querySelectorAll(".task-filters button").forEach(x=>x.classList.toggle("selected",x===b));loadTasks(b.dataset.taskFilter)});
+document.getElementById("taskProjectFilter").onchange=e=>{taskFilters.project=e.target.value;loadTasks()};
+document.getElementById("taskCustomerFilter").onchange=e=>{taskFilters.customer=e.target.value;loadTasks()};
+document.getElementById("taskPriorityFilter").onchange=e=>{taskFilters.priority=e.target.value;loadTasks()};
 async function taskForm(task=null,projectContext=null){
   const [cr,pr]=await Promise.all([fetch("/api/v1/customers"),fetch("/api/v1/projects")]);
   const customers=cr.ok?(await cr.json()).customers:[],projects=pr.ok?(await pr.json()).projects:[];
