@@ -6,6 +6,8 @@ cd "$ROOT"
 echo "== INS-EI Deploy =="
 echo "[1/5] GitHub-Stand übernehmen"
 git fetch origin main
+# Falls nur dieses Deploy-Skript lokal geändert wurde, darf der Bootstrap es zurücksetzen.
+git restore deploy.sh 2>/dev/null || true
 # Repository-Code auf den freigegebenen main-Stand setzen. Persistente Daten und server/secrets liegen außerhalb der getrackten Codeänderungen.
 git reset --hard origin/main
 
