@@ -377,10 +377,9 @@ routeFromHash();
 window.addEventListener("hashchange",routeFromHash);
 if("serviceWorker" in navigator){
   navigator.serviceWorker.addEventListener("message",event=>{
-    if(event.data?.type!=="INS_EI_NAVIGATE"||!event.data.url)return;
-    const target=new URL(event.data.url,location.origin);
-    if(target.origin!==location.origin)return;
-    if(location.hash===target.hash)routeFromHash();else location.hash=target.hash;
+    if(event.data?.type!=="INS_EI_NAVIGATE"||!event.data.hash)return;
+    const hash=String(event.data.hash);
+    if(location.hash===hash)routeFromHash();else location.hash=hash;
   });
 }
 
