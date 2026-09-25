@@ -2582,6 +2582,15 @@ def push_test_oekofen():
     return {"status": "ok", "simulation": True, **result}
 
 
+@app.post("/api/v1/push/test-task/{task_id}")
+def push_test_task(task_id: int):
+    with db() as con:
+        row=con.execute("SELECT id,title,description FROM tasks WHERE id=?",(task_id,)).fetchone()
+    if not row: raise HTTPException(404,"Task not found")
+    result=send_native_push_all("Aufgabe · "+row["title"],row["description"] or "Aufgabe öffnen",f"/#tasks/task/{task_id}")
+    return {"status":"ok","task_id":task_id,"url":f"/#tasks/task/{task_id}",**result}
+
+
 @app.post("/api/v1/push/test")
 def push_test(payload: PushTestRequest):
     sent = 0
