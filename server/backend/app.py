@@ -915,6 +915,12 @@ def init_customer_db():
             con.execute("ALTER TABLE devices ADD COLUMN oekofen_plant_id TEXT")
         if not column_exists(con, "devices", "ins_installation_id"):
             con.execute("ALTER TABLE devices ADD COLUMN ins_installation_id TEXT")
+        if not column_exists(con, "devices", "source"):
+            con.execute("ALTER TABLE devices ADD COLUMN source TEXT")
+        if not column_exists(con, "devices", "source_notes"):
+            con.execute("ALTER TABLE devices ADD COLUMN source_notes TEXT")
+        if not column_exists(con, "devices", "last_maintenance_date"):
+            con.execute("ALTER TABLE devices ADD COLUMN last_maintenance_date TEXT")
 
         con.execute(
             """
@@ -1131,6 +1137,10 @@ def init_customer_db():
             con.execute("ALTER TABLE maintenance_jobs ADD COLUMN next_due_date TEXT")
         if not column_exists(con, "maintenance_jobs", "interval_months"):
             con.execute("ALTER TABLE maintenance_jobs ADD COLUMN interval_months INTEGER NOT NULL DEFAULT 12")
+        if not column_exists(con, "maintenance_jobs", "source"):
+            con.execute("ALTER TABLE maintenance_jobs ADD COLUMN source TEXT")
+        if not column_exists(con, "maintenance_jobs", "source_ref"):
+            con.execute("ALTER TABLE maintenance_jobs ADD COLUMN source_ref TEXT")
 
         con.execute(
             """
@@ -3023,6 +3033,64 @@ def customer_import_apply(item: CustomerImportRequest):
                   sevdesk_customer_number=COALESCE(NULLIF(?,''),sevdesk_customer_number),updated_at=? WHERE id=?""",
                   (row["address"],row["postal_code"],row["city"],row["phone"],row["email"],row["customer_number"],now,entry["customer_id"]));updated+=1
     return {"status":"ok","created":created,"updated":updated}
+
+
+class OekofenImportRow(BaseModel):
+    name: str
+    address: str | None = None
+    postal_code: str | None = None
+    city: str | None = None
+    phone: str | None = None
+    email: str | None = None
+    plant_number: str | None = None
+    model: str | None = None
+    construction_year: int | None = None
+    commissioning_date: str | None = None
+    maintenance_2026: str | None = None
+    notes: str | None = None
+
+
+class OekofenImportRequest(BaseModel):
+    rows: list[OekofenImportRow]
+
+
+@app.post("/api/v1/oekofen/import-preview")
+def oekofen_import_preview(item: OekofenImportRequest):
+    with db() as con: existing=[dict(x) for x in con.execute("SELECT * FROM customers").fetchall()]
+    out=[]
+    for row in item.rows:
+        proxy=CustomerImportRow(name=row.name,address=row.address,postal_code=row.postal_code,city=row.city,phone=row.phone,email=row.email)
+        ranked=sorted(((customer_match_score(proxy,x),x) for x in existing),key=lambda z:z[0],reverse=True)
+        score,best=(ranked[0] if ranked else (0,None))
+        out.append({"source":row.model_dump(),"action":"match" if best and score>=85 else ("possible" if best and score>=70 else "new"),"score":score,"customer_id":best.get("id") if best and score>=70 else None,"existing_name":best.get("name") if best and score>=70 else None})
+    return {"count":len(out),"new":sum(x["action"]=="new" for x in out),"matches":sum(x["action"]=="match" for x in out),"possible":sum(x["action"]=="possible" for x in out),"results":out}
+
+
+@app.post("/api/v1/oekofen/import-apply")
+def oekofen_import_apply(item: OekofenImportRequest):
+    preview=oekofen_import_preview(item)["results"];now=datetime.now(timezone.utc).isoformat();created_customers=devices=maint=0
+    with db() as con:
+        for e in preview:
+            row=e["source"];cid=e["customer_id"]
+            if not cid:
+                cur=con.execute("""INSERT INTO customers(name,address,postal_code,city,country,phone,email,source,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)""",(row["name"],row["address"],row["postal_code"],row["city"],"AT",row["phone"],row["email"],"onenote-oekofen",now,now));cid=cur.lastrowid;created_customers+=1
+            else:
+                con.execute("""UPDATE customers SET address=COALESCE(NULLIF(?,''),address),postal_code=COALESCE(NULLIF(?,''),postal_code),city=COALESCE(NULLIF(?,''),city),phone=COALESCE(NULLIF(?,''),phone),email=COALESCE(NULLIF(?,''),email),updated_at=? WHERE id=?""",(row["address"],row["postal_code"],row["city"],row["phone"],row["email"],now,cid))
+            inst=con.execute("SELECT id FROM installations WHERE customer_id=? AND installation_type='heating' ORDER BY id LIMIT 1",(cid,)).fetchone()
+            if inst: iid=inst["id"]
+            else:
+                cur=con.execute("""INSERT INTO installations(customer_id,name,installation_type,address,postal_code,city,notes,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)""",(cid,"ÖkoFEN Heizung","heating",row["address"],row["postal_code"],row["city"],row["notes"],now,now));iid=cur.lastrowid
+            dev=None
+            if row["plant_number"]: dev=con.execute("SELECT id FROM devices WHERE external_id=?",(row["plant_number"],)).fetchone()
+            if not dev:
+                cur=con.execute("""INSERT INTO devices(installation_id,device_type,manufacturer,model,external_id,construction_year,commissioning_date,source,source_notes,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",(iid,"boiler","ÖkoFEN",row["model"],row["plant_number"],row["construction_year"],row["commissioning_date"],"onenote",row["notes"],now,now));did=cur.lastrowid;devices+=1
+            else: did=dev["id"]
+            if row["maintenance_2026"]:
+                exists=con.execute("SELECT id FROM maintenance_jobs WHERE device_id=? AND scheduled_at=? AND source='onenote'",(did,row["maintenance_2026"])).fetchone()
+                if not exists:
+                    con.execute("""INSERT INTO maintenance_jobs(customer_id,device_id,scheduled_at,status,remarks,completed_at,source,source_ref,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)""",(cid,did,row["maintenance_2026"],"completed",row["notes"],row["maintenance_2026"],"onenote","Wartungen 2026",now,now));maint+=1
+                    con.execute("UPDATE devices SET last_maintenance_date=? WHERE id=?",(row["maintenance_2026"],did))
+    return {"status":"ok","created_customers":created_customers,"devices":devices,"maintenances":maint}
 
 
 @app.get("/api/v1/customers")
