@@ -2738,6 +2738,16 @@ def reminder_worker():
         time.sleep(30)
 
 
+def oekofen_worker():
+    while True:
+        try:
+            result=sync_oekofen_plants()
+            print(f"OEKOFEN sync plants={result.get('plants',0)} problems={result.get('problems',0)}",flush=True)
+        except Exception as exc:
+            print(f"OEKOFEN sync error: {exc}",flush=True)
+        time.sleep(300)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
@@ -2750,6 +2760,13 @@ async def lifespan(app: FastAPI):
         name="reminder-worker",
     )
     thread.start()
+
+    oekofen_thread = threading.Thread(
+        target=oekofen_worker,
+        daemon=True,
+        name="oekofen-worker",
+    )
+    oekofen_thread.start()
 
     async with mcp.session_manager.run():
         yield
@@ -2780,6 +2797,51 @@ def health():
     }
 
 
+
+
+@app.get("/api/v1/oekofen/plants")
+def api_oekofen_plants():
+    with db() as con:
+        rows=con.execute("""SELECT p.*,d.id device_id,d.installation_id,
+          d.manufacturer device_manufacturer,d.model device_model,
+          i.customer_id,c.name customer_name,c.city customer_city
+          FROM oekofen_plants p
+          LEFT JOIN devices d ON d.oekofen_plant_id=p.plant_id
+          LEFT JOIN installations i ON i.id=d.installation_id
+          LEFT JOIN customers c ON c.id=i.customer_id
+          ORDER BY p.problem_count DESC,p.plant_name COLLATE NOCASE""").fetchall()
+        result=[]
+        for row in rows:
+            x=dict(row)
+            problems=con.execute("""SELECT problem_type,message,create_date
+              FROM oekofen_problems WHERE plant_id=? ORDER BY create_date DESC,id DESC""",
+              (row["plant_id"],)).fetchall()
+            x["problems"]=[dict(p) for p in problems]
+            result.append(x)
+    return {"plants":result,"sync_interval_seconds":300}
+
+
+class OekofenPlantLink(BaseModel):
+    device_id: int | None = None
+
+
+@app.put("/api/v1/oekofen/plants/{plant_id}/link")
+def api_oekofen_link(plant_id: str,item: OekofenPlantLink):
+    with db() as con:
+        if con.execute("SELECT 1 FROM oekofen_plants WHERE plant_id=?",(plant_id,)).fetchone() is None:
+            raise HTTPException(404,"OekoFEN plant not found")
+        con.execute("UPDATE devices SET oekofen_plant_id=NULL,updated_at=? WHERE oekofen_plant_id=?",
+                    (datetime.now(timezone.utc).isoformat(),plant_id))
+        if item.device_id is not None:
+            cur=con.execute("UPDATE devices SET oekofen_plant_id=?,updated_at=? WHERE id=?",
+                            (plant_id,datetime.now(timezone.utc).isoformat(),item.device_id))
+            if cur.rowcount==0: raise HTTPException(404,"Device not found")
+    return {"status":"updated","plant_id":plant_id,"device_id":item.device_id}
+
+
+@app.post("/api/v1/oekofen/sync")
+def api_oekofen_sync():
+    return sync_oekofen_plants()
 
 
 @app.get("/api/v1/telemetry/history/{installation_id}")
