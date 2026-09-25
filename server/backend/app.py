@@ -2975,12 +2975,18 @@ def customer_match_score(row: CustomerImportRow, existing: dict) -> int:
     postal_match=bool(rp and ep and rp==ep)
     city_match=bool(rc and ec and rc==ec)
     address_match=bool(ra and ea and (ra==ea or ra in ea or ea in ra))
+    # Manche bestehende INS-EI-Kunden haben Straße/Hausnummer noch getrennt oder unvollständig.
+    # Für solche Fälle vergleichen wir zusätzlich die komplette Orts-/Adresssignatur.
+    import_sig=norm_customer(" ".join(filter(None,[row.address,row.postal_code,row.city])))
+    existing_sig=norm_customer(" ".join(filter(None,[existing.get("address"),existing.get("postal_code"),existing.get("city")])))
+    signature_match=bool(import_sig and existing_sig and (import_sig==existing_sig or import_sig in existing_sig or existing_sig in import_sig))
     if postal_match: score+=15
     if city_match: score+=10
     if address_match: score+=25
     # Gleiche Anschrift + PLZ ist bei unserem Kundenstamm ein starker Identifikator.
     # Damit matcht z.B. "Fam. Kaufmann" sicher auf "Fam. Freddy Kaufmann".
-    if address_match and postal_match: score=max(score,95)
+    if signature_match: score=max(score,98)
+    elif address_match and postal_match: score=max(score,95)
     elif address_match and city_match: score=max(score,90)
     return score
 
