@@ -111,3 +111,9 @@
 .oekofen-grid .service-card .task-meta{display:flex;flex-wrap:wrap;gap:6px 14px}
 .oekofen-grid .service-card .day-warning{margin-top:2px}
 @media(max-width:700px){.oekofen-grid{grid-template-columns:1fr}.oekofen-grid .service-card{padding:14px}.oekofen-grid .device-title{align-items:flex-start}.oekofen-grid .service-card .form-actions button{flex:1 1 auto}}
+
+/* OekoFEN severity mirrors task-card priority framing */
+.oekofen-card.severity-warning{border-color:#d97706;border-left:4px solid #d97706}
+.oekofen-card.severity-error{border-color:#dc2626;border-left:4px solid #dc2626}
+.oekofen-card.severity-ok{border-left:4px solid transparent}
+.compact-section-title{margin-top:0}
