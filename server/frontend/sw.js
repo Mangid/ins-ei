@@ -1,4 +1,4 @@
-const CACHE_NAME = "ins-ei-shell-v14";
+const CACHE_NAME = "ins-ei-shell-v15";
 const PHOTO_CACHE = "ins-ei-photos-v1";
 
 const APP_SHELL = [
@@ -92,16 +92,17 @@ self.addEventListener("push", event => {
 });
 self.addEventListener("notificationclick", event => {
   event.notification.close();
-  const target=new URL(event.notification.data?.url||"/",self.location.origin).href;
+  const relative=event.notification.data?.url||"/";
+  const target=new URL(relative,self.location.origin);
   event.waitUntil((async()=>{
     const list=await clients.matchAll({type:"window",includeUncontrolled:true});
-    if(list.length){
-      const client=list[0];
+    for(const client of list){
       try{
-        client.postMessage({type:"INS_EI_NAVIGATE",url:target});
-        return await client.focus();
+        client.postMessage({type:"INS_EI_NAVIGATE",hash:target.hash||"#dashboard"});
+        await client.focus();
+        return;
       }catch(e){}
     }
-    return clients.openWindow(target);
+    await clients.openWindow(target.href);
   })());
 });
