@@ -3248,6 +3248,7 @@ async def upload_customer_file(
     file: UploadFile = File(...),
     visit_id: int | None = Form(default=None),
     maintenance_id: int | None = Form(default=None),
+    device_id: int | None = Form(default=None),
     description: str | None = Form(default=None),
 ):
     FILES_PATH.mkdir(parents=True, exist_ok=True)
@@ -3262,9 +3263,9 @@ async def upload_customer_file(
     now=datetime.now(timezone.utc).isoformat()
     with db() as con:
         cur=con.execute("""INSERT INTO customer_files
-            (customer_id,visit_id,maintenance_id,file_name,stored_name,content_type,description,created_at,file_category)
-            VALUES (?,?,?,?,?,?,?,?,?)""",
-            (customer_id,visit_id,maintenance_id,file.filename or stored_name,stored_name,
+            (customer_id,visit_id,maintenance_id,device_id,file_name,stored_name,content_type,description,created_at,file_category)
+            VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            (customer_id,visit_id,maintenance_id,device_id,file.filename or stored_name,stored_name,
              file.content_type,description,now,"photo" if (file.content_type or "").startswith("image/") else "document"))
     return {"status":"stored","id":cur.lastrowid}
 
