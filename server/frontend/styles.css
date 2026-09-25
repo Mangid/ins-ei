@@ -103,3 +103,11 @@
 .import-warning{color:#f0d985;font-size:12px;margin-top:10px}.import-row.possible span{color:#ffb86b}
 
 .import-details{margin-top:14px}.import-details summary{cursor:pointer;color:#8194a5;font-size:12px;margin-bottom:8px}
+
+/* OekoFEN compact responsive plant cards */
+.oekofen-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px;align-items:stretch}
+.oekofen-grid .service-card{margin:0;min-width:0;height:100%;display:flex;flex-direction:column;gap:10px}
+.oekofen-grid .service-card .form-actions{margin-top:auto;display:flex;flex-wrap:wrap;gap:8px}
+.oekofen-grid .service-card .task-meta{display:flex;flex-wrap:wrap;gap:6px 14px}
+.oekofen-grid .service-card .day-warning{margin-top:2px}
+@media(max-width:700px){.oekofen-grid{grid-template-columns:1fr}.oekofen-grid .service-card{padding:14px}.oekofen-grid .device-title{align-items:flex-start}.oekofen-grid .service-card .form-actions button{flex:1 1 auto}}
