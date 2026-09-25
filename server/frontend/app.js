@@ -144,9 +144,17 @@ function workflowVisitForm(v){
     const data=Object.fromEntries(new FormData(workflowForm).entries());
     delete data.workflowPhotos;
     if(data.duration_hours==="")delete data.duration_hours;else data.duration_hours=Number(data.duration_hours);
-    const r=await fetch("/api/v1/visits/"+v.id+"/workflow",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});
-    if(!r.ok){alert("Einsatz konnte nicht gespeichert werden.");return}
-    for(const file of workflowPhotos.files){const fd=new FormData();fd.append("file",file);fd.append("visit_id",v.id);await fetch("/api/v1/customers/"+v.customer_id+"/files",{method:"POST",body:fd})}
+    const url="/api/v1/visits/"+v.id+"/workflow";
+    try{
+      const r=await fetch(url,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});
+      if(!r.ok)throw Error(r.status);
+      for(const file of workflowPhotos.files){const fd=new FormData();fd.append("file",file);fd.append("visit_id",v.id);await fetch("/api/v1/customers/"+v.customer_id+"/files",{method:"POST",body:fd})}
+    }catch(err){
+      if(!window.INSOffline){alert("Einsatz konnte nicht gespeichert werden.");return}
+      await INSOffline.queue("PUT",url,data);
+      const cached={...v,...data};await INSOffline.put("visits",cached);
+      alert("Offline gespeichert. Der Einsatz wird automatisch synchronisiert, sobald die Verbindung wieder da ist.");
+    }
     detail.classList.add("hidden");loadVisitBoard();
   };
 }
