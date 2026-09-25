@@ -254,12 +254,12 @@ async function editProjectForm(p){
   projectEditForm.onsubmit=async e=>{e.preventDefault();const data=Object.fromEntries(new FormData(projectEditForm).entries());data.customer_id=data.customer_id?Number(data.customer_id):null;const x=await fetch("/api/v1/projects/"+p.id,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});if(x.ok)openProject(p.id);else alert("Projekt konnte nicht gespeichert werden.")};
 }
 function projectFileForm(p){
-  detailBody.innerHTML=`<div class="detail-head"><div><h1>Datei hinzufügen</h1><span class="meta">${esc(p.name)} · Upload R2</span></div></div><form id="projectFileForm" class="customer-form"><label>Foto / Dokument<input id="projectFileInput" type="file" multiple required></label><label>Beschreibung<input id="projectFileDescription"></label><div id="projectUploadStatus" class="upload-status">Bereit · keine Datei gewählt</div><div class="form-actions"><button type="button" id="cancelProjectFile" class="secondary">Abbrechen</button><button type="submit" id="projectUploadButton" class="primary">Hochladen</button></div></form>`;
+  detailBody.innerHTML=`<div class="detail-head"><div><h1>Datei hinzufügen</h1><span class="meta">${esc(p.name)}</span></div></div><form id="projectFileForm" class="customer-form"><label>Foto / Dokument<input id="projectFileInput" type="file" multiple required></label><label>Beschreibung<input id="projectFileDescription"></label><div id="projectUploadStatus" class="upload-status">Keine Datei gewählt</div><div class="form-actions"><button type="button" id="cancelProjectFile" class="secondary">Abbrechen</button><button type="submit" id="projectUploadButton" class="primary">Hochladen</button></div></form>`;
   const form=document.getElementById("projectFileForm"),input=document.getElementById("projectFileInput"),status=document.getElementById("projectUploadStatus"),button=document.getElementById("projectUploadButton"),description=document.getElementById("projectFileDescription");
   document.getElementById("cancelProjectFile").onclick=()=>openProject(p.id);
   input.onchange=()=>{status.textContent=input.files.length+" Datei(en) ausgewählt"};
   form.addEventListener("submit",async e=>{
-    e.preventDefault();const files=[...input.files];status.textContent="Submit ausgelöst · "+files.length+" Datei(en)";
+    e.preventDefault();const files=[...input.files];
     if(!files.length){status.textContent="Keine Datei ausgewählt.";return}
     button.disabled=true;button.textContent="Upload läuft …";
     let ok=0;
