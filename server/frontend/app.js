@@ -375,6 +375,14 @@ async function routeFromHash(){
 }
 routeFromHash();
 window.addEventListener("hashchange",routeFromHash);
+if("serviceWorker" in navigator){
+  navigator.serviceWorker.addEventListener("message",event=>{
+    if(event.data?.type!=="INS_EI_NAVIGATE"||!event.data.url)return;
+    const target=new URL(event.data.url,location.origin);
+    if(target.origin!==location.origin)return;
+    if(location.hash===target.hash)routeFromHash();else location.hash=target.hash;
+  });
+}
 
 const mobileMenu=document.getElementById("mobileMenu"),sidebar=document.getElementById("sidebar"),navBackdrop=document.getElementById("navBackdrop");
 function closeMobileNav(){document.body.classList.remove("nav-open")}
