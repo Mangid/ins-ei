@@ -3815,6 +3815,13 @@ def get_customer(customer_id: int):
             ORDER BY visit_date DESC,id DESC""",(customer_id,)).fetchall()
     result["visits"]=[dict(r) for r in visits]
     with db() as con:
+        maintenances=con.execute("""SELECT m.*,d.model device_model,d.manufacturer device_manufacturer
+            FROM maintenance_jobs m
+            LEFT JOIN devices d ON d.id=m.device_id
+            WHERE m.customer_id=?
+            ORDER BY COALESCE(m.scheduled_at,m.created_at) DESC,m.id DESC""",(customer_id,)).fetchall()
+    result["maintenances"]=[dict(r) for r in maintenances]
+    with db() as con:
         files=con.execute("""SELECT * FROM customer_files WHERE customer_id=?
             ORDER BY created_at DESC,id DESC""",(customer_id,)).fetchall()
     result["files"]=[dict(r) for r in files]
