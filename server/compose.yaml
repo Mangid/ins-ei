@@ -13,6 +13,8 @@ services:
       - ./secrets/oekofen_password:/run/secrets/oekofen_password:ro
       - ./secrets/oekofen_client_secret:/run/secrets/oekofen_client_secret:ro
       - ./secrets/influxdb_token:/run/secrets/influxdb_token:ro
+      - ./secrets/vapid_private_key:/run/secrets/vapid_private_key:ro
+      - ./secrets/vapid_public_key:/run/secrets/vapid_public_key:ro
     networks:
       - ins-platform
 
