@@ -2972,9 +2972,16 @@ def customer_match_score(row: CustomerImportRow, existing: dict) -> int:
     rp,ep=norm_customer(row.postal_code),norm_customer(existing.get("postal_code"))
     rc,ec=norm_customer(row.city),norm_customer(existing.get("city"))
     ra,ea=norm_customer(row.address),norm_customer(existing.get("address"))
-    if rp and ep and rp==ep: score+=15
-    if rc and ec and rc==ec: score+=10
-    if ra and ea and (ra==ea or ra in ea or ea in ra): score+=25
+    postal_match=bool(rp and ep and rp==ep)
+    city_match=bool(rc and ec and rc==ec)
+    address_match=bool(ra and ea and (ra==ea or ra in ea or ea in ra))
+    if postal_match: score+=15
+    if city_match: score+=10
+    if address_match: score+=25
+    # Gleiche Anschrift + PLZ ist bei unserem Kundenstamm ein starker Identifikator.
+    # Damit matcht z.B. "Fam. Kaufmann" sicher auf "Fam. Freddy Kaufmann".
+    if address_match and postal_match: score=max(score,95)
+    elif address_match and city_match: score=max(score,90)
     return score
 
 
