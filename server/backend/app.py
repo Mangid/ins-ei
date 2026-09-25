@@ -3416,7 +3416,7 @@ def my_day():
         tasks=con.execute("""SELECT t.*,c.name customer_name,c.address customer_address,
           c.postal_code customer_postal_code,c.city customer_city,c.country customer_country
           FROM tasks t LEFT JOIN customers c ON c.id=t.customer_id
-          WHERE t.status!='completed' AND t.due_at IS NOT NULL ORDER BY t.due_at""").fetchall()
+          WHERE t.status!='completed' AND (t.due_at IS NOT NULL OR t.scheduled_start IS NOT NULL) ORDER BY COALESCE(t.scheduled_start,t.due_at)""").fetchall()
         maint=con.execute("""SELECT m.*,c.name customer_name,c.address customer_address,c.postal_code customer_postal_code,c.city customer_city,c.country customer_country
           FROM maintenance_jobs m JOIN customers c ON c.id=m.customer_id
           WHERE m.status!='completed' AND m.scheduled_at IS NOT NULL ORDER BY m.scheduled_at""").fetchall()
@@ -3428,7 +3428,7 @@ def my_day():
             d=datetime.fromisoformat(row[key]);d=d if d.tzinfo else d.replace(tzinfo=tz)
             return d.astimezone(tz)<end
         except Exception:return False
-    return {"date":start.date().isoformat(),"tasks":[dict(x) for x in tasks if due_today_or_overdue(x,"due_at")],
+    return {"date":start.date().isoformat(),"tasks":[dict(x) for x in tasks if due_today_or_overdue(x,"scheduled_start" if x["scheduled_start"] else "due_at")],
       "visits":[dict(x) for x in visits if due_today_or_overdue(x,"scheduled_at" if x["scheduled_at"] else "visit_date")],
       "maintenances":[dict(x) for x in maint if due_today_or_overdue(x,"scheduled_at")]}
 
