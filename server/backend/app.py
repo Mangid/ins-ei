@@ -1066,6 +1066,12 @@ def init_customer_db():
             con.execute("ALTER TABLE tasks ADD COLUMN reminded_at TEXT")
         if not column_exists(con, "tasks", "project_id"):
             con.execute("ALTER TABLE tasks ADD COLUMN project_id INTEGER")
+        if not column_exists(con, "tasks", "scheduled_start"):
+            con.execute("ALTER TABLE tasks ADD COLUMN scheduled_start TEXT")
+        if not column_exists(con, "tasks", "scheduled_end"):
+            con.execute("ALTER TABLE tasks ADD COLUMN scheduled_end TEXT")
+        if not column_exists(con, "tasks", "outlook_event_id"):
+            con.execute("ALTER TABLE tasks ADD COLUMN outlook_event_id TEXT")
 
         con.execute("""
             CREATE TABLE IF NOT EXISTS projects (
@@ -3253,6 +3259,9 @@ class TaskCreate(BaseModel):
     project_id: int | None = None
     customer_id: int | None = None
     remind_at: str | None = None
+    scheduled_start: str | None = None
+    scheduled_end: str | None = None
+    outlook_event_id: str | None = None
 
 @app.post("/api/v1/tasks/seed-ins-ei-backlog")
 def seed_ins_ei_backlog():
@@ -3440,9 +3449,9 @@ def create_task(item: TaskCreate):
     now=datetime.now(timezone.utc).isoformat()
     with db() as con:
         cur=con.execute("""INSERT INTO tasks
-          (title,description,status,priority,due_at,category,project_name,project_id,customer_id,remind_at,created_at,updated_at)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",(item.title,item.description,item.status,item.priority,
-          item.due_at,item.category,item.project_name,item.project_id,item.customer_id,item.remind_at,now,now))
+          (title,description,status,priority,due_at,category,project_name,project_id,customer_id,remind_at,scheduled_start,scheduled_end,outlook_event_id,created_at,updated_at)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(item.title,item.description,item.status,item.priority,
+          item.due_at,item.category,item.project_name,item.project_id,item.customer_id,item.remind_at,item.scheduled_start,item.scheduled_end,item.outlook_event_id,now,now))
     return {"status":"created","id":cur.lastrowid}
 
 @app.put("/api/v1/tasks/{task_id}")
@@ -3451,9 +3460,9 @@ def update_task(task_id: int, item: TaskCreate):
     completed=now if item.status=="completed" else None
     with db() as con:
         cur=con.execute("""UPDATE tasks SET title=?,description=?,status=?,priority=?,due_at=?,
-          category=?,project_name=?,project_id=?,customer_id=?,remind_at=?,reminded_at=CASE WHEN remind_at IS NOT ? THEN NULL ELSE reminded_at END,updated_at=?,completed_at=? WHERE id=?""",
+          category=?,project_name=?,project_id=?,customer_id=?,remind_at=?,scheduled_start=?,scheduled_end=?,outlook_event_id=?,reminded_at=CASE WHEN remind_at IS NOT ? THEN NULL ELSE reminded_at END,updated_at=?,completed_at=? WHERE id=?""",
           (item.title,item.description,item.status,item.priority,item.due_at,item.category,
-           item.project_name,item.project_id,item.customer_id,item.remind_at,item.remind_at,now,completed,task_id))
+           item.project_name,item.project_id,item.customer_id,item.remind_at,item.scheduled_start,item.scheduled_end,item.outlook_event_id,item.remind_at,now,completed,task_id))
         if cur.rowcount==0: raise HTTPException(404,"Task not found")
     return {"status":"updated","id":task_id}
 
