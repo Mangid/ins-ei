@@ -3642,6 +3642,15 @@ def create_maintenance(item: MaintenanceCreate):
           (customer_id,device_id,scheduled_at,status,created_at,updated_at)
           VALUES (?,?,?,'planned',?,?)""",(item.customer_id,item.device_id,item.scheduled_at,now,now))
         mid=cur.lastrowid
+        customer=con.execute("SELECT name FROM customers WHERE id=?",(item.customer_id,)).fetchone()
+        device=con.execute("SELECT manufacturer,model FROM devices WHERE id=?",(item.device_id,)).fetchone() if item.device_id else None
+        device_label=" ".join(x for x in [device["manufacturer"] if device else None,device["model"] if device else None] if x)
+        task_title="Wartung"+((" · "+device_label) if device_label else "")
+        con.execute("""INSERT INTO tasks
+          (title,description,status,priority,due_at,category,customer_id,maintenance_id,created_at,updated_at)
+          VALUES (?,?,?,?,?,?,?,?,?,?)""",
+          (task_title,"Geplante Wartung"+((" bei "+customer["name"]) if customer else ""),"open","normal",
+           item.scheduled_at,"Wartung",item.customer_id,mid,now,now))
         for order,(section,key,label,unit) in enumerate(MAINTENANCE_TEMPLATE):
             con.execute("""INSERT INTO maintenance_checks
               (maintenance_id,section,item_key,label,unit,sort_order)
