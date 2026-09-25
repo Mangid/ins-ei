@@ -2680,10 +2680,29 @@ def process_due_reminders():
             print(f'REMINDER error id={row["id"]}: {exc}', flush=True)
 
 
+def process_task_reminders():
+    now=datetime.now(timezone.utc)
+    with db() as con:
+        rows=con.execute("""SELECT t.*,c.name customer_name FROM tasks t
+          LEFT JOIN customers c ON c.id=t.customer_id
+          WHERE t.status!='completed' AND t.remind_at IS NOT NULL AND t.reminded_at IS NULL""").fetchall()
+    for row in rows:
+        try:
+            remind=datetime.fromisoformat(row["remind_at"])
+            if remind.tzinfo is None: remind=remind.replace(tzinfo=ZoneInfo("Europe/Vienna"))
+            if remind.astimezone(timezone.utc)>now: continue
+            prefix=(row["customer_name"]+": ") if row["customer_name"] else ""
+            send_native_push_all("Aufgabe · "+row["title"],prefix+(row["description"] or "Erinnerung"),"/#tasks")
+            with db() as con: con.execute("UPDATE tasks SET reminded_at=? WHERE id=?",(now.isoformat(),row["id"]))
+        except Exception as exc:
+            print(f"TASK reminder error id={row['id']}: {exc}",flush=True)
+
+
 def reminder_worker():
     while True:
         try:
             process_due_reminders()
+            process_task_reminders()
         except Exception as exc:
             print(f"REMINDER worker error: {exc}", flush=True)
 
@@ -3285,6 +3304,65 @@ def chatgpt_create_task(item: TaskCreate):
 @app.put("/api/v1/chatgpt/tasks/{task_id}", dependencies=[Depends(require_management_api_key)])
 def chatgpt_update_task(task_id: int, item: TaskCreate):
     return update_task(task_id,item)
+
+
+class ProjectCreate(BaseModel):
+    name: str
+    description: str | None = None
+    status: str = "active"
+    customer_id: int | None = None
+
+
+@app.get("/api/v1/projects")
+def list_projects():
+    with db() as con:
+        rows=con.execute("""SELECT p.*,c.name customer_name,
+          (SELECT COUNT(*) FROM tasks t WHERE t.project_id=p.id AND t.status!='completed') open_tasks,
+          (SELECT COUNT(*) FROM project_files f WHERE f.project_id=p.id) file_count
+          FROM projects p LEFT JOIN customers c ON c.id=p.customer_id
+          ORDER BY CASE p.status WHEN 'active' THEN 0 ELSE 1 END,p.name COLLATE NOCASE""").fetchall()
+    return {"projects":[dict(r) for r in rows]}
+
+
+@app.post("/api/v1/projects")
+def create_project(item: ProjectCreate):
+    now=datetime.now(timezone.utc).isoformat()
+    with db() as con:
+        cur=con.execute("""INSERT INTO projects(name,description,status,customer_id,created_at,updated_at)
+          VALUES(?,?,?,?,?,?)""",(item.name,item.description,item.status,item.customer_id,now,now))
+    return {"status":"created","id":cur.lastrowid}
+
+
+@app.get("/api/v1/projects/{project_id}")
+def get_project(project_id: int):
+    with db() as con:
+        p=con.execute("""SELECT p.*,c.name customer_name FROM projects p
+          LEFT JOIN customers c ON c.id=p.customer_id WHERE p.id=?""",(project_id,)).fetchone()
+        if not p: raise HTTPException(404,"Project not found")
+        tasks=con.execute("SELECT * FROM tasks WHERE project_id=? ORDER BY status,COALESCE(due_at,'9999')",(project_id,)).fetchall()
+        files=con.execute("SELECT * FROM project_files WHERE project_id=? ORDER BY created_at DESC",(project_id,)).fetchall()
+    return {**dict(p),"tasks":[dict(x) for x in tasks],"files":[dict(x) for x in files]}
+
+
+@app.post("/api/v1/projects/{project_id}/files")
+def upload_project_file(project_id: int, file: UploadFile=File(...), description: str|None=Form(None)):
+    now=datetime.now(timezone.utc).isoformat()
+    folder=Path("/data/project_files");folder.mkdir(parents=True,exist_ok=True)
+    stored=f"{uuid.uuid4().hex}_{Path(file.filename or 'file').name}"
+    with (folder/stored).open("wb") as out: shutil.copyfileobj(file.file,out)
+    with db() as con:
+        cur=con.execute("""INSERT INTO project_files(project_id,file_name,stored_name,content_type,description,created_at)
+          VALUES(?,?,?,?,?,?)""",(project_id,file.filename or stored,stored,file.content_type,description,now))
+    return {"status":"created","id":cur.lastrowid}
+
+
+@app.get("/api/v1/project-files/{file_id}")
+def get_project_file(file_id: int):
+    with db() as con:
+        row=con.execute("SELECT * FROM project_files WHERE id=?",(file_id,)).fetchone()
+    if not row: raise HTTPException(404,"File not found")
+    path=Path("/data/project_files")/row["stored_name"]
+    return FileResponse(path,media_type=row["content_type"],filename=row["file_name"])
 
 
 @app.get("/api/v1/tasks")
