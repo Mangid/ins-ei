@@ -44,11 +44,17 @@ async function insOfflineDelete(store,id){
   await new Promise((resolve,reject)=>{const tx=db.transaction(store,"readwrite");tx.objectStore(store).delete(id);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)});
   db.close();
 }
+let insApiReachable=true;
+async function insCheckApi(){
+  try{const r=await fetch("/api/v1/telemetry/status?connectivity="+Date.now(),{cache:"no-store",signal:AbortSignal.timeout(4000)});insApiReachable=r.ok}catch(e){insApiReachable=false}
+  await insUpdateStatus();return insApiReachable;
+}
 async function insUpdateStatus(){
   const el=document.getElementById("syncStatus");if(!el)return;
   let n=0;try{n=(await insOfflineGetAll("syncQueue")).length+(await insOfflineGetAll("fileQueue")).length}catch(e){}
-  el.classList.toggle("offline",!navigator.onLine);el.classList.toggle("pending",navigator.onLine&&n>0);el.classList.toggle("synced",navigator.onLine&&n===0);
-  el.textContent=!navigator.onLine?(n?`Offline · ${n} offen`:"Offline"):(n?`${n} Änderung${n===1?"":"en"} offen`:"Synchronisiert");
+  const online=navigator.onLine&&insApiReachable;
+  el.classList.toggle("offline",!online);el.classList.toggle("pending",online&&n>0);el.classList.toggle("synced",online&&n===0);
+  el.textContent=!online?(n?`Offline · ${n} offen`:"Offline"):(n?`${n} Änderung${n===1?"":"en"} offen`:"Synchronisiert");
 }
 async function insQueue(method,url,body){
   const item={id:Date.now()+"-"+Math.random().toString(16).slice(2),method,url,body,created_at:new Date().toISOString()};
@@ -75,7 +81,7 @@ function insQueuedFileBlob(item){
   return new Blob([bytes],{type:item.type});
 }
 async function insSyncFiles(){
-  if(!navigator.onLine)return;
+  if(!navigator.onLine||!insApiReachable)return;
   const items=await insOfflineGetAll("fileQueue");
   for(const item of items){
     try{
@@ -89,7 +95,7 @@ async function insSyncFiles(){
 }
 
 async function insSync(){
-  if(!navigator.onLine){await insUpdateStatus();return;}
+  if(!navigator.onLine||!insApiReachable){await insUpdateStatus();return;}
   const items=await insOfflineGetAll("syncQueue");
   for(const item of items){
     try{const r=await fetch(item.url,{method:item.method,headers:{"Content-Type":"application/json"},body:JSON.stringify(item.body)});if(r.ok)await insOfflineDelete("syncQueue",item.id)}catch(e){}
@@ -97,8 +103,9 @@ async function insSync(){
   await insSyncFiles();
   await insUpdateStatus();
 }
-window.addEventListener("online",()=>insSync());
+window.addEventListener("online",async()=>{await insCheckApi();await insSync()});
 window.addEventListener("offline",()=>insUpdateStatus());
-window.INSOffline={putMany:insOfflinePutMany,put:insOfflinePut,get:insOfflineGet,getAll:insOfflineGetAll,remove:insOfflineDelete,queue:insQueue,queueFile:insQueueFile,sync:insSync,status:insUpdateStatus};
-window.addEventListener("DOMContentLoaded",()=>insUpdateStatus());
-insSync();
+window.INSOffline={putMany:insOfflinePutMany,put:insOfflinePut,get:insOfflineGet,getAll:insOfflineGetAll,remove:insOfflineDelete,queue:insQueue,queueFile:insQueueFile,sync:insSync,status:insUpdateStatus,checkApi:insCheckApi,isOnline:()=>navigator.onLine&&insApiReachable};
+window.addEventListener("DOMContentLoaded",()=>insCheckApi());
+setInterval(insCheckApi,10000);
+insCheckApi().then(()=>insSync());
