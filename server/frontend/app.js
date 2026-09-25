@@ -180,8 +180,17 @@ async function editGlobalVisit(v){
 }
 newGlobalVisit.onclick=async()=>{const r=await fetch("/api/v1/customers");if(!r.ok)return;const d=await r.json();detailBody.innerHTML=`<div class="detail-head"><div><h1>Einsatz planen</h1><span class="meta">Servicezentrale</span></div></div><form id="planVisitForm" class="customer-form"><label>Kunde<select name="customer_id" required><option value="">Kunde auswählen …</option>${d.customers.map(c=>`<option value="${c.id}">${esc(c.name)} · ${esc(c.city||"")}</option>`).join("")}</select></label><label>Termin<input name="scheduled_at" type="datetime-local" required></label><div class="form-row"><label>Art<select name="visit_type"><option value="fault">Störung</option><option value="maintenance">Wartung</option><option value="installation">Montage</option><option value="service" selected>Service</option><option value="other">Sonstiges</option></select></label><label>Priorität<select name="priority"><option value="low">Niedrig</option><option value="normal" selected>Normal</option><option value="high">Hoch</option><option value="urgent">Dringend</option></select></label></div><label>Titel<input name="title" required placeholder="z. B. Aschewarnung prüfen"></label><label>Problembeschreibung<textarea name="description" rows="5"></textarea></label><label>Vorbereitung / Material mitnehmen<textarea name="preparation" rows="4"></textarea></label><div class="form-actions"><button type="button" class="secondary" id="cancelPlanVisit">Abbrechen</button><button type="submit" class="primary">Einsatz planen</button></div></form>`;detail.classList.remove("hidden");cancelPlanVisit.onclick=()=>detail.classList.add("hidden");planVisitForm.onsubmit=async e=>{e.preventDefault();const data=Object.fromEntries(new FormData(planVisitForm).entries());data.customer_id=Number(data.customer_id);const x=await fetch("/api/v1/visits",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});if(x.ok){detail.classList.add("hidden");loadVisitBoard()}else alert("Einsatz konnte nicht geplant werden.")}};
 async function loadMaintenances(filter="all"){
-  const [mr,dr]=await Promise.all([fetch("/api/v1/maintenances"),fetch("/api/v1/maintenance-due")]);if(!mr.ok)return;
-  const d=await mr.json(),due=dr.ok?await dr.json():{items:[]};window._maintenances=d.maintenances;window._maintenanceDue=due.items;
+  let d,due={items:[]};
+  try{
+    const [mr,dr]=await Promise.all([fetch("/api/v1/maintenances"),fetch("/api/v1/maintenance-due")]);if(!mr.ok)throw Error(mr.status);
+    d=await mr.json();due=dr.ok?await dr.json():{items:[]};
+    if(window.INSOffline)await INSOffline.putMany("maintenances",d.maintenances||[]);
+  }catch(e){
+    const cached=window.INSOffline?await INSOffline.getAll("maintenances"):[];
+    if(!cached.length){maintenanceBoard.innerHTML='<div class="loading">Wartungen konnten nicht geladen werden.</div>';return}
+    d={maintenances:cached};
+  }
+  window._maintenances=d.maintenances;window._maintenanceDue=due.items;
   const overdue=due.items.filter(x=>x.due_state==="overdue").length,soon=due.items.filter(x=>x.due_state==="soon").length;
   maintenanceCount.textContent=d.maintenances.length+" Wartungen · "+overdue+" überfällig · "+soon+" demnächst";
   maintenanceDue.innerHTML=due.items.filter(x=>x.due_state!=="future").map(x=>`<article class="due-card ${x.due_state}"><strong>${x.customer_name}</strong><span>${x.manufacturer||""} ${x.model||""} · ${x.maintenance_next_due_date}</span><small>${x.due_state==="overdue"?Math.abs(x.days_until)+" Tage überfällig":"in "+x.days_until+" Tagen"}</small></article>`).join("");
