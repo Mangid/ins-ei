@@ -16,6 +16,9 @@ import time
 import urllib.error
 import uuid
 import shutil
+import os
+
+from pywebpush import webpush, WebPushException
 
 from fastapi import FastAPI, HTTPException, Header, Depends, UploadFile, File, Form
 from pydantic import BaseModel, Field
@@ -34,6 +37,8 @@ INFLUX_TOKEN = Path("/run/secrets/influxdb_token")
 INFLUX_URL = "http://ins-influxdb:8086"
 INFLUX_ORG = "INS-EI"
 INFLUX_BUCKET = "ins_ei"
+VAPID_PRIVATE_KEY = Path("/run/secrets/vapid_private_key")
+VAPID_PUBLIC_KEY = Path("/run/secrets/vapid_public_key")
 
 OEKOFEN_TOKEN_URL = "https://my.oekofen.info/api/pwa/v1/oauth2/token"
 OEKOFEN_PLANTS_URL = "https://my.oekofen.info/api/pwa/v3/plants"
@@ -724,6 +729,15 @@ def init_db():
                 "ALTER TABLE reminders "
                 "ADD COLUMN recurrence TEXT NOT NULL DEFAULT 'none'"
             )
+
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS push_subscriptions (
+                endpoint TEXT PRIMARY KEY,
+                subscription_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
 
         if not column_exists(con, "reminders", "recurrence_timezone"):
             con.execute(
@@ -2445,6 +2459,62 @@ class TelemetryPayload(BaseModel):
     installation_id: str
     timestamp: datetime
     data: dict[str, Any] = Field(default_factory=dict)
+
+
+class PushSubscription(BaseModel):
+    endpoint: str
+    keys: dict[str, str]
+
+
+class PushTestRequest(BaseModel):
+    title: str = "INS-EI Test"
+    message: str = "Push-Benachrichtigungen funktionieren."
+
+
+def webpush_send(subscription: dict[str, Any], title: str, message: str):
+    private_key = VAPID_PRIVATE_KEY.read_text().strip()
+    payload = json.dumps({"title": title, "body": message, "url": "/"})
+    return webpush(
+        subscription_info=subscription,
+        data=payload,
+        vapid_private_key=private_key,
+        vapid_claims={"sub": "mailto:ins@ins-enertech.at"},
+    )
+
+
+@app.get("/api/v1/push/public-key")
+def push_public_key():
+    if not VAPID_PUBLIC_KEY.exists():
+        raise HTTPException(503, "Push not configured")
+    return {"public_key": VAPID_PUBLIC_KEY.read_text().strip()}
+
+
+@app.post("/api/v1/push/subscribe")
+def push_subscribe(subscription: PushSubscription):
+    now = datetime.now(timezone.utc).isoformat()
+    raw = subscription.model_dump()
+    with db() as con:
+        con.execute("""
+            INSERT INTO push_subscriptions(endpoint, subscription_json, created_at, updated_at)
+            VALUES(?,?,?,?)
+            ON CONFLICT(endpoint) DO UPDATE SET subscription_json=excluded.subscription_json, updated_at=excluded.updated_at
+        """, (subscription.endpoint, json.dumps(raw), now, now))
+    return {"status": "ok"}
+
+
+@app.post("/api/v1/push/test")
+def push_test(payload: PushTestRequest):
+    sent = 0
+    failed = 0
+    with db() as con:
+        rows = con.execute("SELECT endpoint, subscription_json FROM push_subscriptions").fetchall()
+    for row in rows:
+        try:
+            webpush_send(json.loads(row["subscription_json"]), payload.title, payload.message)
+            sent += 1
+        except Exception:
+            failed += 1
+    return {"status": "ok", "sent": sent, "failed": failed}
 
 
 class ReminderCreate(BaseModel):
