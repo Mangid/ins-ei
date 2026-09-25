@@ -59,3 +59,19 @@
   .stats b{font-size:19px}
   .photo-grid,.documents-grid{grid-template-columns:1fr 1fr!important}
 }
+
+.mobile-menu,.nav-backdrop{display:none}
+@media(max-width:760px){
+  body{padding-bottom:0}
+  aside{display:block;position:fixed;left:0;top:0;bottom:0;right:auto;width:min(300px,84vw);padding:22px 14px;background:#0b1723;border-right:1px solid #203040;border-top:0;transform:translateX(-105%);transition:transform .2s ease;z-index:40;overflow-y:auto}
+  body.nav-open aside{transform:translateX(0)}
+  aside .brand{display:block;font-size:22px;padding:4px 8px 22px}
+  aside .brand small{display:block}
+  aside nav{display:grid;overflow:visible;gap:5px}
+  aside nav a{min-width:0;text-align:left;padding:12px;font-size:14px}
+  .mobile-menu{display:block;position:fixed;left:10px;top:max(10px,env(safe-area-inset-top));z-index:35;width:44px;height:44px;border:1px solid #29445b;border-radius:10px;background:#101f2d;color:#fff;font-size:22px;box-shadow:0 4px 18px #0006}
+  .nav-backdrop{display:block;position:fixed;inset:0;background:#02070cb8;opacity:0;pointer-events:none;transition:opacity .2s ease;z-index:39}
+  body.nav-open .nav-backdrop{opacity:1;pointer-events:auto}
+  main{padding-top:64px}
+  header{min-height:44px}
+}
