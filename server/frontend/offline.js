@@ -54,6 +54,19 @@ async function insQueue(method,url,body){
   const item={id:Date.now()+"-"+Math.random().toString(16).slice(2),method,url,body,created_at:new Date().toISOString()};
   await insOfflinePut("syncQueue",item);await insUpdateStatus();return item;
 }
+async function insQueueFile(customerId,file,meta={}){
+  const data=await new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=()=>resolve(reader.result);
+    reader.onerror=()=>reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+  const item={id:Date.now()+"-"+Math.random().toString(16).slice(2),customer_id:customerId,name:file.name,type:file.type||"application/octet-stream",data,meta,created_at:new Date().toISOString()};
+  await insOfflinePut("fileQueue",item);
+  await insUpdateStatus();
+  return item;
+}
+
 async function insSync(){
   if(!navigator.onLine){await insUpdateStatus();return;}
   const items=await insOfflineGetAll("syncQueue");
@@ -64,6 +77,6 @@ async function insSync(){
 }
 window.addEventListener("online",()=>insSync());
 window.addEventListener("offline",()=>insUpdateStatus());
-window.INSOffline={putMany:insOfflinePutMany,put:insOfflinePut,get:insOfflineGet,getAll:insOfflineGetAll,remove:insOfflineDelete,queue:insQueue,sync:insSync,status:insUpdateStatus};
+window.INSOffline={putMany:insOfflinePutMany,put:insOfflinePut,get:insOfflineGet,getAll:insOfflineGetAll,remove:insOfflineDelete,queue:insQueue,queueFile:insQueueFile,sync:insSync,status:insUpdateStatus};
 window.addEventListener("DOMContentLoaded",()=>insUpdateStatus());
 insSync();
