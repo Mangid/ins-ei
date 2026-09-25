@@ -330,14 +330,14 @@ async function taskForm(task=null,projectContext=null){
     <div class="form-row"><label>Status<select name="status"><option value="open">Offen</option><option value="in_progress">In Arbeit</option><option value="completed">Erledigt</option></select></label><label>Priorität<select name="priority"><option value="low">Niedrig</option><option value="normal">Normal</option><option value="high">Hoch</option><option value="urgent">Dringend</option></select></label></div>
     ${fixedProject?`<input type="hidden" name="project_id" value="${fixedProject.id}"><input type="hidden" name="customer_id" value="${fixedProject.customer_id||""}">`:`<label>Projekt<select name="project_id"><option value="">– kein Projekt –</option>${projects.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join("")}</select></label><label>Kunde<select name="customer_id"><option value="">– kein Kunde –</option>${customers.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join("")}</select></label>`}
     <label>Kategorie<input name="category" value="${esc(task?.category)}"></label>
-    <div class="form-row"><label>Fällig<input name="due_at" type="datetime-local" value="${esc((task?.due_at||"").slice(0,16))}"></label><label>🔔 Erinnern am<input name="remind_at" type="datetime-local" value="${esc((task?.remind_at||"").slice(0,16))}"></label></div>
+    <div class="form-row"><label>Fällig<input name="due_at" type="datetime-local" value="${esc((task?.due_at||"").slice(0,16))}"></label><label>🔔 Erinnern am<input name="remind_at" type="datetime-local" value="${esc((task?.remind_at||"").slice(0,16))}"><button type="button" id="copyDueToReminder" class="secondary copy-date-button">Fälligkeit als Erinnerung übernehmen</button></label></div>
     <div id="taskSaveStatus" class="upload-status">Bereit</div>
     <div class="form-actions"><button type="button" class="secondary" id="taskCancel">Abbrechen</button><button type="submit" class="primary" id="taskSave">Speichern</button></div>
   </form>`;
   const form=document.getElementById("taskEditor"),save=document.getElementById("taskSave"),status=document.getElementById("taskSaveStatus");
   form.elements.status.value=task?.status||"open";form.elements.priority.value=task?.priority||"normal";
   if(!fixedProject){form.elements.project_id.value=task?.project_id||"";form.elements.customer_id.value=task?.customer_id||""}
-  detail.classList.remove("hidden");document.getElementById("taskCancel").onclick=()=>fixedProject?openProject(fixedProject.id):detail.classList.add("hidden");
+  detail.classList.remove("hidden");document.getElementById("taskCancel").onclick=()=>fixedProject?openProject(fixedProject.id):detail.classList.add("hidden");document.getElementById("copyDueToReminder").onclick=()=>{const due=form.elements.due_at.value;if(!due){status.textContent="Bitte zuerst eine Fälligkeit wählen.";return}form.elements.remind_at.value=due;status.textContent="Fälligkeit als Erinnerung übernommen."};
   form.addEventListener("submit",async event=>{
     event.preventDefault();save.disabled=true;save.textContent="Speichere …";status.textContent="Speichere Aufgabe …";
     const fd=new FormData(form),data={
