@@ -4,9 +4,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
 echo "== INS-EI Deploy =="
-echo "[1/5] Git aktualisieren"
+echo "[1/5] GitHub-Stand übernehmen"
 git fetch origin main
-git pull --ff-only origin main
+# Repository-Code auf den freigegebenen main-Stand setzen. Persistente Daten und server/secrets liegen außerhalb der getrackten Codeänderungen.
+git reset --hard origin/main
 
 echo "[2/5] Frontend prüfen"
 node --check server/frontend/app.js
