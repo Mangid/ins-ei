@@ -3402,7 +3402,7 @@ def get_project_file(file_id: int):
 @app.get("/api/v1/tasks")
 def list_tasks(status: str | None = None):
     with db() as con:
-        sql="""SELECT t.*,c.name customer_name FROM tasks t
+        sql="""SELECT t.*,c.name customer_name,c.address customer_address,c.postal_code customer_postal_code,c.city customer_city,c.country customer_country FROM tasks t
                LEFT JOIN customers c ON c.id=t.customer_id"""
         args=[]
         if status: sql+=" WHERE t.status=?";args.append(status)
