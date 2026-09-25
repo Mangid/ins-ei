@@ -2538,6 +2538,16 @@ def push_subscribe(subscription: PushSubscription):
     return {"status": "ok"}
 
 
+@app.post("/api/v1/push/test-oekofen")
+def push_test_oekofen():
+    result = send_native_push_all(
+        "ÖkoFEN Störung · TESTANLAGE",
+        "INS-EI Simulation: Teststörung erkannt.",
+        "/#oekofen",
+    )
+    return {"status": "ok", "simulation": True, **result}
+
+
 @app.post("/api/v1/push/test")
 def push_test(payload: PushTestRequest):
     sent = 0
