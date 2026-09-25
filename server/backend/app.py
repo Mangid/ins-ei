@@ -3346,14 +3346,26 @@ def get_project(project_id: int):
 
 @app.post("/api/v1/projects/{project_id}/files")
 def upload_project_file(project_id: int, file: UploadFile=File(...), description: str|None=Form(None)):
+    with db() as con:
+        if not con.execute("SELECT id FROM projects WHERE id=?",(project_id,)).fetchone():
+            raise HTTPException(404,"Project not found")
     now=datetime.now(timezone.utc).isoformat()
     folder=Path("/data/project_files");folder.mkdir(parents=True,exist_ok=True)
-    stored=f"{uuid.uuid4().hex}_{Path(file.filename or 'file').name}"
-    with (folder/stored).open("wb") as out: shutil.copyfileobj(file.file,out)
-    with db() as con:
-        cur=con.execute("""INSERT INTO project_files(project_id,file_name,stored_name,content_type,description,created_at)
-          VALUES(?,?,?,?,?,?)""",(project_id,file.filename or stored,stored,file.content_type,description,now))
-    return {"status":"created","id":cur.lastrowid}
+    original=Path(file.filename or "file").name
+    stored=f"{uuid.uuid4().hex}_{original}"
+    path=folder/stored
+    try:
+        with path.open("wb") as out: shutil.copyfileobj(file.file,out)
+        size=path.stat().st_size
+        if size<=0: raise ValueError("Uploaded file is empty")
+        with db() as con:
+            cur=con.execute("""INSERT INTO project_files(project_id,file_name,stored_name,content_type,description,created_at)
+              VALUES(?,?,?,?,?,?)""",(project_id,original,stored,file.content_type or "application/octet-stream",description,now))
+            file_id=cur.lastrowid
+        return {"status":"created","id":file_id,"file_name":original,"content_type":file.content_type,"size":size}
+    except Exception as exc:
+        path.unlink(missing_ok=True)
+        raise HTTPException(500,f"Project file upload failed: {exc}") from exc
 
 
 @app.get("/api/v1/project-files/{file_id}")
@@ -3362,7 +3374,8 @@ def get_project_file(file_id: int):
         row=con.execute("SELECT * FROM project_files WHERE id=?",(file_id,)).fetchone()
     if not row: raise HTTPException(404,"File not found")
     path=Path("/data/project_files")/row["stored_name"]
-    return FileResponse(path,media_type=row["content_type"],filename=row["file_name"])
+    if not path.exists(): raise HTTPException(404,"Stored project file not found")
+    return FileResponse(path,media_type=row["content_type"] or "application/octet-stream",headers={"Content-Disposition":f'inline; filename="{row["file_name"]}"'})
 
 
 @app.get("/api/v1/tasks")
