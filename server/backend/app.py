@@ -3062,7 +3062,10 @@ def oekofen_import_preview(item: OekofenImportRequest):
         proxy=CustomerImportRow(name=row.name,address=row.address,postal_code=row.postal_code,city=row.city,phone=row.phone,email=row.email)
         ranked=sorted(((customer_match_score(proxy,x),x) for x in existing),key=lambda z:z[0],reverse=True)
         score,best=(ranked[0] if ranked else (0,None))
-        out.append({"source":row.model_dump(),"action":"match" if best and score>=85 else ("possible" if best and score>=70 else "new"),"score":score,"customer_id":best.get("id") if best and score>=70 else None,"existing_name":best.get("name") if best and score>=70 else None})
+        # Nur echte Zweifelsfälle müssen vom Benutzer geprüft werden.
+        # >=85: sicherer Bestandskunde; <55: sicher neu; dazwischen manuell prüfen.
+        action="match" if best and score>=85 else ("possible" if best and score>=55 else "new")
+        out.append({"source":row.model_dump(),"action":action,"score":score,"customer_id":best.get("id") if best and score>=55 else None,"existing_name":best.get("name") if best and score>=55 else None})
     return {"count":len(out),"new":sum(x["action"]=="new" for x in out),"matches":sum(x["action"]=="match" for x in out),"possible":sum(x["action"]=="possible" for x in out),"results":out}
 
 
