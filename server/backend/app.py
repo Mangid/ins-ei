@@ -2959,7 +2959,23 @@ class CustomerImportRequest(BaseModel):
 
 def norm_customer(value: str | None) -> str:
     import re
-    return re.sub(r"[^a-z0-9]", "", (value or "").lower().replace("ä","ae").replace("ö","oe").replace("ü","ue").replace("ß","ss"))
+    text=(value or "").lower().replace("ä","ae").replace("ö","oe").replace("ü","ue").replace("ß","ss")
+    # Anrede und übliche Kundenpräfixe dürfen das Matching nicht verhindern.
+    text=re.sub(r"\\b(herr|frau|fam|familie|firma)\\b", " ", text)
+    return re.sub(r"[^a-z0-9]", "", text)
+
+def customer_match_score(row: CustomerImportRow, existing: dict) -> int:
+    score=0
+    rn,en=norm_customer(row.name),norm_customer(existing.get("name"))
+    if rn and en and rn==en: score+=100
+    elif rn and en and (rn in en or en in rn): score+=70
+    rp,ep=norm_customer(row.postal_code),norm_customer(existing.get("postal_code"))
+    rc,ec=norm_customer(row.city),norm_customer(existing.get("city"))
+    ra,ea=norm_customer(row.address),norm_customer(existing.get("address"))
+    if rp and ep and rp==ep: score+=15
+    if rc and ec and rc==ec: score+=10
+    if ra and ea and (ra==ea or ra in ea or ea in ra): score+=25
+    return score
 
 
 @app.post("/api/v1/customers/import-preview")
@@ -2969,10 +2985,14 @@ def customer_import_preview(item: CustomerImportRequest):
     results=[]
     for row in item.rows:
         exact_no=next((x for x in existing if row.customer_number and x.get("sevdesk_customer_number")==row.customer_number),None)
-        exact_name=next((x for x in existing if norm_customer(x.get("name"))==norm_customer(row.name)),None)
-        match=exact_no or exact_name
-        results.append({"source":row.model_dump(),"action":"match" if match else "new","customer_id":match.get("id") if match else None,"existing_name":match.get("name") if match else None})
-    return {"count":len(results),"new":sum(x["action"]=="new" for x in results),"matches":sum(x["action"]=="match" for x in results),"results":results}
+        ranked=sorted(((customer_match_score(row,x),x) for x in existing),key=lambda z:z[0],reverse=True)
+        best_score,best=(ranked[0] if ranked else (0,None))
+        match=exact_no or (best if best_score>=85 else None)
+        possible=(best if not match and best_score>=70 else None)
+        action="match" if match else ("possible" if possible else "new")
+        candidate=match or possible
+        results.append({"source":row.model_dump(),"action":action,"score":100 if exact_no else best_score,"customer_id":candidate.get("id") if candidate else None,"existing_name":candidate.get("name") if candidate else None})
+    return {"count":len(results),"new":sum(x["action"]=="new" for x in results),"matches":sum(x["action"]=="match" for x in results),"possible":sum(x["action"]=="possible" for x in results),"results":results}
 
 
 @app.post("/api/v1/customers/import-apply")
@@ -2981,7 +3001,7 @@ def customer_import_apply(item: CustomerImportRequest):
     with db() as con:
         for entry in preview:
             row=entry["source"]
-            if entry["action"]=="new":
+            if entry["action"] in ("new","possible"):
                 con.execute("""INSERT INTO customers(name,address,postal_code,city,country,phone,email,sevdesk_customer_number,source,created_at,updated_at)
                   VALUES(?,?,?,?,?,?,?,?,?,?,?)""",(row["name"],row["address"],row["postal_code"],row["city"],"AT",row["phone"],row["email"],row["customer_number"],"sevdesk-export",now,now));created+=1
             else:
