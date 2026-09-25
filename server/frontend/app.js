@@ -365,7 +365,16 @@ async function taskForm(task=null,projectContext=null){
   });
 }
 newTask.onclick=()=>taskForm();
-setView(["customers","instances","visits","maintenances","tasks","projects"].includes(location.hash.slice(1))?location.hash.slice(1):"dashboard");
+async function routeFromHash(){
+  const hash=location.hash.slice(1),parts=hash.split("/");
+  const view=["customers","instances","visits","maintenances","tasks","projects"].includes(parts[0])?parts[0]:"dashboard";
+  setView(view);
+  if(parts[0]==="tasks"&&parts[1]==="task"&&parts[2]){
+    try{const r=await fetch("/api/v1/tasks?t="+Date.now(),{cache:"no-store"});if(r.ok){const d=await r.json(),task=(d.tasks||[]).find(x=>String(x.id)===parts[2]);if(task)await taskForm(task)}}catch(e){}
+  }
+}
+routeFromHash();
+window.addEventListener("hashchange",routeFromHash);
 
 const mobileMenu=document.getElementById("mobileMenu"),sidebar=document.getElementById("sidebar"),navBackdrop=document.getElementById("navBackdrop");
 function closeMobileNav(){document.body.classList.remove("nav-open")}
