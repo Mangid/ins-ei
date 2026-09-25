@@ -841,6 +841,10 @@ def init_customer_db():
 
         if not column_exists(con, "customers", "mobile"):
             con.execute("ALTER TABLE customers ADD COLUMN mobile TEXT")
+        if not column_exists(con, "customers", "sevdesk_customer_number"):
+            con.execute("ALTER TABLE customers ADD COLUMN sevdesk_customer_number TEXT")
+        if not column_exists(con, "customers", "source"):
+            con.execute("ALTER TABLE customers ADD COLUMN source TEXT")
 
         con.execute(
             """
@@ -2936,6 +2940,56 @@ def update_customer(customer_id: int, customer: CustomerUpdate):
         if cur.rowcount == 0:
             raise HTTPException(404, "Customer not found")
     return {"status":"updated","id":customer_id}
+
+
+class CustomerImportRow(BaseModel):
+    customer_number: str | None = None
+    name: str
+    address: str | None = None
+    postal_code: str | None = None
+    city: str | None = None
+    phone: str | None = None
+    email: str | None = None
+
+
+class CustomerImportRequest(BaseModel):
+    rows: list[CustomerImportRow]
+    apply: bool = False
+
+
+def norm_customer(value: str | None) -> str:
+    import re
+    return re.sub(r"[^a-z0-9]", "", (value or "").lower().replace("ä","ae").replace("ö","oe").replace("ü","ue").replace("ß","ss"))
+
+
+@app.post("/api/v1/customers/import-preview")
+def customer_import_preview(item: CustomerImportRequest):
+    with db() as con:
+        existing=[dict(x) for x in con.execute("SELECT * FROM customers").fetchall()]
+    results=[]
+    for row in item.rows:
+        exact_no=next((x for x in existing if row.customer_number and x.get("sevdesk_customer_number")==row.customer_number),None)
+        exact_name=next((x for x in existing if norm_customer(x.get("name"))==norm_customer(row.name)),None)
+        match=exact_no or exact_name
+        results.append({"source":row.model_dump(),"action":"match" if match else "new","customer_id":match.get("id") if match else None,"existing_name":match.get("name") if match else None})
+    return {"count":len(results),"new":sum(x["action"]=="new" for x in results),"matches":sum(x["action"]=="match" for x in results),"results":results}
+
+
+@app.post("/api/v1/customers/import-apply")
+def customer_import_apply(item: CustomerImportRequest):
+    preview=customer_import_preview(item)["results"];now=datetime.now(timezone.utc).isoformat();created=0;updated=0
+    with db() as con:
+        for entry in preview:
+            row=entry["source"]
+            if entry["action"]=="new":
+                con.execute("""INSERT INTO customers(name,address,postal_code,city,country,phone,email,sevdesk_customer_number,source,created_at,updated_at)
+                  VALUES(?,?,?,?,?,?,?,?,?,?,?)""",(row["name"],row["address"],row["postal_code"],row["city"],"AT",row["phone"],row["email"],row["customer_number"],"sevdesk-export",now,now));created+=1
+            else:
+                con.execute("""UPDATE customers SET address=COALESCE(NULLIF(?,''),address),postal_code=COALESCE(NULLIF(?,''),postal_code),
+                  city=COALESCE(NULLIF(?,''),city),phone=COALESCE(NULLIF(?,''),phone),email=COALESCE(NULLIF(?,''),email),
+                  sevdesk_customer_number=COALESCE(NULLIF(?,''),sevdesk_customer_number),updated_at=? WHERE id=?""",
+                  (row["address"],row["postal_code"],row["city"],row["phone"],row["email"],row["customer_number"],now,entry["customer_id"]));updated+=1
+    return {"status":"ok","created":created,"updated":updated}
 
 
 @app.get("/api/v1/customers")
