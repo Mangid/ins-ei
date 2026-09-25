@@ -2822,6 +2822,7 @@ def api_oekofen_plants():
 
 
 class OekofenPlantLink(BaseModel):
+    customer_id: int | None = None
     device_id: int | None = None
 
 
@@ -2832,11 +2833,37 @@ def api_oekofen_link(plant_id: str,item: OekofenPlantLink):
             raise HTTPException(404,"OekoFEN plant not found")
         con.execute("UPDATE devices SET oekofen_plant_id=NULL,updated_at=? WHERE oekofen_plant_id=?",
                     (datetime.now(timezone.utc).isoformat(),plant_id))
-        if item.device_id is not None:
+        device_id=item.device_id
+        if device_id is None and item.customer_id is not None:
+            customer=con.execute("SELECT id,name FROM customers WHERE id=?",(item.customer_id,)).fetchone()
+            if customer is None: raise HTTPException(404,"Customer not found")
+            plant=con.execute("SELECT plant_name,serial_number FROM oekofen_plants WHERE plant_id=?",(plant_id,)).fetchone()
+            serial=(plant["serial_number"] or "").strip()
+            if serial:
+                match=con.execute("""SELECT d.id FROM devices d JOIN installations i ON i.id=d.installation_id
+                    WHERE i.customer_id=? AND LOWER(COALESCE(d.serial_number,''))=LOWER(?) LIMIT 1""",
+                    (item.customer_id,serial)).fetchone()
+                if match: device_id=match["id"]
+            if device_id is None:
+                installation=con.execute("SELECT id FROM installations WHERE customer_id=? ORDER BY id LIMIT 1",(item.customer_id,)).fetchone()
+                now=datetime.now(timezone.utc).isoformat()
+                if installation is None:
+                    cur=con.execute("""INSERT INTO installations(customer_id,name,installation_type,created_at,updated_at)
+                        VALUES (?,?,?,?,?)""",(item.customer_id,"Anlage "+customer["name"],"heating",now,now))
+                    installation_id=cur.lastrowid
+                else: installation_id=installation["id"]
+                model=(plant["plant_name"] or "ÖkoFEN").strip()
+                cur=con.execute("""INSERT INTO devices
+                    (installation_id,device_type,manufacturer,model,serial_number,maintenance_interval_months,
+                     online_capable,oekofen_plant_id,created_at,updated_at)
+                    VALUES (?,?,?,?,?,12,1,?,?,?)""",
+                    (installation_id,"heating","ÖkoFEN",model,serial,plant_id,now,now))
+                device_id=cur.lastrowid
+        if device_id is not None:
             cur=con.execute("UPDATE devices SET oekofen_plant_id=?,updated_at=? WHERE id=?",
-                            (plant_id,datetime.now(timezone.utc).isoformat(),item.device_id))
+                            (plant_id,datetime.now(timezone.utc).isoformat(),device_id))
             if cur.rowcount==0: raise HTTPException(404,"Device not found")
-    return {"status":"updated","plant_id":plant_id,"device_id":item.device_id}
+    return {"status":"updated","plant_id":plant_id,"device_id":device_id}
 
 
 @app.post("/api/v1/oekofen/sync")
