@@ -3159,6 +3159,23 @@ def create_customer_device(customer_id: int, device: DeviceCreate):
     return {"status":"created","id":device_id,"installation_id":installation_id}
 
 
+@app.put("/api/v1/devices/{device_id}")
+def update_device(device_id: int, device: DeviceCreate):
+    now=datetime.now(timezone.utc).isoformat()
+    with db() as con:
+        cur=con.execute("""UPDATE devices SET manufacturer=?,model=?,serial_number=?,touch_id=?,
+            construction_year=?,commissioning_date=?,power_kw=?,maintenance_interval_months=?,
+            maintenance_next_due_date=?,online_capable=?,notes=?,updated_at=? WHERE id=?""",
+            (device.manufacturer,device.model,device.serial_number,device.touch_id,
+             device.construction_year,device.commissioning_date,device.power_kw,
+             device.maintenance_interval_months,device.maintenance_next_due_date,
+             1 if device.manufacturer.lower() in ("ökofen","oekofen") else 0,
+             device.notes,now,device_id))
+        if cur.rowcount==0:
+            raise HTTPException(404,"Device not found")
+    return {"status":"updated","id":device_id}
+
+
 class DeviceLinks(BaseModel):
     oekofen_plant_id: str | None = None
     ins_installation_id: str | None = None
