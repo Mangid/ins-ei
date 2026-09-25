@@ -3399,6 +3399,31 @@ def get_project_file(file_id: int):
     return FileResponse(path,media_type=row["content_type"] or "application/octet-stream",headers={"Content-Disposition":f'inline; filename="{row["file_name"]}"'})
 
 
+@app.get("/api/v1/my-day")
+def my_day():
+    tz=ZoneInfo("Europe/Vienna")
+    now=datetime.now(tz);start=now.replace(hour=0,minute=0,second=0,microsecond=0);end=start+timedelta(days=1)
+    with db() as con:
+        tasks=con.execute("""SELECT t.*,c.name customer_name,c.address customer_address,
+          c.postal_code customer_postal_code,c.city customer_city,c.country customer_country
+          FROM tasks t LEFT JOIN customers c ON c.id=t.customer_id
+          WHERE t.status!='completed' AND t.due_at IS NOT NULL ORDER BY t.due_at""").fetchall()
+        maint=con.execute("""SELECT m.*,c.name customer_name,c.address customer_address,c.postal_code customer_postal_code,c.city customer_city,c.country customer_country
+          FROM maintenance_jobs m JOIN customers c ON c.id=m.customer_id
+          WHERE m.status!='completed' AND m.scheduled_at IS NOT NULL ORDER BY m.scheduled_at""").fetchall()
+        visits=con.execute("""SELECT v.*,c.name customer_name,c.address customer_address,c.postal_code customer_postal_code,c.city customer_city,c.country customer_country
+          FROM service_visits v JOIN customers c ON c.id=v.customer_id
+          WHERE v.status!='completed' AND COALESCE(v.scheduled_at,v.visit_date) IS NOT NULL ORDER BY COALESCE(v.scheduled_at,v.visit_date)""").fetchall()
+    def due_today_or_overdue(row,key):
+        try:
+            d=datetime.fromisoformat(row[key]);d=d if d.tzinfo else d.replace(tzinfo=tz)
+            return d.astimezone(tz)<end
+        except Exception:return False
+    return {"date":start.date().isoformat(),"tasks":[dict(x) for x in tasks if due_today_or_overdue(x,"due_at")],
+      "visits":[dict(x) for x in visits if due_today_or_overdue(x,"scheduled_at" if x["scheduled_at"] else "visit_date")],
+      "maintenances":[dict(x) for x in maint if due_today_or_overdue(x,"scheduled_at")]}
+
+
 @app.get("/api/v1/tasks")
 def list_tasks(status: str | None = None):
     with db() as con:
