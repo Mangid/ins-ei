@@ -61,9 +61,6 @@ async function insSync(){
     try{const r=await fetch(item.url,{method:item.method,headers:{"Content-Type":"application/json"},body:JSON.stringify(item.body)});if(r.ok)await insOfflineDelete("syncQueue",item.id)}catch(e){}
   }
   await insUpdateStatus();
-  return;
-  /*
-  }*/
 }
 window.addEventListener("online",()=>insSync());
 window.addEventListener("offline",()=>insUpdateStatus());
