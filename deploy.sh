@@ -10,6 +10,8 @@ git pull --ff-only origin main
 
 echo "[2/5] Frontend prüfen"
 node --check server/frontend/app.js
+node --check server/frontend/offline.js
+node --check server/frontend/sw.js
 
 echo "[3/5] Backend prüfen"
 python3 -m py_compile server/backend/app.py
