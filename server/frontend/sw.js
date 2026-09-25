@@ -1,4 +1,5 @@
-const CACHE_NAME = "ins-ei-shell-v3";
+const CACHE_NAME = "ins-ei-shell-v4";
+const PHOTO_CACHE = "ins-ei-photos-v1";
 
 const APP_SHELL = [
   "/",
@@ -20,7 +21,7 @@ self.addEventListener("activate", event => {
     caches.keys().then(keys =>
       Promise.all(
         keys
-          .filter(key => key !== CACHE_NAME)
+          .filter(key => key !== CACHE_NAME && key !== PHOTO_CACHE)
           .map(key => caches.delete(key))
       )
     )
@@ -34,7 +35,24 @@ self.addEventListener("fetch", event => {
 
   if (request.method !== "GET") return;
 
-  // API-Anfragen niemals durch den Service Worker behandeln.
+  // Kundenfotos werden nach dem ersten Online-Aufruf lokal verfügbar gehalten.
+  if (url.pathname.startsWith("/api/v1/customer-files/")) {
+    event.respondWith(
+      caches.open(PHOTO_CACHE).then(async cache => {
+        try {
+          const response = await fetch(request, { cache: "no-store" });
+          if (response && response.ok) await cache.put(request, response.clone());
+          return response;
+        } catch (e) {
+          const cached = await cache.match(request);
+          return cached || Response.error();
+        }
+      })
+    );
+    return;
+  }
+
+  // Alle anderen API-Anfragen ausschließlich über das Netzwerk.
   if (url.pathname.startsWith("/api/")) {
     event.respondWith(fetch(request, { cache: "no-store" }));
     return;
