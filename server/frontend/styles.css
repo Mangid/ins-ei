@@ -86,3 +86,5 @@
 @media(max-width:760px){.task-summary{grid-template-columns:1fr 1fr}.task-summary .task-stat:last-child{grid-column:1/-1}.task-selects{display:grid;grid-template-columns:1fr}.task-selects select{width:100%;min-width:0}.task-card-top{gap:8px}.task-card-top .secondary{min-width:72px}.task-meta{display:grid;gap:5px}}
 
 .copy-date-button{margin-top:7px;width:100%;font-size:12px;min-height:36px}
+
+.task-card-actions{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end}@media(max-width:760px){.task-card-actions{width:100%;display:grid;grid-template-columns:1fr 1fr}.task-card-actions button{width:100%}}
