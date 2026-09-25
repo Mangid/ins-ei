@@ -82,12 +82,17 @@ function editCustomerForm(c){detailBody.innerHTML=`<div class="detail-head"><div
 function esc(v){return String(v??"").replaceAll("&","&amp;").replaceAll('"',"&quot;").replaceAll("<","&lt;").replaceAll(">","&gt;")}
 newCustomer.onclick=()=>{detailBody.innerHTML=`<div class="detail-head"><div><h1>Kunde anlegen</h1><span class="meta">Stammdaten</span></div></div><form id="customerForm" class="customer-form"><label>Name / Firma<input name="name" required autofocus></label><label>Ansprechpartner<input name="contact_person"></label><label>Adresse<input name="address"></label><div class="form-row"><label>PLZ<input name="postal_code"></label><label>Ort<input name="city"></label></div><label>Telefon<input name="phone" type="tel"></label><label>E-Mail<input name="email" type="email"></label><label>Notizen<textarea name="notes" rows="5"></textarea></label><div class="form-actions"><button type="button" class="secondary" id="cancelCustomer">Abbrechen</button><button type="submit" class="primary">Kunde speichern</button></div></form>`;detail.classList.remove("hidden");cancelCustomer.onclick=()=>detail.classList.add("hidden");customerForm.onsubmit=async e=>{e.preventDefault();const fd=new FormData(customerForm),data=Object.fromEntries(fd.entries());delete data.contact_person;const r=await fetch("/api/v1/customers",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});if(r.ok){detail.classList.add("hidden");loadCustomers(customerSearch.value.trim())}else alert("Kunde konnte nicht gespeichert werden.")}};
 async function loadVisitBoard(status=""){
-  const r=await fetch("/api/v1/visits"+(status?"?status="+status:""));
-  if(!r.ok){
-    visitBoard.innerHTML='<div class="loading">Einsätze konnten nicht geladen werden.</div>';
-    return;
+  let d;
+  try{
+    const r=await fetch("/api/v1/visits"+(status?"?status="+status:""));
+    if(!r.ok)throw Error(r.status);
+    d=await r.json();
+    if(window.INSOffline)await INSOffline.putMany("visits",d.visits||[]);
+  }catch(e){
+    const cached=window.INSOffline?await INSOffline.getAll("visits"):[];
+    d={visits:status?cached.filter(v=>v.status===status):cached};
+    if(!d.visits.length){visitBoard.innerHTML='<div class="loading">Einsätze konnten nicht geladen werden.</div>';return}
   }
-  const d=await r.json();
   visitCount.textContent=d.visits.length+" Einsätze";
   window._allVisits=d.visits;
   visitBoard.innerHTML=d.visits.map(v=>`
