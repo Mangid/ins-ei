@@ -248,8 +248,27 @@ async function openProject(id){
   detail.classList.remove("hidden");bindPhotos();addProjectFile.onclick=()=>projectFileForm(p);
 }
 function projectFileForm(p){
-  detailBody.innerHTML=`<div class="detail-head"><div><h1>Datei hinzufügen</h1><span class="meta">${esc(p.name)}</span></div></div><form id="projectFileForm" class="customer-form"><label>Foto / Dokument<input id="projectFileInput" type="file" multiple required></label><label>Beschreibung<input id="projectFileDescription"></label><div class="form-actions"><button type="button" id="cancelProjectFile" class="secondary">Abbrechen</button><button class="primary">Hochladen</button></div></form>`;
-  cancelProjectFile.onclick=()=>openProject(p.id);projectFileForm.onsubmit=async e=>{e.preventDefault();const files=[...projectFileInput.files];if(!files.length)return;const submit=projectFileForm.querySelector("button.primary");submit.disabled=true;submit.textContent="Upload läuft …";let ok=0;for(const file of files){const fd=new FormData();fd.append("file",file);fd.append("description",projectFileDescription.value);try{const r=await fetch("/api/v1/projects/"+p.id+"/files",{method:"POST",body:fd});if(!r.ok){let msg="HTTP "+r.status;try{const x=await r.json();msg=x.detail||msg}catch(_){}throw Error(msg)}ok++}catch(err){submit.disabled=false;submit.textContent="Hochladen";alert("Upload fehlgeschlagen: "+file.name+"\n"+err.message);return}}alert(ok+" Datei"+(ok===1?"":"en")+" erfolgreich hochgeladen.");openProject(p.id)};
+  detailBody.innerHTML=`<div class="detail-head"><div><h1>Datei hinzufügen</h1><span class="meta">${esc(p.name)} · Upload R2</span></div></div><form id="projectFileForm" class="customer-form"><label>Foto / Dokument<input id="projectFileInput" type="file" multiple required></label><label>Beschreibung<input id="projectFileDescription"></label><div id="projectUploadStatus" class="upload-status">Bereit · keine Datei gewählt</div><div class="form-actions"><button type="button" id="cancelProjectFile" class="secondary">Abbrechen</button><button type="submit" id="projectUploadButton" class="primary">Hochladen</button></div></form>`;
+  const form=document.getElementById("projectFileForm"),input=document.getElementById("projectFileInput"),status=document.getElementById("projectUploadStatus"),button=document.getElementById("projectUploadButton"),description=document.getElementById("projectFileDescription");
+  document.getElementById("cancelProjectFile").onclick=()=>openProject(p.id);
+  input.onchange=()=>{status.textContent=input.files.length+" Datei(en) ausgewählt"};
+  form.addEventListener("submit",async e=>{
+    e.preventDefault();const files=[...input.files];status.textContent="Submit ausgelöst · "+files.length+" Datei(en)";
+    if(!files.length){status.textContent="Keine Datei ausgewählt.";return}
+    button.disabled=true;button.textContent="Upload läuft …";
+    let ok=0;
+    for(const file of files){
+      status.textContent="Sende "+file.name+" …";
+      const fd=new FormData();fd.append("file",file);fd.append("description",description.value);
+      try{
+        const r=await fetch("/api/v1/projects/"+p.id+"/files",{method:"POST",body:fd});
+        const raw=await r.text();if(!r.ok)throw Error("HTTP "+r.status+" · "+raw.slice(0,180));
+        ok++;status.textContent=ok+" von "+files.length+" erfolgreich";
+      }catch(err){button.disabled=false;button.textContent="Hochladen";status.textContent="FEHLER: "+err.message;return}
+    }
+    status.textContent=ok+" Datei(en) erfolgreich hochgeladen. Projekt wird neu geladen …";
+    setTimeout(()=>openProject(p.id),800);
+  });
 }
 newProject.onclick=async()=>{
   const r=await fetch("/api/v1/customers"),d=r.ok?await r.json():{customers:[]};
