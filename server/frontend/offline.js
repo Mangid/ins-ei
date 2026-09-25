@@ -1,6 +1,6 @@
 const INS_OFFLINE_DB="ins-ei-offline-v1";
-const INS_OFFLINE_VERSION=2;
-const INS_STORES=["customers","customerDetails","visits","maintenances","maintenanceDue","maintenanceDetails"];
+const INS_OFFLINE_VERSION=3;
+const INS_STORES=["customers","customerDetails","visits","maintenances","maintenanceDue","maintenanceDetails","syncQueue"];
 
 function insDb(){
   return new Promise((resolve,reject)=>{
@@ -39,4 +39,22 @@ async function insOfflineGetAll(store){
   });
   db.close();return values;
 }
-window.INSOffline={putMany:insOfflinePutMany,put:insOfflinePut,get:insOfflineGet,getAll:insOfflineGetAll};
+async function insOfflineDelete(store,id){
+  const db=await insDb();
+  await new Promise((resolve,reject)=>{const tx=db.transaction(store,"readwrite");tx.objectStore(store).delete(id);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)});
+  db.close();
+}
+async function insQueue(method,url,body){
+  const item={id:Date.now()+"-"+Math.random().toString(16).slice(2),method,url,body,created_at:new Date().toISOString()};
+  await insOfflinePut("syncQueue",item);return item;
+}
+async function insSync(){
+  if(!navigator.onLine)return;
+  const items=await insOfflineGetAll("syncQueue");
+  for(const item of items){
+    try{const r=await fetch(item.url,{method:item.method,headers:{"Content-Type":"application/json"},body:JSON.stringify(item.body)});if(r.ok)await insOfflineDelete("syncQueue",item.id)}catch(e){}
+  }
+}
+window.addEventListener("online",()=>insSync());
+window.INSOffline={putMany:insOfflinePutMany,put:insOfflinePut,get:insOfflineGet,getAll:insOfflineGetAll,remove:insOfflineDelete,queue:insQueue,sync:insSync};
+insSync();
