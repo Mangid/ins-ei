@@ -1,6 +1,6 @@
 const INS_OFFLINE_DB="ins-ei-offline-v1";
-const INS_OFFLINE_VERSION=1;
-const INS_STORES=["customers","customerDetails"];
+const INS_OFFLINE_VERSION=2;
+const INS_STORES=["customers","customerDetails","visits","maintenances","maintenanceDue","maintenanceDetails"];
 
 function insDb(){
   return new Promise((resolve,reject)=>{
