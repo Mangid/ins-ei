@@ -44,17 +44,29 @@ async function insOfflineDelete(store,id){
   await new Promise((resolve,reject)=>{const tx=db.transaction(store,"readwrite");tx.objectStore(store).delete(id);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)});
   db.close();
 }
+async function insUpdateStatus(){
+  const el=document.getElementById("syncStatus");if(!el)return;
+  let n=0;try{n=(await insOfflineGetAll("syncQueue")).length}catch(e){}
+  el.classList.toggle("offline",!navigator.onLine);el.classList.toggle("pending",navigator.onLine&&n>0);el.classList.toggle("synced",navigator.onLine&&n===0);
+  el.textContent=!navigator.onLine?(n?`Offline · ${n} offen`:"Offline"):(n?`${n} Änderung${n===1?"":"en"} offen`:"Synchronisiert");
+}
 async function insQueue(method,url,body){
   const item={id:Date.now()+"-"+Math.random().toString(16).slice(2),method,url,body,created_at:new Date().toISOString()};
-  await insOfflinePut("syncQueue",item);return item;
+  await insOfflinePut("syncQueue",item);await insUpdateStatus();return item;
 }
 async function insSync(){
-  if(!navigator.onLine)return;
+  if(!navigator.onLine){await insUpdateStatus();return;}
   const items=await insOfflineGetAll("syncQueue");
   for(const item of items){
     try{const r=await fetch(item.url,{method:item.method,headers:{"Content-Type":"application/json"},body:JSON.stringify(item.body)});if(r.ok)await insOfflineDelete("syncQueue",item.id)}catch(e){}
   }
+  await insUpdateStatus();
+  return;
+  /*
+  }*/
 }
 window.addEventListener("online",()=>insSync());
-window.INSOffline={putMany:insOfflinePutMany,put:insOfflinePut,get:insOfflineGet,getAll:insOfflineGetAll,remove:insOfflineDelete,queue:insQueue,sync:insSync};
+window.addEventListener("offline",()=>insUpdateStatus());
+window.INSOffline={putMany:insOfflinePutMany,put:insOfflinePut,get:insOfflineGet,getAll:insOfflineGetAll,remove:insOfflineDelete,queue:insQueue,sync:insSync,status:insUpdateStatus};
+window.addEventListener("DOMContentLoaded",()=>insUpdateStatus());
 insSync();
