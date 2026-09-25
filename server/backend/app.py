@@ -1369,12 +1369,15 @@ def sync_oekofen_plants() -> dict[str, Any]:
 
             existing = con.execute(
                 """
-                SELECT push_enabled, first_seen_at
+                SELECT push_enabled, first_seen_at, problem_count
                 FROM oekofen_plants
                 WHERE plant_id = ?
                 """,
                 (plant_id,),
             ).fetchone()
+
+            previous_problem_count = int(existing["problem_count"]) if existing else 0
+            is_new_problem = problem_count > 0 and previous_problem_count == 0
 
             if existing:
                 push_enabled = existing["push_enabled"]
@@ -1422,6 +1425,18 @@ def sync_oekofen_plants() -> dict[str, Any]:
                 """,
                 (plant_id,),
             )
+
+            if is_new_problem and push_enabled:
+                first_problem = errors[0] if errors and isinstance(errors[0], dict) else {}
+                problem_message = str(first_problem.get("message") or first_problem.get("type") or "Störung erkannt")
+                try:
+                    send_native_push_all(
+                        "ÖkoFEN Störung · " + str(plant_name),
+                        problem_message,
+                        "/#oekofen",
+                    )
+                except Exception as exc:
+                    print(f"OEKOFEN push error {plant_id}: {exc}", flush=True)
 
             for problem in errors:
                 if not isinstance(problem, dict):
@@ -2480,6 +2495,27 @@ def webpush_send(subscription: dict[str, Any], title: str, message: str):
         vapid_private_key=private_key,
         vapid_claims={"sub": "mailto:ins@ins-enertech.at"},
     )
+
+def send_native_push_all(title: str, message: str, url: str = "/") -> dict[str, int]:
+    sent = 0
+    failed = 0
+    with db() as con:
+        rows = con.execute("SELECT endpoint, subscription_json FROM push_subscriptions").fetchall()
+    for row in rows:
+        try:
+            subscription = json.loads(row["subscription_json"])
+            private_key = VAPID_PRIVATE_KEY.read_text().strip()
+            webpush(
+                subscription_info=subscription,
+                data=json.dumps({"title": title, "body": message, "url": url}),
+                vapid_private_key=private_key,
+                vapid_claims={"sub": "mailto:ins@ins-enertech.at"},
+            )
+            sent += 1
+        except Exception:
+            failed += 1
+    return {"sent": sent, "failed": failed}
+
 
 
 @app.get("/api/v1/push/public-key")
