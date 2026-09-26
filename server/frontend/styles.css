@@ -117,3 +117,7 @@
 .oekofen-card.severity-error{border-color:#dc2626;border-left:4px solid #dc2626}
 .oekofen-card.severity-ok{border-left:4px solid transparent}
 .compact-section-title{margin-top:0}
+
+.oekofen-sync-box{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:flex-end}
+.oekofen-unassigned{color:#f59e0b!important;font-weight:700}
+@media(max-width:700px){.oekofen-sync-box{justify-content:flex-start;width:100%}}
