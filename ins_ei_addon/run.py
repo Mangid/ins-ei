@@ -229,10 +229,11 @@ def main():
                 decision.inputs.get("forecast_consumption_current_hour",{}).get("value"),decision.inputs.get("forecast_consumption_current_hour",{}).get("quality"),decision.inputs.get("forecast_consumption_current_hour",{}).get("source"),
                 decision.inputs.get("forecast_balance_today_kwh"))
             bt=decision.inputs.get("thermal_buffer") or {};dt=decision.inputs.get("thermal_dhw") or {}
-            log.info("thermal | buffer_available=%s kWh | buffer_free=%s kWh | buffer_mean=%s C | buffer_temps=%s | buffer_quality=%s | dhw_available=%s kWh | dhw_free=%s kWh | dhw_mean=%s C | dhw_temps=%s | dhw_quality=%s | pellet_heat=%s ct/kWh",
+            log.info("thermal | buffer_available=%s kWh | buffer_free=%s kWh | buffer_mean=%s C | buffer_temps=%s | buffer_min_off=%s C | buffer_quality=%s | dhw_available=%s kWh | dhw_free=%s kWh | dhw_mean=%s C | dhw_temps=%s | dhw_quality=%s | pellet_heat=%s ct/kWh",
                 round(bt.get("available_kwh"),2) if bt.get("available_kwh") is not None else None,
                 round(bt.get("free_kwh"),2) if bt.get("free_kwh") is not None else None,
-                round(bt.get("estimated_mean_c"),1) if bt.get("estimated_mean_c") is not None else None,bt.get("temperatures"),bt.get("quality"),
+                round(bt.get("estimated_mean_c"),1) if bt.get("estimated_mean_c") is not None else None,bt.get("temperatures"),
+                decision.inputs.get("buffer_min_temperature_off",{}).get("value"),bt.get("quality"),
                 round(dt.get("available_kwh"),2) if dt.get("available_kwh") is not None else None,
                 round(dt.get("free_kwh"),2) if dt.get("free_kwh") is not None else None,
                 round(dt.get("estimated_mean_c"),1) if dt.get("estimated_mean_c") is not None else None,dt.get("temperatures"),dt.get("quality"),
