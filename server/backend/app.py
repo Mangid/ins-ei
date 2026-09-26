@@ -26,7 +26,7 @@ from fastapi.responses import FileResponse
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
-VERSION = "1.4.1"
+VERSION = "1.4.2"
 DB_PATH = Path("/data/ins_ei.db")
 PUSHSAFER_KEY = Path("/run/secrets/pushsafer_private_key")
 MANAGEMENT_KEY = Path("/run/secrets/management_api_key")
@@ -2557,12 +2557,14 @@ from(bucket: "{INFLUX_BUCKET}")
 
 
 def influx_consumption_forecast(installation_id: str, hours: int = 24) -> dict[str, Any]:
-    """Learn base consumption while excluding controllable power-to-heat loads."""
+    """Manufacturer-neutral base-load forecast with synchronized 15-minute energy flows."""
     hours=max(1,min(int(hours),48))
     token=INFLUX_TOKEN.read_text().strip()
     safe_id=installation_id.replace('"','\\"')
     fields=("pv.power","grid.power","battery.power","power_to_heat.electrical_power")
     field_filter=" or ".join(f'r._field == "{field}"' for field in fields)
+    # Pivot in Flux: all fields of one 15-minute bucket become one row. This avoids
+    # accidentally combining PV/grid from one bucket with a missing controllable load.
     flux=f"""
 from(bucket: "{INFLUX_BUCKET}")
   |> range(start: -30d)
@@ -2570,46 +2572,48 @@ from(bucket: "{INFLUX_BUCKET}")
   |> filter(fn: (r) => r.installation_id == "{safe_id}")
   |> filter(fn: (r) => {field_filter})
   |> aggregateWindow(every: 15m, fn: mean, createEmpty: false)
-  |> keep(columns: ["_time", "_field", "_value"])
+  |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
+  |> keep(columns: ["_time","pv.power","grid.power","battery.power","power_to_heat.electrical_power"])
 """
     request=Request(INFLUX_URL+"/api/v2/query?org="+INFLUX_ORG,data=json.dumps({"query":flux,"type":"flux"}).encode(),method="POST",headers={"Authorization":f"Token {token}","Content-Type":"application/json","Accept":"application/csv"})
     raw=urlopen(request,timeout=20).read().decode()
-    points={}
-    for row in csv.DictReader(io.StringIO(raw)):
-        ts,field,value=row.get("_time"),row.get("_field"),row.get("_value")
-        if not ts or not field or value is None: continue
-        try: value=float(value)
-        except ValueError: continue
-        points.setdefault(ts,{})[field]=value
     tz=ZoneInfo("Europe/Vienna")
     buckets={}
     days=set()
     valid_points=0
-    for ts,v in points.items():
-        if "pv.power" not in v or "grid.power" not in v: continue
+    rejected_points=0
+    for row in csv.DictReader(io.StringIO(raw)):
+        ts=row.get("_time")
+        try:
+            pv=float(row.get("pv.power",""))
+            grid=float(row.get("grid.power",""))
+        except (TypeError,ValueError):
+            continue
+        try: battery=float(row.get("battery.power") or 0.0)
+        except (TypeError,ValueError): battery=0.0
+        try: p2h=float(row.get("power_to_heat.electrical_power") or 0.0)
+        except (TypeError,ValueError): p2h=0.0
         try: dt=datetime.fromisoformat(ts.replace("Z","+00:00")).astimezone(tz)
-        except ValueError: continue
-        # INS-EI normalized convention: grid + = import, grid - = export.
-        # battery.power is treated as + discharge / - charge when present.
-        battery=v.get("battery.power",0.0)
-        total_load=max(0.0,v["pv.power"]+v["grid.power"]+battery)
-        controllable=max(0.0,v.get("power_to_heat.electrical_power",0.0))
-        base_load=max(0.0,total_load-controllable)
-        if base_load>15000: continue
-        key=(dt.weekday(),dt.hour)
-        buckets.setdefault(key,[]).append(base_load)
+        except (AttributeError,ValueError): continue
+        total=max(0.0,pv+grid+battery)
+        base=max(0.0,total-max(0.0,p2h))
+        # Learning guardrail: reject impossible residuals instead of teaching them.
+        if base>5000:
+            rejected_points+=1
+            continue
+        buckets.setdefault((dt.weekday(),dt.hour),[]).append(base)
         days.add(dt.date())
         valid_points+=1
     now=datetime.now(tz)
     slots=[]
     for n in range(hours):
         slot_start=now.replace(minute=0,second=0,microsecond=0)+timedelta(hours=n)
-        vals=buckets.get((slot_start.weekday(),slot_start.hour),[])
+        vals=list(buckets.get((slot_start.weekday(),slot_start.hour),[]))
         if len(vals)<4:
             vals=[value for (wd,hour),items in buckets.items() if hour==slot_start.hour for value in items]
-        # Median is deliberately robust while a site is still learning.
         vals=sorted(vals)
         if vals:
+            # Median plus a conservative learning cap; remove cap naturally once GOOD.
             mid=len(vals)//2
             estimate_w=vals[mid] if len(vals)%2 else (vals[mid-1]+vals[mid])/2
         else:
@@ -2619,10 +2623,11 @@ from(bucket: "{INFLUX_BUCKET}")
     quality="GOOD" if learned_days>=21 else ("MEDIUM" if learned_days>=7 else "LEARNING")
     return {
         "installation_id":installation_id,
-        "model":"INS_EI_BASE_LOAD_PROFILE_V2",
+        "model":"INS_EI_BASE_LOAD_PROFILE_V3",
         "quality":quality,
         "learned_days":learned_days,
         "valid_points":valid_points,
+        "rejected_points":rejected_points,
         "hours":hours,
         "controllable_loads_excluded":["power_to_heat.electrical_power"],
         "total_kwh":round(sum(x["kwh"] for x in slots),3),
