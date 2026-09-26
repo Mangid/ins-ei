@@ -15,7 +15,7 @@ from ins_ei.plugins.mypv import MyPVPlugin
 from ins_ei.plugins.shrdzm import SHRDZMPlugin
 from ins_ei.model import DataPoint,DataQuality,DataRole
 
-OPTIONS=Path("/data/options.json");UI=Path("/data/ui_mappings.json");VRM_SERIES=Path("/data/vrm_forecast_series.json");DISC=Path("/data/discovery.json");COMPONENTS=Path("/data/components.json");SITE=Path("/data/site_model.json");SHADOW=Path("/data/shadow_decision.json");MARKET=Path("/data/market.json");MARKET_SERIES=Path("/data/market_series.json");STRATEGY=Path("/data/strategy.json");SERVER=Path("/data/server.json");TELEMETRY_STATUS=Path("/data/telemetry_status.json");PLUGINS=Path("/data/plugins.json")
+OPTIONS=Path("/data/options.json");UI=Path("/data/ui_mappings.json");VRM_SERIES=Path("/data/vrm_forecast_series.json");DAY_PLAN=Path("/data/day_plan.json");DISC=Path("/data/discovery.json");COMPONENTS=Path("/data/components.json");SITE=Path("/data/site_model.json");SHADOW=Path("/data/shadow_decision.json");MARKET=Path("/data/market.json");MARKET_SERIES=Path("/data/market_series.json");STRATEGY=Path("/data/strategy.json");SERVER=Path("/data/server.json");TELEMETRY_STATUS=Path("/data/telemetry_status.json");PLUGINS=Path("/data/plugins.json")
 MULTI={"HEATING_CIRCUIT","ROOM","LOAD"}
 
 def load(path,default):
@@ -101,6 +101,56 @@ def read_vrm_plugin(config,log):
         return slots
     except Exception as exc:
         log.warning("plugin | vrm failed | %s",exc);return None
+
+def build_day_plan_inputs(vrm_slots,market_series,market_cfg):
+    """Normalize future VRM + market data into vendor-neutral hourly planner slots."""
+    from datetime import datetime,timezone
+    if not vrm_slots or not market_series:return []
+    def hour_utc_from_ms(ms):
+        return datetime.fromtimestamp(ms/1000,timezone.utc).replace(minute=0,second=0,microsecond=0)
+    prices={}
+    for x in market_series:
+        try:
+            dt=datetime.fromisoformat(x["start_time"].replace("Z","+00:00")).astimezone(timezone.utc).replace(minute=0,second=0,microsecond=0)
+            prices[dt]=float(x["price_per_kwh"])*100.0
+        except (KeyError,TypeError,ValueError):continue
+    imp=market_cfg.get("import") or {};exp=market_cfg.get("export") or {}
+    def tariff(raw,side):
+        cfg=imp if side=="import" else exp
+        if cfg.get("mode")=="STATIC":return float(cfg.get("static_ct",0))
+        if cfg.get("mode")=="HA_SENSOR":return None
+        value=(raw+float(cfg.get("markup_ct",0)))*(1+float(cfg.get("adjust_percent",0))/100)
+        return value*(1+float(cfg.get("vat_percent",0))/100)
+    now=datetime.now(timezone.utc)
+    result=[]
+    for x in vrm_slots:
+        h=hour_utc_from_ms(x["timestamp_ms"])
+        if h < now.replace(minute=0,second=0,microsecond=0):continue
+        raw=prices.get(h)
+        if raw is None:continue
+        result.append({"time":h.isoformat(),"pv_kwh":round(float(x["pv_kwh"]),4),"load_kwh":round(float(x["load_kwh"]),4),
+            "spot_ct_kwh":round(raw,4),"buy_ct_kwh":round(tariff(raw,"import"),4),"sell_ct_kwh":round(tariff(raw,"export"),4)})
+    return result
+
+def build_shadow_day_plan(slots,decision):
+    """Greedy auditable V1 planner. Read-only; carries battery state slot by slot."""
+    if not slots:return {"status":"NO_SLOTS","slots":[]}
+    be=decision.inputs.get("battery_energy") or {}
+    cap=float(be.get("capacity_kwh") or 0);min_soc=float(be.get("min_soc_percent") or 0);max_soc=float(be.get("max_soc_percent") or 100)
+    soc_point=decision.inputs.get("battery_soc") or {};soc=float(soc_point.get("value") or min_soc)
+    energy=cap*soc/100;emin=cap*min_soc/100;emax=cap*max_soc/100
+    pellet=float(decision.inputs.get("pellet_heat_cost_ct_kwh") or 0)
+    rows=[]
+    for x in slots:
+        pv=x["pv_kwh"];load=x["load_kwh"];direct=min(pv,load);pv_left=pv-direct;load_left=load-direct
+        batt_to_load=min(load_left,max(energy-emin,0));energy-=batt_to_load;load_left-=batt_to_load
+        pv_to_batt=min(pv_left,max(emax-energy,0));energy+=pv_to_batt;pv_left-=pv_to_batt
+        econ="PV_TO_HEAT" if pellet and x["sell_ct_kwh"]+1.0<=pellet else "EXPORT"
+        rows.append({**x,"pv_to_load_kwh":round(direct,4),"pv_to_battery_kwh":round(pv_to_batt,4),
+            "battery_to_load_kwh":round(batt_to_load,4),"grid_import_kwh":round(load_left,4),
+            "surplus_after_battery_kwh":round(pv_left,4),"thermal_economic_action":econ,
+            "soc_after_percent":round((energy/cap*100) if cap else soc,1)})
+    return {"status":"SHADOW_V1","generated_at":datetime.now(timezone.utc).isoformat(),"slots":rows}
 
 def supervisor_token():
     value=os.environ.get("SUPERVISOR_TOKEN")
@@ -239,6 +289,16 @@ def main():
                         if point.quality.value in ("STALE","UNAVAILABLE"):
                             log.info("collector issue | %s.%s | quality=%s | value=%s %s | source=%s",component.id,point_name,point.quality.value,point.value,point.unit or "",point.source)
             decision=shadow_evaluate(model,load(MARKET_SERIES,[]),strategy_cfg)
+            market_series=load(MARKET_SERIES,[])
+            vrm_series=load(VRM_SERIES,[])
+            planner_inputs=build_day_plan_inputs(vrm_series,market_series,market_cfg)
+            day_plan=build_shadow_day_plan(planner_inputs,decision)
+            DAY_PLAN.write_text(json.dumps(day_plan,ensure_ascii=False,indent=2),encoding="utf-8")
+            if day_plan.get("slots"):
+                rows=day_plan["slots"];log.info("day planner | status=%s | slots=%d | start=%s | end=%s | pv=%.2f kWh | load=%.2f kWh | grid_import=%.2f kWh | surplus_after_battery=%.2f kWh | end_soc=%.1f %%",
+                    day_plan["status"],len(rows),rows[0]["time"],rows[-1]["time"],sum(x["pv_kwh"] for x in rows),sum(x["load_kwh"] for x in rows),
+                    sum(x["grid_import_kwh"] for x in rows),sum(x["surplus_after_battery_kwh"] for x in rows),rows[-1]["soc_after_percent"])
+
             SHADOW.write_text(json.dumps(decision.to_dict(),ensure_ascii=False,indent=2),encoding="utf-8")
             spot_input=decision.inputs.get("market_spot_price",{})
             log.info("market price | spot=%s %s | import=%.3f ct/kWh | export=%.3f ct/kWh",spot_input.get("value"),spot_input.get("unit") or "",decision.inputs.get("import_price_ct_kwh") or 0,decision.inputs.get("export_price_ct_kwh") or 0)
