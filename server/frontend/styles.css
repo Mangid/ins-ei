@@ -121,3 +121,7 @@
 .oekofen-sync-box{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:flex-end}
 .oekofen-unassigned{color:#f59e0b!important;font-weight:700}
 @media(max-width:700px){.oekofen-sync-box{justify-content:flex-start;width:100%}}
+
+.clickable-oekofen{cursor:pointer}
+.oekofen-detail-status.severity-warning{border-left:4px solid #d97706}
+.oekofen-detail-status.severity-error{border-left:4px solid #dc2626}
