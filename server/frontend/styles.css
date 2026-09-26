@@ -141,3 +141,5 @@
 .pv-forecast-summary{border-color:#3d5d39;background:#0d1c18}.pv-forecast-summary>div strong:before{content:"☀ ";opacity:.9}
 
 .fleet{font-size:9px;font-weight:800;padding:3px 7px;border-radius:99px;letter-spacing:.04em;margin-left:6px}.fleet-healthy{background:#103323;color:#82e6aa}.fleet-warning{background:#352b18;color:#f0d985}.fleet-critical{background:#401c22;color:#ff9da8}.fleet-unknown{background:#243548;color:#b8c8d7}.version{font-size:10px;color:#8194a6;margin-left:6px}.fleet-issues{margin:7px 0;padding:7px 9px;border-radius:8px;background:#352b18;color:#f0d985;font-size:10px}
+
+.fleet-update{border:1px solid #31506a;background:#102334;color:#9fd6ff;border-radius:8px;padding:5px 9px;font-size:10px;cursor:pointer}.fleet-update:hover{background:#17344b}
