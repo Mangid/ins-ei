@@ -223,9 +223,16 @@ def apply_assisted_thermal(plugin_cfg,bp,dw,log):
         elif bp.get("permission")=="ALLOW" and state.get("boiler_owned"):
             plugin.set_boiler_mode(1);state["boiler_owned"]=False
             log.warning("assisted thermal | actuator=pe1.mode | command=1 | ownership=RELEASED | reason=%s",bp.get("reason"))
-        if dw.get("recommendation")=="HEAT_ONE" and str(dw.get("current")).lower() not in ("true","1","on") and now-float(state.get("dhw_last_request",0))>=900:
-            plugin.set_dhw_once(True);state["dhw_last_request"]=now
-            log.warning("assisted thermal | actuator=ww1.heat_once | command=true | cooldown=900s | reason=%s",dw.get("reason"))
+        dhw_current=str(dw.get("current")).strip().lower()
+        if dw.get("recommendation")=="HEAT_ONE" and dhw_current not in ("true","1","on") and not state.get("dhw_owned"):
+            plugin.set_dhw_once(True);state["dhw_owned"]=True;state["dhw_started_at"]=now
+            log.warning("assisted thermal | actuator=ww1.heat_once | command=true | ownership=INS_EI | reason=%s",dw.get("reason"))
+        elif dw.get("recommendation")=="HOLD" and state.get("dhw_owned") and dhw_current in ("true","1","on"):
+            plugin.set_dhw_once(False);state["dhw_owned"]=False
+            log.warning("assisted thermal | actuator=ww1.heat_once | command=false | ownership=RELEASED | reason=%s",dw.get("reason"))
+        elif state.get("dhw_owned") and dhw_current in ("false","0","off"):
+            state["dhw_owned"]=False
+            log.info("assisted thermal | actuator=ww1.heat_once | feedback=false | ownership=RELEASED_BY_CONTROLLER")
     except Exception as exc:
         log.error("assisted thermal | write failed | %s",exc)
     ASSIST.write_text(json.dumps(state,ensure_ascii=False,indent=2),encoding="utf-8")
