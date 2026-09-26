@@ -173,6 +173,34 @@ def evaluate(site,market_series=None,strategy=None):
     load_fc=float(forecast_load.value) if _usable(forecast_load) else None
     forecast_balance=(pv_fc-load_fc) if pv_fc is not None and load_fc is not None else None
     inputs["forecast_balance_today_kwh"]=forecast_balance
+    # Read-only buffer strategy recommendation. Deep charging is opt-in per
+    # installation/component because condensing boilers may intentionally
+    # require low system/return temperatures.
+    buffer_component=(site.components_by_kind("BUFFER") or [None])[0]
+    buffer_cfg=(buffer_component.config or {}) if buffer_component else {}
+    deep_allowed=bool(buffer_cfg.get("buffer_deep_charge_allowed",False))
+    buffer_strategy="DEMAND_ONLY";recommended_min_off=None;buffer_strategy_reason="Tiefe Pufferladung ist für diese Anlage nicht freigegeben."
+    if deep_allowed:
+        thermal_free=(buffer_thermal or {}).get("free_kwh")
+        # Forecast balance is electrical PV minus expected electrical load.
+        # Battery headroom is deliberately not guessed here until a configured
+        # usable battery capacity is part of the component model.
+        if forecast_balance is not None and forecast_balance>2.0 and thermal_free is not None and thermal_free>2.0:
+            buffer_strategy="PV_RESERVE";recommended_min_off=8.0
+            buffer_strategy_reason=f"{forecast_balance:.2f} kWh elektrischer Tagesüberschuss erwartet und {thermal_free:.2f} kWh thermische Aufnahme im Puffer verfügbar; Speicherplatz für PV freihalten."
+        elif forecast_balance is not None and forecast_balance<=2.0 and detected_profile=="HEATING":
+            buffer_strategy="PELLET_LONG_RUN";recommended_min_off=75.0
+            buffer_strategy_reason=f"Kein relevanter PV-Tagesüberschuss ({forecast_balance:.2f} kWh) und Heizbetrieb aktiv; längere Pelletkessellaufzeit ist als Shadow-Strategie plausibel."
+        else:
+            buffer_strategy="DEMAND_ONLY";recommended_min_off=8.0
+            buffer_strategy_reason="Weder klare PV-Reserve- noch tiefe Pelletlade-Situation; bedarfsgeführte Pufferladung beibehalten."
+    # Economic context is reported separately for now. It does not yet switch
+    # the recommendation because export-vs-heat requires time-aligned PV,
+    # battery headroom and tariff forecasts.
+    inputs["buffer_strategy"]={"name":buffer_strategy,"deep_charge_allowed":deep_allowed,
+        "current_min_off_c":float(buffer_min_off.value) if _usable(buffer_min_off) else None,
+        "recommended_min_off_c":recommended_min_off,"reason":buffer_strategy_reason}
+
     if forecast_balance is None:guards.append("Tagesprognose PV/Verbrauch nicht vollständig verfügbar")
     if not _usable(pth):guards.append("Power-to-Heat aktuell nicht belastbar verfügbar")
     if not _usable(buffer):guards.append("Puffertemperatur für thermische Bewertung nicht verfügbar")
