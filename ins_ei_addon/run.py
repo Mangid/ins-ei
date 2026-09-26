@@ -238,6 +238,9 @@ def main():
                 round(dt.get("free_kwh"),2) if dt.get("free_kwh") is not None else None,
                 round(dt.get("estimated_mean_c"),1) if dt.get("estimated_mean_c") is not None else None,dt.get("temperatures"),dt.get("quality"),
                 round(decision.inputs.get("pellet_heat_cost_ct_kwh"),2) if decision.inputs.get("pellet_heat_cost_ct_kwh") is not None else None)
+            bs=decision.inputs.get("buffer_strategy") or {}
+            log.info("buffer strategy | mode=%s | deep_charge_allowed=%s | current_min_off=%s C | recommended_min_off=%s C | reason=%s",
+                bs.get("name"),bs.get("deep_charge_allowed"),bs.get("current_min_off_c"),bs.get("recommended_min_off_c"),bs.get("reason"))
             log.info("price context | current=%.3f ct/kWh | next_slots=%s | min=%s | avg=%s | max=%s | class=%s",
                 decision.inputs.get("market_current_spot_ct") or 0,
                 decision.inputs.get("market_future_slots"),
