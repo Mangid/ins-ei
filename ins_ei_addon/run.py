@@ -85,7 +85,7 @@ def read_plugins(model,config,log):
         except Exception as exc:log.warning("plugin | shrdzm failed | %s",exc)
     return count
 
-def read_vrm_forecast(config,log):
+def read_vrm_plugin(config,log):
     v=config.get("vrm") or {}
     if not v.get("enabled") or not v.get("installation_id") or not v.get("authorization"):return None
     now=int(time.time());end=now+48*3600
@@ -97,10 +97,10 @@ def read_vrm_forecast(config,log):
         pvd={int(x[0]):float(x[1])/1000.0 for x in pv if len(x)>=2};ld={int(x[0]):float(x[1])/1000.0 for x in load_fc if len(x)>=2}
         slots=[{"timestamp_ms":ts,"pv_kwh":pvd[ts],"load_kwh":ld[ts]} for ts in sorted(set(pvd)&set(ld))]
         VRM_SERIES.write_text(json.dumps(slots,ensure_ascii=False,indent=2),encoding="utf-8")
-        log.info("forecast series | provider=VRM | pv_slots=%d | load_slots=%d | common_slots=%d | pv_kwh=%.3f | load_kwh=%.3f",len(pv),len(load_fc),len(slots),sum(x["pv_kwh"] for x in slots),sum(x["load_kwh"] for x in slots))
+        log.info("plugin | vrm | profile=forecast_hours |  pv_slots=%d | load_slots=%d | common_slots=%d | pv_kwh=%.3f | load_kwh=%.3f",len(pv),len(load_fc),len(slots),sum(x["pv_kwh"] for x in slots),sum(x["load_kwh"] for x in slots))
         return slots
     except Exception as exc:
-        log.warning("forecast series failed | provider=VRM | %s",exc);return None
+        log.warning("plugin | vrm failed | %s",exc);return None
 
 def supervisor_token():
     value=os.environ.get("SUPERVISOR_TOKEN")
@@ -231,7 +231,7 @@ def main():
             plugin_cfg=load(PLUGINS,{})
             plugin_points=read_plugins(model,plugin_cfg,log)
             if not VRM_SERIES.exists() or time.time()-VRM_SERIES.stat().st_mtime>=900:
-                read_vrm_forecast(plugin_cfg,log)
+                read_vrm_plugin(plugin_cfg,log)
             log.info("collector | read=%d good=%d stale=%d unavailable=%d plugin_points=%d",result.read,result.good,result.stale,result.unavailable,plugin_points)
             if result.stale or result.unavailable:
                 for component in model.components.values():
