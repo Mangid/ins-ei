@@ -23,7 +23,7 @@ def load(path,default):
     try:return json.loads(path.read_text(encoding="utf-8"))
     except (OSError,json.JSONDecodeError):return default
 
-def send_telemetry(url,installation_id,model,decision,timeout=5):
+def send_telemetry(url,installation_id,model,decision,site_meta=None,timeout=5):
     if not url:return None
     data={}
     for component in model.components.values():
@@ -32,7 +32,7 @@ def send_telemetry(url,installation_id,model,decision,timeout=5):
                 data[f"{component.id}.{name}"]=point.value
     data["shadow.action"]=decision.action
     data["shadow.confidence"]=decision.confidence
-    payload={"installation_id":installation_id,"timestamp":decision.timestamp,"data":data}
+    payload={"installation_id":installation_id,"timestamp":decision.timestamp,"data":data,"site":site_meta or {}}
     req=Request(url.rstrip("/")+"/api/v1/telemetry",data=json.dumps(payload,ensure_ascii=False).encode("utf-8"),headers={"Content-Type":"application/json"},method="POST")
     try:
         with urlopen(req,timeout=timeout) as response:return response.status,len(data)
@@ -357,13 +357,20 @@ def snapshot(client,mappings):
     mapped={m.entity_id:f"{m.component_id}.{m.point}" for m in mappings};items=discover(client.states(),mapped)
     DISC.write_text(json.dumps([{"entity_id":x.entity_id,"name":x.name,"state":x.state,"unit":x.unit,"suggested_domain":x.suggested_domain,"suggested_point":x.suggested_point,"score":x.score,"mapped_to":x.mapped_to,"source_kind":x.source_kind} for x in items],ensure_ascii=False,indent=2),encoding="utf-8")
 
+def home_assistant_site_meta(client):
+    try:
+        cfg=client._get_json("/api/config")
+        return {"latitude":cfg.get("latitude"),"longitude":cfg.get("longitude"),"elevation":cfg.get("elevation"),"time_zone":cfg.get("time_zone"),"location_name":cfg.get("location_name")}
+    except Exception:
+        return {}
+
 def main():
     options=load(OPTIONS,{});os.environ["TZ"]=options.get("timezone","Europe/Vienna")
     if hasattr(time,"tzset"):time.tzset()
     logging.basicConfig(level=getattr(logging,options.get("log_level","INFO")),format="%(asctime)s %(levelname)s %(message)s");log=logging.getLogger("ins_ei")
     token=supervisor_token()
     if not token:log.error("Supervisor token unavailable");return
-    client=HomeAssistantClient("http://supervisor/core",token);signature=None;last=0;interval=int(options.get("interval_seconds",30));server_cfg=load(SERVER,{"url":"https://ins-ei.ins-enertech.net","installation_id":options.get("installation_id","pilot-local"),"interval_seconds":30,"enabled":False});telemetry_url=server_cfg.get("url","").strip() if server_cfg.get("enabled") else "";telemetry_interval=int(server_cfg.get("interval_seconds",30));last_telemetry=0
+    client=HomeAssistantClient("http://supervisor/core",token);site_meta=home_assistant_site_meta(client);log.info("site location | source=HOME_ASSISTANT | latitude=%s | longitude=%s | elevation=%s | timezone=%s",site_meta.get("latitude"),site_meta.get("longitude"),site_meta.get("elevation"),site_meta.get("time_zone"));signature=None;last=0;interval=int(options.get("interval_seconds",30));server_cfg=load(SERVER,{"url":"https://ins-ei.ins-enertech.net","installation_id":options.get("installation_id","pilot-local"),"interval_seconds":30,"enabled":False});telemetry_url=server_cfg.get("url","").strip() if server_cfg.get("enabled") else "";telemetry_interval=int(server_cfg.get("interval_seconds",30));last_telemetry=0
     while True:
         cfg=effective_config(options);component_cfg=load(COMPONENTS,{});market_cfg=load(MARKET,{"mode":"AWATTAR_AT","import_markup_ct":1.5,"vat_percent":20.0,"export_factor_percent":81.0});strategy_cfg=load(STRATEGY,{"profile":"AUTO","priorities":{"thermal_storage":80,"battery_economics":60,"export":40,"ev":50},"requirements":{"dhw_min_c":50.0}})
         sig=json.dumps({"mappings":cfg.get("mappings",[]),"components":component_cfg,"market":market_cfg,"strategy":strategy_cfg,"topology":options.get("thermal_topology")},sort_keys=True,ensure_ascii=False)
@@ -466,7 +473,7 @@ def main():
             log.info("profile detect | profile=%s | reason=%s",decision.inputs.get("detected_profile"),decision.inputs.get("profile_reason"))
             log.info("shadow | action=%s | confidence=%s | reason=%s",decision.action,decision.confidence,decision.reason)
             if telemetry_url and time.time()-last_telemetry>=telemetry_interval:
-                status,count=send_telemetry(telemetry_url,server_cfg.get("installation_id",options.get("installation_id","pilot-local")),model,decision)
+                status,count=send_telemetry(telemetry_url,server_cfg.get("installation_id",options.get("installation_id","pilot-local")),model,decision,site_meta)
                 if isinstance(status,int):
                     TELEMETRY_STATUS.write_text(json.dumps({"connected":True,"last_success":decision.timestamp,"points":count,"status":status,"endpoint":telemetry_url}),encoding="utf-8");log.info("telemetry | sent=%d | status=%d | endpoint=%s",count,status,telemetry_url)
                 else:
