@@ -168,7 +168,7 @@ def dhw_transfer_shadow(model,decision):
     upper=good("BUFFER","temperature_upper");dhw=good("DHW","temperature");cmd=good("DHW","one_time_charge")
     if upper is None or dhw is None:
         return {"recommendation":"HOLD","confidence":"LOW","current":cmd.value if cmd else None,"reason":"Puffer- oder Warmwasserdaten fehlen."}
-    req=(decision.inputs.get("strategy") or {}).get("requirements") or {};minimum=float(req.get("dhw_min_c",50.0))
+    req=(decision.inputs.get("strategy") or {}).get("requirements") or {};minimum=float(req.get("dhw_charge_below_c",req.get("dhw_min_c",50.0)))
     upper_c=float(upper.value);dhw_c=float(dhw.value);delta=upper_c-dhw_c
     if dhw_c<=minimum and delta>=5.0:
         return {"recommendation":"HEAT_ONE","confidence":"HIGH","current":cmd.value if cmd else None,"reason":f"WW {dhw_c:.1f} C <= {minimum:.1f} C und Puffer oben {upper_c:.1f} C bietet {delta:.1f} K Temperaturvorsprung."}
@@ -187,15 +187,15 @@ def boiler_permission_shadow(model,decision,day_plan):
     if upper is None or dhw is None:
         return {"permission":"ALLOW","current_mode":current_mode,"confidence":"LOW","reason":"Fail-safe: Puffer- oder Warmwasserdaten fehlen."}
     req=(decision.inputs.get("strategy") or {}).get("requirements") or {}
-    dhw_min=float(req.get("dhw_min_c",50.0));dhw_c=float(dhw.value);upper_c=float(upper.value)
+    dhw_charge=float(req.get("dhw_charge_below_c",req.get("dhw_min_c",50.0)));dhw_emergency=float(req.get("dhw_emergency_min_c",45.0));dhw_c=float(dhw.value);upper_c=float(upper.value)
     targets=[];active=False
     for c in model.components_by_kind("HEATING_CIRCUIT"):
         t=c.point("target_flow_temperature");p=c.point("pump_state")
         if t is not None and t.value is not None and t.quality.value=="GOOD": targets.append(float(t.value))
         if p is not None and p.value is not None and p.quality.value=="GOOD" and str(p.value).strip().lower() in ("on","ein","true","1","running","heating","heat"): active=True
     required=max(targets+[0])+5.0 if active else 0.0
-    if dhw_c<=dhw_min:
-        return {"permission":"ALLOW","current_mode":current_mode,"confidence":"HIGH","reason":f"Warmwasser {dhw_c:.1f} C erreicht Mindestwert {dhw_min:.1f} C nicht sicher."}
+    if dhw_c<=dhw_emergency:
+        return {"permission":"ALLOW","current_mode":current_mode,"confidence":"HIGH","reason":f"Warmwasser {dhw_c:.1f} C <= Sicherheitsminimum {dhw_emergency:.1f} C. Waermeerzeugung hat Vorrang."}
     if active and upper_c<=required:
         return {"permission":"ALLOW","current_mode":current_mode,"confidence":"HIGH","reason":f"Heizkreise aktiv; Puffer oben {upper_c:.1f} C liegt an Reservegrenze {required:.1f} C."}
     pv_heat=float(((day_plan or {}).get("summary") or {}).get("pv_to_heat_candidate_kwh") or 0)
