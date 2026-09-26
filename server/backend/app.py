@@ -26,7 +26,7 @@ from fastapi.responses import FileResponse
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
-VERSION = "1.5.2"
+VERSION = "1.5.3"
 DB_PATH = Path("/data/ins_ei.db")
 PUSHSAFER_KEY = Path("/run/secrets/pushsafer_private_key")
 MANAGEMENT_KEY = Path("/run/secrets/management_api_key")
@@ -1234,6 +1234,14 @@ def init_customer_db():
             con.execute("ALTER TABLE telemetry_installations ADD COLUMN time_zone TEXT")
         if not column_exists(con, "telemetry_installations", "location_name"):
             con.execute("ALTER TABLE telemetry_installations ADD COLUMN location_name TEXT")
+
+
+        if not column_exists(con, "telemetry_installations", "health_json"):
+            con.execute("ALTER TABLE telemetry_installations ADD COLUMN health_json TEXT")
+        if not column_exists(con, "telemetry_installations", "addon_version"):
+            con.execute("ALTER TABLE telemetry_installations ADD COLUMN addon_version TEXT")
+        if not column_exists(con, "telemetry_installations", "health_updated_at"):
+            con.execute("ALTER TABLE telemetry_installations ADD COLUMN health_updated_at TEXT")
 
 
 def init_oekofen_db():
@@ -2848,9 +2856,21 @@ def telemetry_status() -> dict[str, Any]:
             )
             current = {}
 
+        health={}
+        try: health=json.loads(row["health_json"] or "{}")
+        except (TypeError,json.JSONDecodeError): pass
+        issues=[]
+        collector=health.get("collector") or {};forecast=health.get("server_forecast") or {};planner=health.get("planner") or {}
+        if age_seconds>180: issues.append("TELEMETRY_OFFLINE")
+        if collector.get("unavailable",0): issues.append("COLLECTOR_UNAVAILABLE")
+        if collector.get("stale",0): issues.append("COLLECTOR_STALE")
+        if health and not forecast.get("connected"): issues.append("SERVER_FORECAST_UNAVAILABLE")
+        if health and planner.get("status") not in (None,"SHADOW_V1"): issues.append("PLANNER_"+str(planner.get("status")))
+        fleet_status="CRITICAL" if "TELEMETRY_OFFLINE" in issues else ("WARNING" if issues else ("HEALTHY" if health else "UNKNOWN"))
         installations.append({
             "installation_id": row["installation_id"],
             "current": current,
+            "fleet_status":fleet_status,"issues":issues,"health":health,"addon_version":row["addon_version"],
             "online": age_seconds <= 180,
             "age_seconds": age_seconds,
             "first_seen_at": row["first_seen_at"],
@@ -2874,6 +2894,7 @@ class TelemetryPayload(BaseModel):
     timestamp: datetime
     data: dict[str, Any] = Field(default_factory=dict)
     site: dict[str, Any] = Field(default_factory=dict)
+    health: dict[str, Any] = Field(default_factory=dict)
 
 
 class PushSubscription(BaseModel):
@@ -3367,6 +3388,13 @@ def receive_telemetry(payload: TelemetryPayload):
                 payload.timestamp.isoformat(),
             ),
         )
+
+    if payload.health:
+        with db() as con:
+            con.execute("""UPDATE telemetry_installations
+                SET health_json=?,addon_version=?,health_updated_at=?
+                WHERE installation_id=?""",
+                (json.dumps(payload.health,ensure_ascii=False),payload.health.get("addon_version"),received_at,payload.installation_id))
 
     if payload.site:
         lat=payload.site.get("latitude");lon=payload.site.get("longitude")
