@@ -17,6 +17,7 @@ STRATEGY = Path("/data/strategy.json")
 SERVER = Path("/data/server.json")
 TELEMETRY_STATUS = Path("/data/telemetry_status.json")
 PLUGINS = Path("/data/plugins.json")
+DAY_PLAN = Path("/data/day_plan.json")
 
 BUFFER_DEEP_CHARGE_DESCRIPTION = (
     "Erlaubt dem Optimierer, eine gezielte tiefe Pufferladung durch den "
@@ -96,6 +97,8 @@ class H(BaseHTTPRequestHandler):
             return self.js(load(SERVER, {"url":"https://ins-ei.ins-enertech.net","installation_id":"pilot-local","interval_seconds":30,"enabled":False}))
         if p.endswith("/api/telemetry-status"):
             return self.js(load(TELEMETRY_STATUS, {"connected":False}))
+        if p.endswith("/api/day-plan"):
+            return self.js(load(DAY_PLAN, {"status":"NO_PLAN","slots":[]}))
         if p.endswith("/api/discovery"):
             return self.js(load(DISC, []))
         if p.endswith("/api/entities"):
