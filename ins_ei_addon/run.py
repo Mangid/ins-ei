@@ -130,6 +130,32 @@ def read_server_forecasts(url,installation_id,log,hours=48,timeout=10):
         log.warning("server forecast | failed | %s",exc)
     return None
 
+def apply_server_forecast_to_decision(decision,server_forecast):
+    """Expose central forecast to all shadow diagnostics without changing local sensors."""
+    if not server_forecast:return
+    pv=server_forecast.get("pv") or {};load_fc=server_forecast.get("consumption") or {}
+    pv_slots=pv.get("slots") or [];load_slots=load_fc.get("slots") or []
+    pv_total=float(pv.get("total_kwh") or 0);load_total=float(load_fc.get("total_kwh") or 0)
+    pv_hour=float((pv_slots[0] if pv_slots else {}).get("kwh") or 0)
+    load_hour=float((load_slots[0] if load_slots else {}).get("kwh") or 0)
+    qpv=pv.get("quality") or "LEARNING";ql=load_fc.get("quality") or "LEARNING"
+    decision.inputs["forecast_pv_today"]={"value":pv_total,"unit":"kWh","quality":qpv,"source":"INS_EI_SERVER"}
+    decision.inputs["forecast_consumption_today"]={"value":load_total,"unit":"kWh","quality":ql,"source":"INS_EI_SERVER"}
+    decision.inputs["forecast_pv_current_hour"]={"value":pv_hour,"unit":"kWh","quality":qpv,"source":"INS_EI_SERVER"}
+    decision.inputs["forecast_consumption_current_hour"]={"value":load_hour,"unit":"kWh","quality":ql,"source":"INS_EI_SERVER"}
+    balance=pv_total-load_total
+    decision.inputs["forecast_balance_today_kwh"]=balance
+    be=decision.inputs.get("battery_energy") or {}
+    free=float(be.get("free_kwh") or 0)
+    surplus=max(balance-free,0.0)
+    decision.inputs["pv_surplus_after_battery_headroom_kwh"]=surplus
+    te=decision.inputs.get("thermal_economics") or {}
+    te["surplus_after_battery_kwh"]=surplus
+    if surplus>0 and te.get("decision")=="NO_SURPLUS":
+        te["decision"]="UNKNOWN"
+        te["reason"]="PV-Ueberschuss aus zentralem INS-EI-Forecast vorhanden; Tarif-/Thermalbewertung lokal noch nicht vollständig."
+    decision.inputs["thermal_economics"]=te
+
 def build_server_day_plan_inputs(server_forecast,market_series,market_cfg):
     """Build planner slots from central forecasts. SELF_CONSUMPTION needs no tariff."""
     if not server_forecast or not server_forecast.get("slots"):return []
@@ -485,6 +511,7 @@ def main():
                 fetched=read_server_forecasts(telemetry_url,installation_id,log)
                 if fetched is not None:
                     server_forecast=fetched;last_server_forecast=time.time()
+            apply_server_forecast_to_decision(decision,server_forecast)
             planner_inputs=build_server_day_plan_inputs(server_forecast,market_series,market_cfg)
             if not planner_inputs:
                 vrm_series=load(VRM_SERIES,[])
