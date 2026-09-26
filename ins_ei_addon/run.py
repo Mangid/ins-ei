@@ -97,6 +97,11 @@ def supervisor_token():
 
 def base_kind(component_id):
     raw=component_id.upper()
+    # Manufacturer plugins use short instance IDs for heating circuits.
+    # Normalize them to the vendor-neutral SiteModel kind so Thermal Shadow
+    # sees their target flow temperatures and pump states.
+    if raw.startswith("HK") and raw[2:].isdigit():
+        return "HEATING_CIRCUIT"
     for kind in ("COMBINED_STORAGE","HEATING_CIRCUIT","POWER_TO_HEAT","PELLET_BOILER","HEAT_PUMP","SOLAR_THERMAL","FORECAST","MARKET","BATTERY","BUFFER","DHW","GRID","LOAD","PV","ROOM"):
         if raw==kind or raw.startswith(kind+"_") or raw.startswith(kind+":"):return kind
     return raw
