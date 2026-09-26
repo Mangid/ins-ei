@@ -26,7 +26,7 @@ from fastapi.responses import FileResponse
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
-VERSION = "1.5.0"
+VERSION = "1.5.1"
 DB_PATH = Path("/data/ins_ei.db")
 PUSHSAFER_KEY = Path("/run/secrets/pushsafer_private_key")
 MANAGEMENT_KEY = Path("/run/secrets/management_api_key")
@@ -2659,8 +2659,72 @@ from(bucket: "{INFLUX_BUCKET}")
     }
 
 
+def installation_location(installation_id: str) -> dict[str, Any] | None:
+    """Resolve an INS-EI telemetry id to the stored customer/installation address and geocode it."""
+    with db() as con:
+        row=con.execute("""
+            SELECT COALESCE(NULLIF(i.address,''),c.address) address,
+                   COALESCE(NULLIF(i.postal_code,''),c.postal_code) postal_code,
+                   COALESCE(NULLIF(i.city,''),c.city) city,
+                   COALESCE(c.country,'AT') country
+            FROM devices d
+            JOIN installations i ON i.id=d.installation_id
+            LEFT JOIN customers c ON c.id=i.customer_id
+            WHERE d.ins_installation_id=?
+            ORDER BY d.id LIMIT 1
+        """,(installation_id,)).fetchone()
+        if row is None:
+            row=con.execute("""
+                SELECT COALESCE(NULLIF(i.address,''),c.address) address,
+                       COALESCE(NULLIF(i.postal_code,''),c.postal_code) postal_code,
+                       COALESCE(NULLIF(i.city,''),c.city) city,
+                       COALESCE(c.country,'AT') country
+                FROM ins_ei_installations ie
+                JOIN installations i ON i.id=ie.installation_id
+                LEFT JOIN customers c ON c.id=i.customer_id
+                WHERE ie.ins_installation_id=?
+                LIMIT 1
+            """,(installation_id,)).fetchone()
+    if row is None or not row["city"]:
+        return None
+    query=" ".join(str(x) for x in (row["postal_code"],row["city"],row["country"]) if x)
+    url="https://geocoding-api.open-meteo.com/v1/search?"+urlencode({"name":query,"count":1,"language":"de","format":"json"})
+    try:
+        with urlopen(Request(url,headers={"User-Agent":"INS-EI/1.0"}),timeout=8) as response:
+            data=json.loads(response.read().decode())
+        hit=(data.get("results") or [None])[0]
+        if not hit:
+            # City-only fallback handles geocoders that dislike combined postal queries.
+            url="https://geocoding-api.open-meteo.com/v1/search?"+urlencode({"name":row["city"],"count":1,"language":"de","format":"json","countryCode":row["country"]})
+            with urlopen(Request(url,headers={"User-Agent":"INS-EI/1.0"}),timeout=8) as response:
+                data=json.loads(response.read().decode())
+            hit=(data.get("results") or [None])[0]
+        if hit:
+            return {"latitude":float(hit["latitude"]),"longitude":float(hit["longitude"]),"name":hit.get("name") or row["city"],"source":"CUSTOMER_ADDRESS_GEOCODE"}
+    except Exception:
+        return None
+    return None
+
+
+def pv_weather_hours(location: dict[str, Any], hours: int) -> dict[str, dict[str, float]]:
+    """Fetch hourly cloud cover and shortwave radiation for the learned site."""
+    params={
+        "latitude":location["latitude"],"longitude":location["longitude"],
+        "hourly":"cloud_cover,shortwave_radiation","forecast_days":3,
+        "timezone":"Europe/Vienna",
+    }
+    url="https://api.open-meteo.com/v1/forecast?"+urlencode(params)
+    with urlopen(Request(url,headers={"User-Agent":"INS-EI/1.0"}),timeout=10) as response:
+        data=json.loads(response.read().decode())
+    hourly=data.get("hourly") or {}
+    result={}
+    for ts,cloud,rad in zip(hourly.get("time",[]),hourly.get("cloud_cover",[]),hourly.get("shortwave_radiation",[])):
+        result[ts]={"cloud_cover":float(cloud or 0),"shortwave_radiation":float(rad or 0)}
+    return result
+
+
 def influx_pv_forecast(installation_id: str, hours: int = 24) -> dict[str, Any]:
-    """Self-learning PV forecast from the installation's own production history."""
+    """Self-learning PV forecast corrected by weather at the installation location."""
     hours=max(1,min(int(hours),48))
     token=INFLUX_TOKEN.read_text().strip()
     safe_id=installation_id.replace('"','\\"')
@@ -2678,48 +2742,57 @@ from(bucket: "{INFLUX_BUCKET}")
     tz=ZoneInfo("Europe/Vienna")
     by_hour={}
     days=set()
-    values=[]
     for row in csv.DictReader(io.StringIO(raw)):
         ts,value=row.get("_time"),row.get("_value")
         try:
-            watts=max(0.0,float(value))
-            dt=datetime.fromisoformat(ts.replace("Z","+00:00")).astimezone(tz)
-        except (TypeError,ValueError,AttributeError):
-            continue
-        by_hour.setdefault(dt.hour,[]).append(watts)
-        days.add(dt.date())
-        values.append(watts)
+            watts=max(0.0,float(value));dt=datetime.fromisoformat(ts.replace("Z","+00:00")).astimezone(tz)
+        except (TypeError,ValueError,AttributeError): continue
+        by_hour.setdefault(dt.hour,[]).append(watts);days.add(dt.date())
+    location=installation_location(installation_id)
+    weather={}
+    if location:
+        try: weather=pv_weather_hours(location,hours)
+        except Exception: weather={}
     now=datetime.now(tz)
     slots=[]
     for n in range(hours):
         slot_start=now.replace(minute=0,second=0,microsecond=0)+timedelta(hours=n)
         vals=sorted(by_hour.get(slot_start.hour,[]))
         if vals:
-            # V1 deliberately learns the real site shape. Median is robust against
-            # short cloud events; weather correction is added in the next stage.
             mid=len(vals)//2
-            estimate_w=vals[mid] if len(vals)%2 else (vals[mid-1]+vals[mid])/2
-            quality="GOOD" if len(vals)>=12 and len(days)>=7 else "LEARNING"
-        else:
-            estimate_w=0.0
-            quality="LEARNING"
-        # Night / very low learned production is represented as zero.
+            learned_w=vals[mid] if len(vals)%2 else (vals[mid-1]+vals[mid])/2
+        else: learned_w=0.0
+        wx=weather.get(slot_start.strftime("%Y-%m-%dT%H:%M"))
+        estimate_w=learned_w
+        weather_factor=1.0
+        if wx and learned_w>0:
+            # Conservative V2 attenuation: the learned curve defines the site's real
+            # geometry/capacity; cloud cover only corrects it downward. Radiation is
+            # retained as an observable for later self-calibration.
+            cloud=max(0.0,min(100.0,wx["cloud_cover"]))
+            weather_factor=max(0.18,1.0-0.0075*cloud)
+            estimate_w=learned_w*weather_factor
         if estimate_w<50: estimate_w=0.0
-        slots.append({"start":slot_start.isoformat(),"kwh":round(estimate_w/1000.0,3),"samples":len(vals),"quality":quality,"source":"HISTORICAL_PV_PROFILE"})
+        slot_quality="GOOD" if len(vals)>=12 and len(days)>=7 and wx else "LEARNING"
+        slots.append({
+            "start":slot_start.isoformat(),"kwh":round(estimate_w/1000.0,3),
+            "baseline_kwh":round(learned_w/1000.0,3),"samples":len(vals),
+            "quality":slot_quality,"source":"HISTORICAL_PV_PLUS_WEATHER" if wx else "HISTORICAL_PV_PROFILE",
+            "cloud_cover_pct":round(wx["cloud_cover"],1) if wx else None,
+            "shortwave_radiation_w_m2":round(wx["shortwave_radiation"],1) if wx else None,
+            "weather_factor":round(weather_factor,3) if wx else None,
+        })
     learned_days=len(days)
-    model_quality="GOOD" if learned_days>=21 else ("MEDIUM" if learned_days>=7 else "LEARNING")
+    model_quality="GOOD" if learned_days>=21 and weather else ("MEDIUM" if learned_days>=7 and weather else "LEARNING")
     return {
-        "installation_id":installation_id,
-        "model":"INS_EI_PV_PROFILE_V1",
-        "quality":model_quality,
-        "learned_days":learned_days,
-        "hours":hours,
+        "installation_id":installation_id,"model":"INS_EI_PV_PROFILE_V2",
+        "quality":model_quality,"learned_days":learned_days,"hours":hours,
         "total_kwh":round(sum(x["kwh"] for x in slots),3),
-        "method":"SELF_LEARNED_PV_HISTORY",
+        "baseline_total_kwh":round(sum(x["baseline_kwh"] for x in slots),3),
+        "method":"SELF_LEARNED_PV_HISTORY_PLUS_WEATHER" if weather else "SELF_LEARNED_PV_HISTORY",
         "external_vendor_forecast_used":False,
-        "slots":slots,
+        "weather_used":bool(weather),"location":location,"slots":slots,
     }
-
 
 def telemetry_status() -> dict[str, Any]:
     """Return status of all INS-EI telemetry installations."""
