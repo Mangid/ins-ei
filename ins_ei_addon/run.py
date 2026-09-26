@@ -23,7 +23,7 @@ def load(path,default):
     try:return json.loads(path.read_text(encoding="utf-8"))
     except (OSError,json.JSONDecodeError):return default
 
-def send_telemetry(url,installation_id,model,decision,site_meta=None,timeout=5):
+def send_telemetry(url,installation_id,model,decision,site_meta=None,health=None,timeout=5):
     if not url:return None
     data={}
     for component in model.components.values():
@@ -32,7 +32,7 @@ def send_telemetry(url,installation_id,model,decision,site_meta=None,timeout=5):
                 data[f"{component.id}.{name}"]=point.value
     data["shadow.action"]=decision.action
     data["shadow.confidence"]=decision.confidence
-    payload={"installation_id":installation_id,"timestamp":decision.timestamp,"data":data,"site":site_meta or {}}
+    payload={"installation_id":installation_id,"timestamp":decision.timestamp,"data":data,"site":site_meta or {},"health":health or {}}
     req=Request(url.rstrip("/")+"/api/v1/telemetry",data=json.dumps(payload,ensure_ascii=False).encode("utf-8"),headers={"Content-Type":"application/json"},method="POST")
     try:
         with urlopen(req,timeout=timeout) as response:return response.status,len(data)
@@ -586,7 +586,14 @@ def main():
             log.info("profile detect | profile=%s | reason=%s",decision.inputs.get("detected_profile"),decision.inputs.get("profile_reason"))
             log.info("shadow | action=%s | confidence=%s | reason=%s",decision.action,decision.confidence,decision.reason)
             if telemetry_url and time.time()-last_telemetry>=telemetry_interval:
-                status,count=send_telemetry(telemetry_url,server_cfg.get("installation_id",options.get("installation_id","pilot-local")),model,decision,site_meta)
+                health={"addon_version":"0.28.42","collector":{"read":result.read,"good":result.good,"stale":result.stale,"unavailable":result.unavailable,"plugin_points":plugin_points},
+                    "server_forecast":{"connected":server_forecast is not None,"pv_slots":len(((server_forecast or {}).get("pv") or {}).get("slots") or []),"load_slots":len(((server_forecast or {}).get("consumption") or {}).get("slots") or []),
+                    "pv_quality":((server_forecast or {}).get("pv") or {}).get("quality"),"load_quality":((server_forecast or {}).get("consumption") or {}).get("quality")},
+                    "planner":{"status":day_plan.get("status"),"slots":len(day_plan.get("slots") or []),"export_strategy":day_plan.get("export_strategy"),
+                    "pv_kwh":round(sum(x.get("pv_kwh",0) for x in day_plan.get("slots") or []),3),"load_kwh":round(sum(x.get("load_kwh",0) for x in day_plan.get("slots") or []),3),
+                    "pv_to_heat_kwh":round(sum(x.get("pv_to_heat_candidate_kwh",0) for x in day_plan.get("slots") or []),3),"export_kwh":round(sum(x.get("pv_export_candidate_kwh",0) for x in day_plan.get("slots") or []),3)},
+                    "shadow":{"action":decision.action,"confidence":decision.confidence},"generated_at":decision.timestamp}
+                status,count=send_telemetry(telemetry_url,server_cfg.get("installation_id",options.get("installation_id","pilot-local")),model,decision,site_meta,health)
                 if isinstance(status,int):
                     TELEMETRY_STATUS.write_text(json.dumps({"connected":True,"last_success":decision.timestamp,"points":count,"status":status,"endpoint":telemetry_url}),encoding="utf-8");log.info("telemetry | sent=%d | status=%d | endpoint=%s",count,status,telemetry_url)
                 else:
