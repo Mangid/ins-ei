@@ -16,6 +16,7 @@ from ins_ei.plugins.mypv import MyPVPlugin
 from ins_ei.plugins.shrdzm import SHRDZMPlugin
 from ins_ei.model import DataPoint,DataQuality,DataRole
 
+ADDON_VERSION=os.environ.get("BUILD_VERSION") or os.environ.get("INS_EI_ADDON_VERSION") or "unknown"
 OPTIONS=Path("/data/options.json");UI=Path("/data/ui_mappings.json");VRM_SERIES=Path("/data/vrm_forecast_series.json");DAY_PLAN=Path("/data/day_plan.json");PLAN_HISTORY=Path("/data/plan_history");DISC=Path("/data/discovery.json");COMPONENTS=Path("/data/components.json");SITE=Path("/data/site_model.json");SHADOW=Path("/data/shadow_decision.json");MARKET=Path("/data/market.json");MARKET_SERIES=Path("/data/market_series.json");STRATEGY=Path("/data/strategy.json");SERVER=Path("/data/server.json");TELEMETRY_STATUS=Path("/data/telemetry_status.json");PLUGINS=Path("/data/plugins.json");ASSIST=Path("/data/assisted_thermal.json")
 MULTI={"HEATING_CIRCUIT","ROOM","LOAD"}
 
@@ -617,7 +618,7 @@ def main():
             log.info("profile detect | profile=%s | reason=%s",decision.inputs.get("detected_profile"),decision.inputs.get("profile_reason"))
             log.info("shadow | action=%s | confidence=%s | reason=%s",decision.action,decision.confidence,decision.reason)
             if telemetry_url and time.time()-last_telemetry>=telemetry_interval:
-                health={"addon_version":"0.28.42","collector":{"read":result.read,"good":result.good,"stale":result.stale,"unavailable":result.unavailable,"plugin_points":plugin_points},
+                health={"addon_version":ADDON_VERSION,"collector":{"read":result.read,"good":result.good,"stale":result.stale,"unavailable":result.unavailable,"plugin_points":plugin_points},
                     "server_forecast":{"connected":server_forecast is not None,"pv_slots":len(((server_forecast or {}).get("pv") or {}).get("slots") or []),"load_slots":len(((server_forecast or {}).get("consumption") or {}).get("slots") or []),
                     "pv_quality":((server_forecast or {}).get("pv") or {}).get("quality"),"load_quality":((server_forecast or {}).get("consumption") or {}).get("quality")},
                     "planner":{"status":day_plan.get("status"),"slots":len(day_plan.get("slots") or []),"export_strategy":day_plan.get("export_strategy"),
