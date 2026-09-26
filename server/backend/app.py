@@ -26,7 +26,7 @@ from fastapi.responses import FileResponse
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
-VERSION = "1.4.2"
+VERSION = "1.4.3"
 DB_PATH = Path("/data/ins_ei.db")
 PUSHSAFER_KEY = Path("/run/secrets/pushsafer_private_key")
 MANAGEMENT_KEY = Path("/run/secrets/management_api_key")
@@ -2604,30 +2604,45 @@ from(bucket: "{INFLUX_BUCKET}")
         buckets.setdefault((dt.weekday(),dt.hour),[]).append(base)
         days.add(dt.date())
         valid_points+=1
-    now=datetime.now(tz)
-    slots=[]
+    all_values=sorted(value for items in buckets.values() for value in items if value>0)\n    if all_values:\n        mid=len(all_values)//2\n        global_median=all_values[mid] if len(all_values)%2 else (all_values[mid-1]+all_values[mid])/2\n    else:\n        global_median=500.0\n    now=datetime.now(tz)\n    slots=[]
     for n in range(hours):
         slot_start=now.replace(minute=0,second=0,microsecond=0)+timedelta(hours=n)
         vals=list(buckets.get((slot_start.weekday(),slot_start.hour),[]))
         if len(vals)<4:
             vals=[value for (wd,hour),items in buckets.items() if hour==slot_start.hour for value in items]
-        vals=sorted(vals)
+        vals=sorted(v for v in vals if v>0)
+        source="PROFILE"
         if vals:
-            # Median plus a conservative learning cap; remove cap naturally once GOOD.
             mid=len(vals)//2
             estimate_w=vals[mid] if len(vals)%2 else (vals[mid-1]+vals[mid])/2
+            slot_quality="GOOD" if len(vals)>=8 else "LEARNING"
         else:
-            estimate_w=0.0
-        slots.append({"start":slot_start.isoformat(),"kwh":round(estimate_w/1000.0,3),"samples":len(vals)})
+            # Missing history is unknown consumption, never zero consumption.
+            neighbours=[]
+            for delta in (-2,-1,1,2):
+                h=(slot_start.hour+delta)%24
+                neighbours.extend(v for (wd,hour),items in buckets.items() if hour==h for v in items if v>0)
+            neighbours=sorted(neighbours)
+            if neighbours:
+                mid=len(neighbours)//2
+                estimate_w=neighbours[mid] if len(neighbours)%2 else (neighbours[mid-1]+neighbours[mid])/2
+                source="NEIGHBOUR_FALLBACK"
+            else:
+                estimate_w=global_median
+                source="GLOBAL_FALLBACK"
+            slot_quality="FALLBACK"
+        # Conservative floor avoids artificial zero-load hours while learning.
+        estimate_w=max(100.0,estimate_w)
+        slots.append({"start":slot_start.isoformat(),"kwh":round(estimate_w/1000.0,3),"samples":len(vals),"quality":slot_quality,"source":source})
     learned_days=len(days)
     quality="GOOD" if learned_days>=21 else ("MEDIUM" if learned_days>=7 else "LEARNING")
     return {
         "installation_id":installation_id,
-        "model":"INS_EI_BASE_LOAD_PROFILE_V3",
+        "model":"INS_EI_BASE_LOAD_PROFILE_V4",
         "quality":quality,
         "learned_days":learned_days,
         "valid_points":valid_points,
-        "rejected_points":rejected_points,
+        "rejected_points":rejected_points,\n        "fallback_floor_w":100,\n        "global_median_w":round(global_median,1),
         "hours":hours,
         "controllable_loads_excluded":["power_to_heat.electrical_power"],
         "total_kwh":round(sum(x["kwh"] for x in slots),3),
