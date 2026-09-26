@@ -200,6 +200,33 @@ def build_boiler_permission_shadow(model,decision,day_plan):
         return {"permission":"BLOCK","confidence":"MEDIUM","guards":[],"reason":f"Puffer oben {upper_c:.1f} °C und WW {dhw_c:.1f} °C ausreichend; Day Planner erwartet {pv_heat:.2f} kWh wirtschaftliche PV-Waerme. Pelletkessel vorlaeufig zurueckhalten."}
     return {"permission":"ALLOW","confidence":"MEDIUM","guards":[],"reason":f"Nur {pv_heat:.2f} kWh wirtschaftliche PV-Waerme erwartet; keine belastbare Grundlage fuer Kesselsperre."}
 
+def boiler_permission_shadow(model,decision,day_plan):
+    def good(kind,name):
+        for c in model.components_by_kind(kind):
+            p=c.point(name)
+            if p is not None and p.value is not None and p.quality.value=="GOOD": return p
+        return None
+    upper=good("BUFFER","temperature_upper");dhw=good("DHW","temperature");mode=good("PELLET_BOILER","operating_mode")
+    current_mode=mode.value if mode else None
+    if upper is None or dhw is None:
+        return {"permission":"ALLOW","current_mode":current_mode,"confidence":"LOW","reason":"Fail-safe: Puffer- oder Warmwasserdaten fehlen."}
+    req=(decision.inputs.get("strategy") or {}).get("requirements") or {}
+    dhw_min=float(req.get("dhw_min_c",50.0));dhw_c=float(dhw.value);upper_c=float(upper.value)
+    targets=[];active=False
+    for c in model.components_by_kind("HEATING_CIRCUIT"):
+        t=c.point("target_flow_temperature");p=c.point("pump_state")
+        if t is not None and t.value is not None and t.quality.value=="GOOD": targets.append(float(t.value))
+        if p is not None and p.value is not None and p.quality.value=="GOOD" and str(p.value).strip().lower() in ("on","ein","true","1","running","heating","heat"): active=True
+    required=max(targets+[0])+5.0 if active else 0.0
+    if dhw_c<=dhw_min:
+        return {"permission":"ALLOW","current_mode":current_mode,"confidence":"HIGH","reason":f"Warmwasser {dhw_c:.1f} C erreicht Mindestwert {dhw_min:.1f} C nicht sicher."}
+    if active and upper_c<=required:
+        return {"permission":"ALLOW","current_mode":current_mode,"confidence":"HIGH","reason":f"Heizkreise aktiv; Puffer oben {upper_c:.1f} C liegt an Reservegrenze {required:.1f} C."}
+    pv_heat=float(((day_plan or {}).get("summary") or {}).get("pv_to_heat_candidate_kwh") or 0)
+    if pv_heat>=2.0:
+        return {"permission":"BLOCK","current_mode":current_mode,"confidence":"MEDIUM","reason":f"Puffer oben {upper_c:.1f} C und WW {dhw_c:.1f} C ausreichend; {pv_heat:.2f} kWh wirtschaftliche PV-Waerme geplant."}
+    return {"permission":"ALLOW","current_mode":current_mode,"confidence":"MEDIUM","reason":f"Nur {pv_heat:.2f} kWh wirtschaftliche PV-Waerme geplant."}
+
 def supervisor_token():
     value=os.environ.get("SUPERVISOR_TOKEN")
     if value:return value
@@ -343,7 +370,10 @@ def main():
             day_plan=build_shadow_day_plan(planner_inputs,decision)
             boiler_permission=build_boiler_permission_shadow(model,decision,day_plan)
             day_plan["boiler_permission"]=boiler_permission
+            bp=boiler_permission_shadow(model,decision,day_plan)
+            day_plan["boiler_permission"]=bp
             DAY_PLAN.write_text(json.dumps(day_plan,ensure_ascii=False,indent=2),encoding="utf-8")
+            log.info("boiler permission shadow | current_mode=%s | recommendation=%s | confidence=%s | reason=%s",bp.get("current_mode"),bp.get("permission"),bp.get("confidence"),bp.get("reason"))
             log.info("boiler permission shadow | permission=%s | confidence=%s | guards=%s | reason=%s",
                 boiler_permission.get("permission"),boiler_permission.get("confidence"),boiler_permission.get("guards"),boiler_permission.get("reason"))
             if day_plan.get("slots"):
