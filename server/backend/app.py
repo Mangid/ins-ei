@@ -26,7 +26,7 @@ from fastapi.responses import FileResponse
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
-VERSION = "1.4.3"
+VERSION = "1.5.0"
 DB_PATH = Path("/data/ins_ei.db")
 PUSHSAFER_KEY = Path("/run/secrets/pushsafer_private_key")
 MANAGEMENT_KEY = Path("/run/secrets/management_api_key")
@@ -2658,6 +2658,69 @@ from(bucket: "{INFLUX_BUCKET}")
         "slots":slots,
     }
 
+
+def influx_pv_forecast(installation_id: str, hours: int = 24) -> dict[str, Any]:
+    """Self-learning PV forecast from the installation's own production history."""
+    hours=max(1,min(int(hours),48))
+    token=INFLUX_TOKEN.read_text().strip()
+    safe_id=installation_id.replace('"','\\"')
+    flux=f"""
+from(bucket: "{INFLUX_BUCKET}")
+  |> range(start: -30d)
+  |> filter(fn: (r) => r._measurement == "ins_ei_telemetry")
+  |> filter(fn: (r) => r.installation_id == "{safe_id}")
+  |> filter(fn: (r) => r._field == "pv.power")
+  |> aggregateWindow(every: 15m, fn: mean, createEmpty: false)
+  |> keep(columns: ["_time","_value"])
+"""
+    request=Request(INFLUX_URL+"/api/v2/query?org="+INFLUX_ORG,data=json.dumps({"query":flux,"type":"flux"}).encode(),method="POST",headers={"Authorization":f"Token {token}","Content-Type":"application/json","Accept":"application/csv"})
+    raw=urlopen(request,timeout=20).read().decode()
+    tz=ZoneInfo("Europe/Vienna")
+    by_hour={}
+    days=set()
+    values=[]
+    for row in csv.DictReader(io.StringIO(raw)):
+        ts,value=row.get("_time"),row.get("_value")
+        try:
+            watts=max(0.0,float(value))
+            dt=datetime.fromisoformat(ts.replace("Z","+00:00")).astimezone(tz)
+        except (TypeError,ValueError,AttributeError):
+            continue
+        by_hour.setdefault(dt.hour,[]).append(watts)
+        days.add(dt.date())
+        values.append(watts)
+    now=datetime.now(tz)
+    slots=[]
+    for n in range(hours):
+        slot_start=now.replace(minute=0,second=0,microsecond=0)+timedelta(hours=n)
+        vals=sorted(by_hour.get(slot_start.hour,[]))
+        if vals:
+            # V1 deliberately learns the real site shape. Median is robust against
+            # short cloud events; weather correction is added in the next stage.
+            mid=len(vals)//2
+            estimate_w=vals[mid] if len(vals)%2 else (vals[mid-1]+vals[mid])/2
+            quality="GOOD" if len(vals)>=12 and len(days)>=7 else "LEARNING"
+        else:
+            estimate_w=0.0
+            quality="LEARNING"
+        # Night / very low learned production is represented as zero.
+        if estimate_w<50: estimate_w=0.0
+        slots.append({"start":slot_start.isoformat(),"kwh":round(estimate_w/1000.0,3),"samples":len(vals),"quality":quality,"source":"HISTORICAL_PV_PROFILE"})
+    learned_days=len(days)
+    model_quality="GOOD" if learned_days>=21 else ("MEDIUM" if learned_days>=7 else "LEARNING")
+    return {
+        "installation_id":installation_id,
+        "model":"INS_EI_PV_PROFILE_V1",
+        "quality":model_quality,
+        "learned_days":learned_days,
+        "hours":hours,
+        "total_kwh":round(sum(x["kwh"] for x in slots),3),
+        "method":"SELF_LEARNED_PV_HISTORY",
+        "external_vendor_forecast_used":False,
+        "slots":slots,
+    }
+
+
 def telemetry_status() -> dict[str, Any]:
     """Return status of all INS-EI telemetry installations."""
 
@@ -3138,6 +3201,14 @@ def api_oekofen_infos(plant_id: str):
 def api_oekofen_sync():
     return sync_oekofen_plants()
 
+
+
+@app.get("/api/v1/forecast/pv/{installation_id}")
+def get_pv_forecast(installation_id: str, hours: int = 24):
+    try:
+        return influx_pv_forecast(installation_id, hours)
+    except Exception as exc:
+        raise HTTPException(503, f"PV forecast unavailable: {exc}") from exc
 
 
 @app.get("/api/v1/forecast/consumption/{installation_id}")
