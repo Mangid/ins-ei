@@ -216,6 +216,10 @@ def apply_assisted_thermal(plugin_cfg,bp,dw,log):
     state=load(ASSIST,{"boiler_owned":False,"dhw_last_request":0})
     now=time.time()
     current=str(bp.get("current_mode")).strip().lower()
+    if bp.get("confidence")=="LOW" or dw.get("confidence")=="LOW":
+        log.warning("assisted thermal | HOLD_LAST_STATE | boiler_confidence=%s | dhw_confidence=%s | reason=critical data unavailable or uncertain",bp.get("confidence"),dw.get("confidence"))
+        ASSIST.write_text(json.dumps(state,ensure_ascii=False,indent=2),encoding="utf-8")
+        return
     try:
         if bp.get("permission")=="BLOCK" and current in ("1","1.0","auto") and not state.get("boiler_owned"):
             plugin.set_boiler_mode(0);state["boiler_owned"]=True;state["boiler_blocked_at"]=now
