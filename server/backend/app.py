@@ -26,7 +26,7 @@ from fastapi.responses import FileResponse
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
-VERSION = "1.5.3"
+VERSION = "1.5.4"
 DB_PATH = Path("/data/ins_ei.db")
 PUSHSAFER_KEY = Path("/run/secrets/pushsafer_private_key")
 MANAGEMENT_KEY = Path("/run/secrets/management_api_key")
@@ -1242,6 +1242,18 @@ def init_customer_db():
             con.execute("ALTER TABLE telemetry_installations ADD COLUMN addon_version TEXT")
         if not column_exists(con, "telemetry_installations", "health_updated_at"):
             con.execute("ALTER TABLE telemetry_installations ADD COLUMN health_updated_at TEXT")
+
+
+        if not column_exists(con, "telemetry_installations", "fleet_status"):
+            con.execute("ALTER TABLE telemetry_installations ADD COLUMN fleet_status TEXT")
+        if not column_exists(con, "telemetry_installations", "fleet_status_since"):
+            con.execute("ALTER TABLE telemetry_installations ADD COLUMN fleet_status_since TEXT")
+        if not column_exists(con, "telemetry_installations", "fleet_notified_status"):
+            con.execute("ALTER TABLE telemetry_installations ADD COLUMN fleet_notified_status TEXT")
+        if not column_exists(con, "telemetry_installations", "previous_addon_version"):
+            con.execute("ALTER TABLE telemetry_installations ADD COLUMN previous_addon_version TEXT")
+        if not column_exists(con, "telemetry_installations", "version_changed_at"):
+            con.execute("ALTER TABLE telemetry_installations ADD COLUMN version_changed_at TEXT")
 
 
 def init_oekofen_db():
@@ -2820,6 +2832,46 @@ from(bucket: "{INFLUX_BUCKET}")
         "weather_used":bool(weather),"location":location,"slots":slots,
     }
 
+def evaluate_fleet_health(installation_id: str, age_seconds: int, health: dict[str, Any], row: sqlite3.Row) -> tuple[str,list[str]]:
+    issues=[]
+    collector=health.get("collector") or {};forecast=health.get("server_forecast") or {};planner=health.get("planner") or {}
+    if age_seconds>180: issues.append("TELEMETRY_OFFLINE")
+    if collector.get("unavailable",0): issues.append("COLLECTOR_UNAVAILABLE")
+    if collector.get("stale",0): issues.append("COLLECTOR_STALE")
+    if health and not forecast.get("connected"): issues.append("SERVER_FORECAST_UNAVAILABLE")
+    if health and planner.get("status") not in (None,"SHADOW_V1"): issues.append("PLANNER_"+str(planner.get("status")))
+    status="CRITICAL" if "TELEMETRY_OFFLINE" in issues else ("WARNING" if issues else ("HEALTHY" if health else "UNKNOWN"))
+    return status,issues
+
+
+def fleet_transition(installation_id: str, new_status: str, issues: list[str], addon_version: str | None):
+    """Persist state transitions and push only meaningful, debounced changes."""
+    now=datetime.now(timezone.utc);now_iso=now.isoformat()
+    with db() as con:
+        row=con.execute("SELECT * FROM telemetry_installations WHERE installation_id=?",(installation_id,)).fetchone()
+        if row is None:return
+        old=row["fleet_status"] or "UNKNOWN";since=row["fleet_status_since"]
+        old_version=row["addon_version"]
+        if addon_version and old_version and addon_version!=old_version:
+            con.execute("UPDATE telemetry_installations SET previous_addon_version=?,version_changed_at=? WHERE installation_id=?",(old_version,now_iso,installation_id))
+        if new_status!=old:
+            con.execute("UPDATE telemetry_installations SET fleet_status=?,fleet_status_since=? WHERE installation_id=?",(new_status,now_iso,installation_id))
+            # CRITICAL is immediate; WARNING is shown in GUI first and pushed only
+            # if it persists on a later health cycle. Recovery is pushed once.
+            if new_status=="CRITICAL":
+                send_native_push_all(f"INS-EI · {installation_id} · CRITICAL"," · ".join(issues) or "Instanz kritisch","/#instances")
+                con.execute("UPDATE telemetry_installations SET fleet_notified_status=? WHERE installation_id=?",(new_status,installation_id))
+            elif new_status=="HEALTHY" and old in ("WARNING","CRITICAL"):
+                send_native_push_all(f"INS-EI · {installation_id} · HEALTHY","Instanz wieder gesund.","/#instances")
+                con.execute("UPDATE telemetry_installations SET fleet_notified_status=? WHERE installation_id=?",(new_status,installation_id))
+        elif new_status=="WARNING" and since:
+            try: persistent=(now-datetime.fromisoformat(since)).total_seconds()>=300
+            except ValueError:persistent=False
+            if persistent and row["fleet_notified_status"]!="WARNING":
+                send_native_push_all(f"INS-EI · {installation_id} · WARNING"," · ".join(issues) or "Warnung besteht seit mindestens 5 Minuten","/#instances")
+                con.execute("UPDATE telemetry_installations SET fleet_notified_status='WARNING' WHERE installation_id=?",(installation_id,))
+
+
 def telemetry_status() -> dict[str, Any]:
     """Return status of all INS-EI telemetry installations."""
 
@@ -2859,14 +2911,7 @@ def telemetry_status() -> dict[str, Any]:
         health={}
         try: health=json.loads(row["health_json"] or "{}")
         except (TypeError,json.JSONDecodeError): pass
-        issues=[]
-        collector=health.get("collector") or {};forecast=health.get("server_forecast") or {};planner=health.get("planner") or {}
-        if age_seconds>180: issues.append("TELEMETRY_OFFLINE")
-        if collector.get("unavailable",0): issues.append("COLLECTOR_UNAVAILABLE")
-        if collector.get("stale",0): issues.append("COLLECTOR_STALE")
-        if health and not forecast.get("connected"): issues.append("SERVER_FORECAST_UNAVAILABLE")
-        if health and planner.get("status") not in (None,"SHADOW_V1"): issues.append("PLANNER_"+str(planner.get("status")))
-        fleet_status="CRITICAL" if "TELEMETRY_OFFLINE" in issues else ("WARNING" if issues else ("HEALTHY" if health else "UNKNOWN"))
+        fleet_status,issues=evaluate_fleet_health(row["installation_id"],age_seconds,health,row)
         installations.append({
             "installation_id": row["installation_id"],
             "current": current,
@@ -3395,6 +3440,10 @@ def receive_telemetry(payload: TelemetryPayload):
                 SET health_json=?,addon_version=?,health_updated_at=?
                 WHERE installation_id=?""",
                 (json.dumps(payload.health,ensure_ascii=False),payload.health.get("addon_version"),received_at,payload.installation_id))
+        with db() as con:
+            fleet_row=con.execute("SELECT * FROM telemetry_installations WHERE installation_id=?",(payload.installation_id,)).fetchone()
+        status,issues=evaluate_fleet_health(payload.installation_id,0,payload.health,fleet_row)
+        fleet_transition(payload.installation_id,status,issues,payload.health.get("addon_version"))
 
     if payload.site:
         lat=payload.site.get("latitude");lon=payload.site.get("longitude")
