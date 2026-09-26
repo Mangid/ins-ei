@@ -26,7 +26,7 @@ from fastapi.responses import FileResponse
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
-VERSION = "1.3.1"
+VERSION = "1.4.0"
 DB_PATH = Path("/data/ins_ei.db")
 PUSHSAFER_KEY = Path("/run/secrets/pushsafer_private_key")
 MANAGEMENT_KEY = Path("/run/secrets/management_api_key")
@@ -2555,6 +2555,60 @@ from(bucket: "{INFLUX_BUCKET}")
     }
 
 
+
+def influx_consumption_forecast(installation_id: str, hours: int = 24) -> dict[str, Any]:
+    """Learn a manufacturer-neutral hourly load forecast from grid/PV/battery telemetry."""
+    hours=max(1,min(int(hours),48))
+    token=INFLUX_TOKEN.read_text().strip()
+    safe_id=installation_id.replace('"','\\"')
+    # Approximate house load from the common sign convention used by INS-EI:
+    # load = PV + grid + battery power. Negative battery power means charging.
+    flux=f"""
+from(bucket: "{INFLUX_BUCKET}")
+  |> range(start: -30d)
+  |> filter(fn: (r) => r._measurement == "ins_ei_telemetry")
+  |> filter(fn: (r) => r.installation_id == "{safe_id}")
+  |> filter(fn: (r) => r._field == "pv.power" or r._field == "grid.power" or r._field == "battery.power")
+  |> aggregateWindow(every: 15m, fn: mean, createEmpty: false)
+  |> keep(columns: ["_time", "_field", "_value"])
+"""
+    request=Request(INFLUX_URL+"/api/v2/query?org="+INFLUX_ORG,data=json.dumps({"query":flux,"type":"flux"}).encode(),method="POST",headers={"Authorization":f"Token {token}","Content-Type":"application/json","Accept":"application/csv"})
+    raw=urlopen(request,timeout=20).read().decode()
+    points={}
+    for row in csv.DictReader(io.StringIO(raw)):
+        ts,field,value=row.get("_time"),row.get("_field"),row.get("_value")
+        if not ts or not field or value is None: continue
+        try: value=float(value)
+        except ValueError: continue
+        points.setdefault(ts,{})[field]=value
+    tz=ZoneInfo("Europe/Vienna")
+    buckets={}
+    days=set()
+    for ts,v in points.items():
+        if not all(k in v for k in ("pv.power","grid.power","battery.power")): continue
+        try: dt=datetime.fromisoformat(ts.replace("Z","+00:00")).astimezone(tz)
+        except ValueError: continue
+        load_w=max(0.0,v["pv.power"]+v["grid.power"]+v["battery.power"])
+        # Reject obvious telemetry/sign glitches, but retain real household peaks.
+        if load_w>30000: continue
+        key=(dt.weekday(),dt.hour)
+        buckets.setdefault(key,[]).append(load_w)
+        days.add(dt.date())
+    now=datetime.now(tz)
+    slots=[]
+    for n in range(hours):
+        start=(now.replace(minute=0,second=0,microsecond=0)+timedelta(hours=n))
+        vals=buckets.get((start.weekday(),start.hour),[])
+        # Fall back to the same hour across all weekdays while the profile is still learning.
+        if len(vals)<4:
+            vals=[v for (wd,h),items in buckets.items() if h==start.hour for v in items]
+        mean_w=sum(vals)/len(vals) if vals else 0.0
+        slots.append({"start":start.isoformat(),"kwh":round(mean_w/1000.0,3),"samples":len(vals)})
+    learned_days=len(days)
+    quality="GOOD" if learned_days>=21 else ("MEDIUM" if learned_days>=7 else "LEARNING")
+    return {"installation_id":installation_id,"model":"INS_EI_LOAD_PROFILE_V1","quality":quality,"learned_days":learned_days,"hours":hours,"total_kwh":round(sum(x["kwh"] for x in slots),3),"slots":slots}
+
+
 def telemetry_status() -> dict[str, Any]:
     """Return status of all INS-EI telemetry installations."""
 
@@ -3035,6 +3089,14 @@ def api_oekofen_infos(plant_id: str):
 def api_oekofen_sync():
     return sync_oekofen_plants()
 
+
+
+@app.get("/api/v1/forecast/consumption/{installation_id}")
+def get_consumption_forecast(installation_id: str, hours: int = 24):
+    try:
+        return influx_consumption_forecast(installation_id, hours)
+    except Exception as exc:
+        raise HTTPException(503, f"Consumption forecast unavailable: {exc}") from exc
 
 @app.get("/api/v1/telemetry/history/{installation_id}")
 def get_telemetry_history(
