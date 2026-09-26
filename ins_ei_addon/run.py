@@ -203,6 +203,10 @@ def build_shadow_day_plan(slots,decision):
     soc_point=decision.inputs.get("battery_soc") or {};soc=float(soc_point.get("value") or min_soc)
     energy=cap*soc/100;emin=cap*min_soc/100;emax=cap*max_soc/100
     pellet=float(decision.inputs.get("pellet_heat_cost_ct_kwh") or 0)
+    thermal=decision.inputs.get("thermal_buffer") or {}
+    buffer_strategy=decision.inputs.get("buffer_strategy") or {}
+    thermal_budget=max(0.0,float(thermal.get("free_kwh") or 0.0))
+    if not buffer_strategy.get("deep_charge_allowed"): thermal_budget=0.0
     rows=[]
     for x in slots:
         pv=x["pv_kwh"];load=x["load_kwh"];direct=min(pv,load);pv_left=pv-direct;load_left=load-direct
@@ -213,15 +217,16 @@ def build_shadow_day_plan(slots,decision):
             econ="PV_TO_HEAT" if pellet else "EXPORT"
         else:
             econ="PV_TO_HEAT" if pellet and x["sell_ct_kwh"]+1.0<=pellet else "EXPORT"
-        heat_kwh=pv_left if econ=="PV_TO_HEAT" else 0.0
-        export_kwh=pv_left if econ=="EXPORT" else 0.0
+        heat_kwh=min(pv_left,thermal_budget) if econ=="PV_TO_HEAT" else 0.0
+        thermal_budget=max(0.0,thermal_budget-heat_kwh)
+        export_kwh=max(0.0,pv_left-heat_kwh)
         rows.append({**x,"pv_to_load_kwh":round(direct,4),"pv_to_battery_kwh":round(pv_to_batt,4),
             "battery_to_load_kwh":round(batt_to_load,4),"grid_import_kwh":round(load_left,4),
             "surplus_after_battery_kwh":round(pv_left,4),"pv_to_heat_candidate_kwh":round(heat_kwh,4),
             "pv_export_candidate_kwh":round(export_kwh,4),"export_revenue_candidate_ct":round(export_kwh*(x.get("sell_ct_kwh") or 0),2),
             "thermal_economic_action":econ,
             "soc_after_percent":round((energy/cap*100) if cap else soc,1)})
-    return {"status":"SHADOW_V1","generated_at":datetime.now(timezone.utc).isoformat(),"slots":rows,
+    return {"status":"SHADOW_V1","export_strategy":slots[0].get("export_strategy","DYNAMIC_EXPORT"),"generated_at":datetime.now(timezone.utc).isoformat(),"slots":rows,
         "summary":{"pv_to_heat_candidate_kwh":round(sum(x["pv_to_heat_candidate_kwh"] for x in rows),4),
         "pv_export_candidate_kwh":round(sum(x["pv_export_candidate_kwh"] for x in rows),4),
         "export_revenue_candidate_ct":round(sum(x["export_revenue_candidate_ct"] for x in rows),2)}}
