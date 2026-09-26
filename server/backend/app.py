@@ -26,7 +26,7 @@ from fastapi.responses import FileResponse
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
-VERSION = "1.5.4"
+VERSION = "1.6.0"
 DB_PATH = Path("/data/ins_ei.db")
 PUSHSAFER_KEY = Path("/run/secrets/pushsafer_private_key")
 MANAGEMENT_KEY = Path("/run/secrets/management_api_key")
@@ -1254,6 +1254,20 @@ def init_customer_db():
             con.execute("ALTER TABLE telemetry_installations ADD COLUMN previous_addon_version TEXT")
         if not column_exists(con, "telemetry_installations", "version_changed_at"):
             con.execute("ALTER TABLE telemetry_installations ADD COLUMN version_changed_at TEXT")
+
+
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS fleet_update_commands (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                installation_id TEXT NOT NULL,
+                target_version TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'PENDING',
+                created_at TEXT NOT NULL,
+                claimed_at TEXT,
+                completed_at TEXT,
+                error TEXT
+            )
+        """)
 
 
 def init_oekofen_db():
@@ -2942,6 +2956,10 @@ class TelemetryPayload(BaseModel):
     health: dict[str, Any] = Field(default_factory=dict)
 
 
+class FleetUpdateRequest(BaseModel):
+    target_version: str
+
+
 class PushSubscription(BaseModel):
     endpoint: str
     keys: dict[str, str]
@@ -3375,6 +3393,36 @@ def get_consumption_forecast(installation_id: str, hours: int = 24):
         return influx_consumption_forecast(installation_id, hours)
     except Exception as exc:
         raise HTTPException(503, f"Consumption forecast unavailable: {exc}") from exc
+
+@app.post("/api/v1/fleet/{installation_id}/update")
+def fleet_request_update(installation_id: str, payload: FleetUpdateRequest):
+    now=datetime.now(timezone.utc).isoformat()
+    with db() as con:
+        con.execute("""INSERT INTO fleet_update_commands(installation_id,target_version,status,created_at)
+            VALUES(?,?, 'PENDING',?)""",(installation_id,payload.target_version,now))
+    return {"status":"queued","installation_id":installation_id,"target_version":payload.target_version}
+
+
+@app.get("/api/v1/fleet/{installation_id}/command")
+def fleet_get_command(installation_id: str):
+    with db() as con:
+        row=con.execute("""SELECT * FROM fleet_update_commands
+            WHERE installation_id=? AND status='PENDING' ORDER BY id DESC LIMIT 1""",(installation_id,)).fetchone()
+        if row is None:return {"command":None}
+        now=datetime.now(timezone.utc).isoformat()
+        con.execute("UPDATE fleet_update_commands SET status='CLAIMED',claimed_at=? WHERE id=?",(now,row["id"]))
+    return {"command":{"id":row["id"],"type":"UPDATE_ADDON","target_version":row["target_version"]}}
+
+
+@app.post("/api/v1/fleet/{installation_id}/command/{command_id}/result")
+def fleet_command_result(installation_id: str, command_id: int, body: dict[str,Any]):
+    status="COMPLETED" if body.get("ok") else "FAILED"
+    now=datetime.now(timezone.utc).isoformat()
+    with db() as con:
+        con.execute("""UPDATE fleet_update_commands SET status=?,completed_at=?,error=?
+            WHERE id=? AND installation_id=?""",(status,now,body.get("error"),command_id,installation_id))
+    return {"status":status}
+
 
 @app.get("/api/v1/telemetry/history/{installation_id}")
 def get_telemetry_history(
