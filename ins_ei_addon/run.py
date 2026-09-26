@@ -159,6 +159,23 @@ def build_shadow_day_plan(slots,decision):
         "pv_export_candidate_kwh":round(sum(x["pv_export_candidate_kwh"] for x in rows),4),
         "export_revenue_candidate_ct":round(sum(x["export_revenue_candidate_ct"] for x in rows),2)}}
 
+def dhw_transfer_shadow(model,decision):
+    def good(kind,name):
+        for c in model.components_by_kind(kind):
+            p=c.point(name)
+            if p is not None and p.value is not None and p.quality.value=="GOOD":return p
+        return None
+    upper=good("BUFFER","temperature_upper");dhw=good("DHW","temperature");cmd=good("DHW","one_time_charge")
+    if upper is None or dhw is None:
+        return {"recommendation":"HOLD","confidence":"LOW","current":cmd.value if cmd else None,"reason":"Puffer- oder Warmwasserdaten fehlen."}
+    req=(decision.inputs.get("strategy") or {}).get("requirements") or {};minimum=float(req.get("dhw_min_c",50.0))
+    upper_c=float(upper.value);dhw_c=float(dhw.value);delta=upper_c-dhw_c
+    if dhw_c<=minimum and delta>=5.0:
+        return {"recommendation":"HEAT_ONE","confidence":"HIGH","current":cmd.value if cmd else None,"reason":f"WW {dhw_c:.1f} C <= {minimum:.1f} C und Puffer oben {upper_c:.1f} C bietet {delta:.1f} K Temperaturvorsprung."}
+    if dhw_c<=minimum:
+        return {"recommendation":"HOLD","confidence":"HIGH","current":cmd.value if cmd else None,"reason":f"WW {dhw_c:.1f} C niedrig, aber Puffer oben {upper_c:.1f} C bietet nur {delta:.1f} K Vorsprung; Pufferladung nicht sinnvoll."}
+    return {"recommendation":"HOLD","confidence":"MEDIUM","current":cmd.value if cmd else None,"reason":f"WW {dhw_c:.1f} C liegt über Mindestwert {minimum:.1f} C."}
+
 def boiler_permission_shadow(model,decision,day_plan):
     def good(kind,name):
         for c in model.components_by_kind(kind):
@@ -327,6 +344,8 @@ def main():
             vrm_series=load(VRM_SERIES,[])
             planner_inputs=build_day_plan_inputs(vrm_series,market_series,market_cfg)
             day_plan=build_shadow_day_plan(planner_inputs,decision)
+            dw=dhw_transfer_shadow(model,decision)
+            log.info("dhw transfer shadow | current=%s | recommendation=%s | confidence=%s | reason=%s",dw.get("current"),dw.get("recommendation"),dw.get("confidence"),dw.get("reason"))
             bp=boiler_permission_shadow(model,decision,day_plan)
             day_plan["boiler_permission"]=bp
             DAY_PLAN.write_text(json.dumps(day_plan,ensure_ascii=False,indent=2),encoding="utf-8")
