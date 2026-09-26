@@ -9,6 +9,24 @@ RATE_LIMIT_TEXT="wait at least 2500ms"
 class OekoFENTransport:
     def __init__(self,host:str,password:str,port:int=4321,timeout:float=10.0):
         self.host=host.strip();self.password=password;self.port=int(port);self.timeout=timeout
+    def set_value(self,section:str,variable:str,value)->str:
+        """Set one explicitly selected OekoFEN JSON value."""
+        from urllib.parse import quote
+        if (section,variable) not in {("pe1","mode")}:
+            raise RuntimeError("OEKOFEN_WRITE_NOT_ALLOWED")
+        url=f"http://{self.host}:{self.port}/{self.password}/{quote(section)}.{quote(variable)}={quote(str(value))}"
+        req=Request(url,headers={"Accept":"application/json","Connection":"close"})
+        try:
+            with urlopen(req,timeout=self.timeout) as response:
+                body=response.read();status=response.status
+        except HTTPError as exc:
+            body=exc.read();status=exc.code
+        except (URLError,TimeoutError,OSError) as exc:
+            raise RuntimeError(f"OEKOFEN_WRITE_HTTP:{type(exc).__name__}") from exc
+        if status!=200:raise RuntimeError(f"OEKOFEN_WRITE_HTTP_{status}")
+        self._write_last_response=body.decode("utf-8","replace")
+        return self._write_last_response
+
     def read_all(self)->dict:
         url=f"http://{self.host}:{self.port}/{self.password}/all"
         req=Request(url,headers={"Accept":"application/json","Connection":"close"})
