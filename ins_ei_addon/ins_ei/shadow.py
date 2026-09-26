@@ -86,6 +86,49 @@ def _detect_profile(site):
         return "SUMMER","; ".join(reasons)
     return "TRANSITION","; ".join(reasons)
 
+def _thermal_storage_metrics(site,kind,defaults):
+    components=site.components_by_kind(kind)
+    if not components:return None
+    c=components[0];cfg=c.config or {}
+    volume=float(cfg.get("volume_l",defaults["volume_l"]))
+    min_c=float(cfg.get("min_temperature_c",defaults["min_c"]))
+    comfort_c=float(cfg.get("comfort_temperature_c",defaults["comfort_c"]))
+    max_c=float(cfg.get("max_temperature_c",defaults["max_c"]))
+    # Prefer multiple stratification sensors.  With upper+lower values we use
+    # a two-zone approximation instead of applying the upper temperature to
+    # the complete vessel volume.
+    candidates=[]
+    if kind=="BUFFER":
+        for name in ("temperature_top","temperature_upper","temperature_middle","temperature_lower","temperature_bottom"):
+            p=c.point(name)
+            if _usable(p): candidates.append((name,float(p.value)))
+    else:
+        for name in ("temperature_top","temperature","temperature_bottom"):
+            p=c.point(name)
+            if _usable(p): candidates.append((name,float(p.value)))
+    if not candidates:return {"quality":"MISSING","volume_l":volume,"min_c":min_c,"comfort_c":comfort_c,"max_c":max_c}
+    if len(candidates)>=2:
+        temps=[x[1] for x in candidates]
+        avg=sum(temps)/len(temps);quality="MEDIUM"
+    else:
+        avg=candidates[0][1];quality="LOW"
+    wh_per_k=volume*1.163
+    available=max(avg-min_c,0)*wh_per_k/1000.0
+    free=max(max_c-avg,0)*wh_per_k/1000.0
+    comfort=max(comfort_c-avg,0)*wh_per_k/1000.0
+    return {"quality":quality,"volume_l":volume,"temperatures":dict(candidates),"estimated_mean_c":avg,
+            "min_c":min_c,"comfort_c":comfort_c,"max_c":max_c,
+            "available_kwh":available,"free_kwh":free,"to_comfort_kwh":comfort}
+
+def _pellet_heat_cost(strategy):
+    cfg=(strategy or {}).get("pellet") or {}
+    price=float(cfg.get("price_eur_kg",0.369))
+    heat=float(cfg.get("heating_value_kwh_kg",4.8))
+    eta=float(cfg.get("efficiency_percent",90.0))/100.0
+    surcharge=float(cfg.get("surcharge_ct_kwh",0.5))
+    if heat<=0 or eta<=0:return None
+    return ((price*100.0)/(heat*eta))+surcharge
+
 def evaluate(site,market_series=None,strategy=None):
     strategy=strategy or {}
     detected_profile,profile_reason=_detect_profile(site)
@@ -112,7 +155,10 @@ def evaluate(site,market_series=None,strategy=None):
     next_max_index=next_prices.index(next_max) if next_prices and next_max is not None else None
     forecast_pv=_point(site,"FORECAST","pv_today");forecast_load=_point(site,"FORECAST","consumption_today")
     forecast_pv_hour=_point(site,"FORECAST","pv_current_hour");forecast_load_hour=_point(site,"FORECAST","consumption_current_hour")
-    inputs={"strategy":strategy,"detected_profile":detected_profile,"profile_reason":profile_reason,"pv_power":_input(pv),"grid_power":_input(grid),"battery_soc":_input(soc),"battery_power":_input(batt),"power_to_heat":_input(pth),"buffer_upper":_input(buffer),"dhw_temperature":_input(dhw),"forecast_pv_today":_input(forecast_pv),"forecast_consumption_today":_input(forecast_load),"forecast_pv_current_hour":_input(forecast_pv_hour),"forecast_consumption_current_hour":_input(forecast_load_hour),"market_spot_price":_input(_point(site,"MARKET","spot_price")),"import_price_ct_kwh":import_ct,"export_price_ct_kwh":export_ct,"market_future_slots":len(next_prices),"market_future_spot_min_ct":next_min,"market_future_spot_max_ct":next_max,"market_future_spot_avg_ct":next_avg,"market_hours_to_min":next_min_index,"market_hours_to_max":next_max_index,"market_current_spot_ct":(float(_point(site,"MARKET","spot_price").value)*100.0 if _usable(_point(site,"MARKET","spot_price")) else None)}
+    buffer_thermal=_thermal_storage_metrics(site,"BUFFER",{"volume_l":800,"min_c":45,"comfort_c":55,"max_c":75})
+    dhw_thermal=_thermal_storage_metrics(site,"DHW",{"volume_l":500,"min_c":50,"comfort_c":55,"max_c":70})
+    pellet_heat_ct=_pellet_heat_cost(strategy)
+    inputs={"strategy":strategy,"detected_profile":detected_profile,"profile_reason":profile_reason,"pv_power":_input(pv),"grid_power":_input(grid),"battery_soc":_input(soc),"battery_power":_input(batt),"power_to_heat":_input(pth),"buffer_upper":_input(buffer),"dhw_temperature":_input(dhw),"forecast_pv_today":_input(forecast_pv),"forecast_consumption_today":_input(forecast_load),"forecast_pv_current_hour":_input(forecast_pv_hour),"forecast_consumption_current_hour":_input(forecast_load_hour),"market_spot_price":_input(_point(site,"MARKET","spot_price")),"import_price_ct_kwh":import_ct,"export_price_ct_kwh":export_ct,"market_future_slots":len(next_prices),"market_future_spot_min_ct":next_min,"market_future_spot_max_ct":next_max,"market_future_spot_avg_ct":next_avg,"market_hours_to_min":next_min_index,"market_hours_to_max":next_max_index,"market_current_spot_ct":(float(_point(site,"MARKET","spot_price").value)*100.0 if _usable(_point(site,"MARKET","spot_price")) else None),"thermal_buffer":buffer_thermal,"thermal_dhw":dhw_thermal,"pellet_heat_cost_ct_kwh":pellet_heat_ct}
     now=datetime.now(timezone.utc).isoformat();guards=[];alternatives=[]
     if market_error:guards.append(market_error)
     if import_ct is None or export_ct is None:guards.append("Tarifpreis aktuell nicht vollständig verfügbar")
