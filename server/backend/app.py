@@ -3006,7 +3006,29 @@ def api_oekofen_infos(plant_id: str):
         code=by_name.get(f"CAPPL:LOCAL.L_fehlerlog[{i}].code",{}).get("value")
         date=by_name.get(f"CAPPL:LOCAL.L_fehlerlog[{i}].date",{}).get("value")
         if code and str(code) not in ("0","0.000000"):
-            entries.append({"index":i,"code":str(code),"date":str(date or "")})
+            raw=str(code).split(".")[0].zfill(9)
+            error_code=raw[0:4]
+            participant=int(raw[4:6] or 0)
+            status_code=int(raw[6:7] or 0)
+            entries.append({"index":i,"raw_code":raw,"error_code":error_code,"participant":participant,
+                "status_code":status_code,"status":{1:"Fehler",2:"bestätigt",3:"behoben"}.get(status_code,""),
+                "date":str(date or "")})
+    helptexts={}
+    try:
+        req=Request("https://my.oekofen.info/app/assets/maintenance/help/de.json",headers={"Accept":"application/json"})
+        with urlopen(req,timeout=20) as response: helptexts=json.loads(response.read().decode("utf-8"))
+    except Exception:
+        pass
+    for entry in entries:
+        key=("warning_" if entry["error_code"] in ("5050","5053","5054") else "error_")+entry["error_code"]
+        helpitem=helptexts.get(key) or helptexts.get("error_"+entry["error_code"]) or helptexts.get("warning_"+entry["error_code"]) or {}
+        title=str(helpitem.get("title") or ("Code "+entry["error_code"]))
+        title=title.replace("<%1>",str(entry["participant"]))
+        entry["title"]=title
+        try:
+            ts=float(entry["date"])
+            entry["date_iso"]=datetime.fromtimestamp(ts,timezone.utc).isoformat()
+        except Exception: entry["date_iso"]=None
     return {"plant_id":plant_id,"entries":entries}
 
 @app.post("/api/v1/oekofen/sync")
