@@ -170,11 +170,9 @@ def dhw_transfer_shadow(model,decision):
         return {"recommendation":"HOLD","confidence":"LOW","current":cmd.value if cmd else None,"reason":"Puffer- oder Warmwasserdaten fehlen."}
     req=(decision.inputs.get("strategy") or {}).get("requirements") or {};minimum=float(req.get("dhw_charge_below_c",req.get("dhw_min_c",50.0)))
     upper_c=float(upper.value);dhw_c=float(dhw.value);delta=upper_c-dhw_c
-    if dhw_c<=minimum and delta>=5.0:
-        return {"recommendation":"HEAT_ONE","confidence":"HIGH","current":cmd.value if cmd else None,"reason":f"WW {dhw_c:.1f} C <= {minimum:.1f} C und Puffer oben {upper_c:.1f} C bietet {delta:.1f} K Temperaturvorsprung."}
     if dhw_c<=minimum:
-        return {"recommendation":"HOLD","confidence":"HIGH","current":cmd.value if cmd else None,"reason":f"WW {dhw_c:.1f} C niedrig, aber Puffer oben {upper_c:.1f} C bietet nur {delta:.1f} K Vorsprung; Pufferladung nicht sinnvoll."}
-    return {"recommendation":"HOLD","confidence":"MEDIUM","current":cmd.value if cmd else None,"reason":f"WW {dhw_c:.1f} C liegt über Mindestwert {minimum:.1f} C."}
+        return {"recommendation":"HEAT_ONE","confidence":"HIGH","current":cmd.value if cmd else None,"reason":f"WW {dhw_c:.1f} C <= Ladegrenze {minimum:.1f} C. WW-Ladeauftrag aktivieren; OekoFEN steuert die Ladepumpe intern. Aktueller Temperaturvorsprung Puffer zu WW: {delta:.1f} K."}
+    return {"recommendation":"HOLD","confidence":"MEDIUM","current":cmd.value if cmd else None,"reason":f"WW {dhw_c:.1f} C liegt über Ladegrenze {minimum:.1f} C. Temperaturdifferenz Puffer zu WW: {delta:.1f} K."}
 
 def boiler_permission_shadow(model,decision,day_plan):
     def good(kind,name):
