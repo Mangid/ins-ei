@@ -103,6 +103,60 @@ def read_vrm_plugin(config,log):
     except Exception as exc:
         log.warning("plugin | vrm failed | %s",exc);return None
 
+def read_server_forecasts(url,installation_id,log,hours=48,timeout=10):
+    """Fetch manufacturer-neutral PV/load forecasts from the central INS-EI server."""
+    if not url:return None
+    result={}
+    try:
+        for kind in ("pv","consumption"):
+            req=Request(url.rstrip("/")+f"/api/v1/forecast/{kind}/{installation_id}?hours={hours}",headers={"Accept":"application/json"})
+            with urlopen(req,timeout=timeout) as response:
+                result[kind]=json.loads(response.read().decode("utf-8"))
+        pv=result["pv"];load_fc=result["consumption"]
+        pv_slots={x["start"]:x for x in pv.get("slots",[])}
+        load_slots={x["start"]:x for x in load_fc.get("slots",[])}
+        common=[]
+        for ts in sorted(set(pv_slots)&set(load_slots)):
+            common.append({"start":ts,"pv_kwh":float(pv_slots[ts].get("kwh") or 0),"load_kwh":float(load_slots[ts].get("kwh") or 0),
+                "pv_quality":pv_slots[ts].get("quality"),"load_quality":load_slots[ts].get("quality")})
+        log.info("server forecast | connected | pv_slots=%d | load_slots=%d | common_slots=%d | pv_quality=%s | load_quality=%s",
+            len(pv.get("slots",[])),len(load_fc.get("slots",[])),len(common),pv.get("quality"),load_fc.get("quality"))
+        return {"pv":pv,"consumption":load_fc,"slots":common}
+    except HTTPError as exc:
+        log.warning("server forecast | failed | HTTP %s | %s",exc.code,exc.reason)
+    except URLError as exc:
+        log.warning("server forecast | failed | network | %s",exc.reason)
+    except (TimeoutError,OSError,json.JSONDecodeError,ValueError) as exc:
+        log.warning("server forecast | failed | %s",exc)
+    return None
+
+def build_server_day_plan_inputs(server_forecast,market_series,market_cfg):
+    """Combine central INS-EI forecast slots with local market prices."""
+    if not server_forecast or not server_forecast.get("slots") or not market_series:return []
+    prices={}
+    for x in market_series:
+        try:
+            dt=datetime.fromisoformat(x["start_time"].replace("Z","+00:00")).astimezone(timezone.utc).replace(minute=0,second=0,microsecond=0)
+            prices[dt]=float(x["price_per_kwh"])*100.0
+        except (KeyError,TypeError,ValueError):continue
+    imp=market_cfg.get("import") or {};exp=market_cfg.get("export") or {}
+    def tariff(raw,side):
+        cfg=imp if side=="import" else exp
+        if cfg.get("mode")=="STATIC":return float(cfg.get("static_ct",0))
+        if cfg.get("mode")=="HA_SENSOR":return None
+        value=(raw+float(cfg.get("markup_ct",0)))*(1+float(cfg.get("adjust_percent",0))/100)
+        return value*(1+float(cfg.get("vat_percent",0))/100)
+    result=[]
+    for x in server_forecast["slots"]:
+        try: h=datetime.fromisoformat(x["start"]).astimezone(timezone.utc).replace(minute=0,second=0,microsecond=0)
+        except (KeyError,ValueError):continue
+        raw=prices.get(h)
+        if raw is None:continue
+        result.append({"time":h.isoformat(),"pv_kwh":round(x["pv_kwh"],4),"load_kwh":round(x["load_kwh"],4),
+            "spot_ct_kwh":round(raw,4),"buy_ct_kwh":round(tariff(raw,"import"),4),"sell_ct_kwh":round(tariff(raw,"export"),4),
+            "forecast_source":"INS_EI_SERVER","pv_quality":x.get("pv_quality"),"load_quality":x.get("load_quality")})
+    return result
+
 def build_day_plan_inputs(vrm_slots,market_series,market_cfg):
     """Normalize future VRM + market data into vendor-neutral hourly planner slots."""
     if not vrm_slots or not market_series:return []
@@ -370,7 +424,7 @@ def main():
     logging.basicConfig(level=getattr(logging,options.get("log_level","INFO")),format="%(asctime)s %(levelname)s %(message)s");log=logging.getLogger("ins_ei")
     token=supervisor_token()
     if not token:log.error("Supervisor token unavailable");return
-    client=HomeAssistantClient("http://supervisor/core",token);site_meta=home_assistant_site_meta(client);log.info("site location | source=HOME_ASSISTANT | latitude=%s | longitude=%s | elevation=%s | timezone=%s",site_meta.get("latitude"),site_meta.get("longitude"),site_meta.get("elevation"),site_meta.get("time_zone"));signature=None;last=0;interval=int(options.get("interval_seconds",30));server_cfg=load(SERVER,{"url":"https://ins-ei.ins-enertech.net","installation_id":options.get("installation_id","pilot-local"),"interval_seconds":30,"enabled":False});telemetry_url=server_cfg.get("url","").strip() if server_cfg.get("enabled") else "";telemetry_interval=int(server_cfg.get("interval_seconds",30));last_telemetry=0
+    client=HomeAssistantClient("http://supervisor/core",token);site_meta=home_assistant_site_meta(client);log.info("site location | source=HOME_ASSISTANT | latitude=%s | longitude=%s | elevation=%s | timezone=%s",site_meta.get("latitude"),site_meta.get("longitude"),site_meta.get("elevation"),site_meta.get("time_zone"));signature=None;last=0;interval=int(options.get("interval_seconds",30));server_cfg=load(SERVER,{"url":"https://ins-ei.ins-enertech.net","installation_id":options.get("installation_id","pilot-local"),"interval_seconds":30,"enabled":False});telemetry_url=server_cfg.get("url","").strip() if server_cfg.get("enabled") else "";telemetry_interval=int(server_cfg.get("interval_seconds",30));last_telemetry=0;server_forecast=None;last_server_forecast=0
     while True:
         cfg=effective_config(options);component_cfg=load(COMPONENTS,{});market_cfg=load(MARKET,{"mode":"AWATTAR_AT","import_markup_ct":1.5,"vat_percent":20.0,"export_factor_percent":81.0});strategy_cfg=load(STRATEGY,{"profile":"AUTO","priorities":{"thermal_storage":80,"battery_economics":60,"export":40,"ev":50},"requirements":{"dhw_min_c":50.0}})
         sig=json.dumps({"mappings":cfg.get("mappings",[]),"components":component_cfg,"market":market_cfg,"strategy":strategy_cfg,"topology":options.get("thermal_topology")},sort_keys=True,ensure_ascii=False)
@@ -408,8 +462,15 @@ def main():
                             log.info("collector issue | %s.%s | quality=%s | value=%s %s | source=%s",component.id,point_name,point.quality.value,point.value,point.unit or "",point.source)
             decision=shadow_evaluate(model,load(MARKET_SERIES,[]),strategy_cfg)
             market_series=load(MARKET_SERIES,[])
-            vrm_series=load(VRM_SERIES,[])
-            planner_inputs=build_day_plan_inputs(vrm_series,market_series,market_cfg)
+            installation_id=server_cfg.get("installation_id",options.get("installation_id","pilot-local"))
+            if telemetry_url and (server_forecast is None or time.time()-last_server_forecast>=300):
+                fetched=read_server_forecasts(telemetry_url,installation_id,log)
+                if fetched is not None:
+                    server_forecast=fetched;last_server_forecast=time.time()
+            planner_inputs=build_server_day_plan_inputs(server_forecast,market_series,market_cfg)
+            if not planner_inputs:
+                vrm_series=load(VRM_SERIES,[])
+                planner_inputs=build_day_plan_inputs(vrm_series,market_series,market_cfg)
             day_plan=build_shadow_day_plan(planner_inputs,decision)
             dw=dhw_transfer_shadow(model,decision)
             log.info("dhw transfer shadow | current=%s | recommendation=%s | confidence=%s | reason=%s",dw.get("current"),dw.get("recommendation"),dw.get("confidence"),dw.get("reason"))
