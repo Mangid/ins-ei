@@ -1,0 +1,11 @@
+/* INS-EI Instanzen V2 */
+.instance-card{display:flex;flex-direction:column;gap:0}
+.card-actions{display:flex;align-items:flex-end;gap:8px;flex-direction:column}
+.action-badge{font-size:11px;font-weight:700;padding:5px 9px;border-radius:99px;background:#152638;color:#b9c9d8;white-space:nowrap}
+.action-power_to_heat{background:#3b2d12;color:#ffd67d}.action-export_pv{background:#102f45;color:#8fd7ff}.action-balanced{background:#103323;color:#82e6aa}.action-battery_support_load{background:#2d2442;color:#cdb5ff}
+.decision{margin-top:12px;padding:11px 12px;border:1px solid #20384c;border-radius:10px;background:#0a1723;display:grid;gap:3px}
+.decision strong{font-size:13px}.decision span{font-size:12px;color:#91a5b7}
+.thermal-line{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}.thermal-line span{font-size:10px;padding:4px 7px;border-radius:99px;background:#132536;color:#a8bdce}
+.card-warnings{display:grid;gap:5px;margin-top:9px;padding:9px 11px;border:1px solid #72542c;background:#2a2115;border-radius:9px;color:#f0d985;font-size:11px}
+.instance-attention{margin-top:26px}.attention-list{display:grid;gap:8px}.attention-item{width:100%;display:grid;grid-template-columns:minmax(130px,.5fr) 1fr auto;align-items:center;gap:12px;text-align:left;background:#0d1a27;border:1px solid #72542c;color:#eaf1f7;border-radius:10px;padding:11px 13px;cursor:pointer}.attention-item span{color:#f0d985}.attention-item b{color:#9fb0c1;font-size:12px}
+@media(max-width:760px){.card-actions{align-items:flex-end}.action-badge{max-width:160px;overflow:hidden;text-overflow:ellipsis}.attention-item{grid-template-columns:1fr auto}.attention-item span{grid-column:1/-1;grid-row:2}.instance-attention{margin-top:18px}}
