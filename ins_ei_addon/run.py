@@ -201,7 +201,14 @@ def boiler_permission_shadow(model,decision,day_plan):
     pv_heat=float(((day_plan or {}).get("summary") or {}).get("pv_to_heat_candidate_kwh") or 0)
     if pv_heat>=2.0:
         return {"permission":"BLOCK","current_mode":current_mode,"confidence":"MEDIUM","reason":f"Puffer oben {upper_c:.1f} C und WW {dhw_c:.1f} C ausreichend; {pv_heat:.2f} kWh wirtschaftliche PV-Waerme geplant."}
-    return {"permission":"ALLOW","current_mode":current_mode,"confidence":"MEDIUM","reason":f"Nur {pv_heat:.2f} kWh wirtschaftliche PV-Waerme geplant."}
+    # Fallback for installations without an hourly planner series yet:
+    # use only the generic FORECAST daily PV signal, never invent hourly slots.
+    fpv=decision.inputs.get("forecast_pv_today") or {}
+    try: pv_day=float(fpv.get("value")) if fpv.get("quality")=="GOOD" else None
+    except (TypeError,ValueError): pv_day=None
+    if pv_day is not None and pv_day>=15.0:
+        return {"permission":"BLOCK","current_mode":current_mode,"confidence":"LOW","reason":f"Kein Stundenfahrplan vorhanden, aber FORECAST erwartet {pv_day:.1f} kWh PV heute. Thermische Versorgung aktuell ausreichend; Pelletkessel konservativ zurueckhalten."}
+    return {"permission":"ALLOW","current_mode":current_mode,"confidence":"MEDIUM","reason":f"Nur {pv_heat:.2f} kWh wirtschaftliche PV-Waerme geplant und kein starkes Tages-PV-Signal."}
 
 def apply_assisted_thermal(plugin_cfg,bp,dw,log):
     o=plugin_cfg.get("oekofen") or {}
