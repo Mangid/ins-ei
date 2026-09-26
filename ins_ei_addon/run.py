@@ -119,7 +119,7 @@ def configured_components(component_cfg,mappings):
             for inst in data.get("instances",[]):
                 result.append((inst["id"],kind,True,{"name":inst.get("name",inst["id"])}))
         elif data.get("enabled"):
-            result.append((kind.lower(),kind,True,{}))
+            result.append((kind.lower(),kind,True,dict(data.get("config") or {})))
     known={x[0] for x in result}
     configured_singletons={kind for _,kind,_,_ in result if kind not in MULTI}
     existing_kinds={kind for _,kind,_,_ in result}
