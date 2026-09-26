@@ -18,6 +18,14 @@ SERVER = Path("/data/server.json")
 TELEMETRY_STATUS = Path("/data/telemetry_status.json")
 PLUGINS = Path("/data/plugins.json")
 
+BUFFER_DEEP_CHARGE_DESCRIPTION = (
+    "Erlaubt dem Optimierer, eine gezielte tiefe Pufferladung durch den "
+    "Waermeerzeuger als Strategie zu beruecksichtigen. Nur aktivieren, wenn "
+    "hohe Puffertemperaturen bzw. lange Waermeerzeugerlaufzeiten gewuenscht "
+    "sind. Bei Brennwertanlagen deaktiviert lassen, wenn niedrige System- "
+    "und Ruecklauftemperaturen gewuenscht sind."
+)
+
 MARKET_DEFAULT = {
     "import": {"mode": "DYNAMIC", "provider": "AWATTAR_AT", "markup_ct": 1.5, "adjust_percent": 0.0, "vat_percent": 20.0, "static_ct": 25.0},
     "export": {"mode": "DYNAMIC", "provider": "SPOT_AT", "markup_ct": 0.0, "adjust_percent": -19.0, "vat_percent": 0.0, "static_ct": 8.0},
