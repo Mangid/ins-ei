@@ -2604,7 +2604,14 @@ from(bucket: "{INFLUX_BUCKET}")
         buckets.setdefault((dt.weekday(),dt.hour),[]).append(base)
         days.add(dt.date())
         valid_points+=1
-    all_values=sorted(value for items in buckets.values() for value in items if value>0)\n    if all_values:\n        mid=len(all_values)//2\n        global_median=all_values[mid] if len(all_values)%2 else (all_values[mid-1]+all_values[mid])/2\n    else:\n        global_median=500.0\n    now=datetime.now(tz)\n    slots=[]
+    all_values=sorted(value for items in buckets.values() for value in items if value>0)
+    if all_values:
+        mid=len(all_values)//2
+        global_median=all_values[mid] if len(all_values)%2 else (all_values[mid-1]+all_values[mid])/2
+    else:
+        global_median=500.0
+    now=datetime.now(tz)
+    slots=[]
     for n in range(hours):
         slot_start=now.replace(minute=0,second=0,microsecond=0)+timedelta(hours=n)
         vals=list(buckets.get((slot_start.weekday(),slot_start.hour),[]))
