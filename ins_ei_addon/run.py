@@ -131,10 +131,11 @@ def read_server_forecasts(url,installation_id,log,hours=48,timeout=10):
     return None
 
 def build_server_day_plan_inputs(server_forecast,market_series,market_cfg):
-    """Combine central INS-EI forecast slots with local market prices."""
-    if not server_forecast or not server_forecast.get("slots") or not market_series:return []
+    """Build planner slots from central forecasts. SELF_CONSUMPTION needs no tariff."""
+    if not server_forecast or not server_forecast.get("slots"):return []
+    export_mode=str(market_cfg.get("export_strategy") or "SELF_CONSUMPTION").upper()
     prices={}
-    for x in market_series:
+    for x in market_series or []:
         try:
             dt=datetime.fromisoformat(x["start_time"].replace("Z","+00:00")).astimezone(timezone.utc).replace(minute=0,second=0,microsecond=0)
             prices[dt]=float(x["price_per_kwh"])*100.0
@@ -143,18 +144,26 @@ def build_server_day_plan_inputs(server_forecast,market_series,market_cfg):
     def tariff(raw,side):
         cfg=imp if side=="import" else exp
         if cfg.get("mode")=="STATIC":return float(cfg.get("static_ct",0))
-        if cfg.get("mode")=="HA_SENSOR":return None
+        if raw is None:return None
         value=(raw+float(cfg.get("markup_ct",0)))*(1+float(cfg.get("adjust_percent",0))/100)
         return value*(1+float(cfg.get("vat_percent",0))/100)
     result=[]
     for x in server_forecast["slots"]:
-        try: h=datetime.fromisoformat(x["start"]).astimezone(timezone.utc).replace(minute=0,second=0,microsecond=0)
+        try:h=datetime.fromisoformat(x["start"]).astimezone(timezone.utc).replace(minute=0,second=0,microsecond=0)
         except (KeyError,ValueError):continue
         raw=prices.get(h)
-        if raw is None:continue
+        buy=tariff(raw,"import")
+        sell=tariff(raw,"export")
+        if export_mode=="SELF_CONSUMPTION":
+            sell=0.0
+        elif export_mode in ("FIXED_EXPORT","DYNAMIC_EXPORT") and sell is None:
+            continue
         result.append({"time":h.isoformat(),"pv_kwh":round(x["pv_kwh"],4),"load_kwh":round(x["load_kwh"],4),
-            "spot_ct_kwh":round(raw,4),"buy_ct_kwh":round(tariff(raw,"import"),4),"sell_ct_kwh":round(tariff(raw,"export"),4),
-            "forecast_source":"INS_EI_SERVER","pv_quality":x.get("pv_quality"),"load_quality":x.get("load_quality")})
+            "spot_ct_kwh":round(raw,4) if raw is not None else None,
+            "buy_ct_kwh":round(buy,4) if buy is not None else None,
+            "sell_ct_kwh":round(sell,4) if sell is not None else 0.0,
+            "export_strategy":export_mode,"forecast_source":"INS_EI_SERVER",
+            "pv_quality":x.get("pv_quality"),"load_quality":x.get("load_quality")})
     return result
 
 def build_day_plan_inputs(vrm_slots,market_series,market_cfg):
@@ -199,13 +208,17 @@ def build_shadow_day_plan(slots,decision):
         pv=x["pv_kwh"];load=x["load_kwh"];direct=min(pv,load);pv_left=pv-direct;load_left=load-direct
         batt_to_load=min(load_left,max(energy-emin,0));energy-=batt_to_load;load_left-=batt_to_load
         pv_to_batt=min(pv_left,max(emax-energy,0));energy+=pv_to_batt;pv_left-=pv_to_batt
-        econ="PV_TO_HEAT" if pellet and x["sell_ct_kwh"]+1.0<=pellet else "EXPORT"
+        export_strategy=x.get("export_strategy","DYNAMIC_EXPORT")
+        if export_strategy=="SELF_CONSUMPTION":
+            econ="PV_TO_HEAT" if pellet else "EXPORT"
+        else:
+            econ="PV_TO_HEAT" if pellet and x["sell_ct_kwh"]+1.0<=pellet else "EXPORT"
         heat_kwh=pv_left if econ=="PV_TO_HEAT" else 0.0
         export_kwh=pv_left if econ=="EXPORT" else 0.0
         rows.append({**x,"pv_to_load_kwh":round(direct,4),"pv_to_battery_kwh":round(pv_to_batt,4),
             "battery_to_load_kwh":round(batt_to_load,4),"grid_import_kwh":round(load_left,4),
             "surplus_after_battery_kwh":round(pv_left,4),"pv_to_heat_candidate_kwh":round(heat_kwh,4),
-            "pv_export_candidate_kwh":round(export_kwh,4),"export_revenue_candidate_ct":round(export_kwh*x["sell_ct_kwh"],2),
+            "pv_export_candidate_kwh":round(export_kwh,4),"export_revenue_candidate_ct":round(export_kwh*(x.get("sell_ct_kwh") or 0),2),
             "thermal_economic_action":econ,
             "soc_after_percent":round((energy/cap*100) if cap else soc,1)})
     return {"status":"SHADOW_V1","generated_at":datetime.now(timezone.utc).isoformat(),"slots":rows,
@@ -426,7 +439,7 @@ def main():
     if not token:log.error("Supervisor token unavailable");return
     client=HomeAssistantClient("http://supervisor/core",token);site_meta=home_assistant_site_meta(client);log.info("site location | source=HOME_ASSISTANT | latitude=%s | longitude=%s | elevation=%s | timezone=%s",site_meta.get("latitude"),site_meta.get("longitude"),site_meta.get("elevation"),site_meta.get("time_zone"));signature=None;last=0;interval=int(options.get("interval_seconds",30));server_cfg=load(SERVER,{"url":"https://ins-ei.ins-enertech.net","installation_id":options.get("installation_id","pilot-local"),"interval_seconds":30,"enabled":False});telemetry_url=server_cfg.get("url","").strip() if server_cfg.get("enabled") else "";telemetry_interval=int(server_cfg.get("interval_seconds",30));last_telemetry=0;server_forecast=None;last_server_forecast=0
     while True:
-        cfg=effective_config(options);component_cfg=load(COMPONENTS,{});market_cfg=load(MARKET,{"mode":"AWATTAR_AT","import_markup_ct":1.5,"vat_percent":20.0,"export_factor_percent":81.0});strategy_cfg=load(STRATEGY,{"profile":"AUTO","priorities":{"thermal_storage":80,"battery_economics":60,"export":40,"ev":50},"requirements":{"dhw_min_c":50.0}})
+        cfg=effective_config(options);component_cfg=load(COMPONENTS,{});market_cfg=load(MARKET,{"mode":"AWATTAR_AT","export_strategy":"SELF_CONSUMPTION","import_markup_ct":1.5,"vat_percent":20.0,"export_factor_percent":81.0});strategy_cfg=load(STRATEGY,{"profile":"AUTO","priorities":{"thermal_storage":80,"battery_economics":60,"export":40,"ev":50},"requirements":{"dhw_min_c":50.0}})
         sig=json.dumps({"mappings":cfg.get("mappings",[]),"components":component_cfg,"market":market_cfg,"strategy":strategy_cfg,"topology":options.get("thermal_topology")},sort_keys=True,ensure_ascii=False)
         if sig!=signature:
             check=validate_mapping_config(cfg)
