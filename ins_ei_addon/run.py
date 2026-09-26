@@ -159,47 +159,6 @@ def build_shadow_day_plan(slots,decision):
         "pv_export_candidate_kwh":round(sum(x["pv_export_candidate_kwh"] for x in rows),4),
         "export_revenue_candidate_ct":round(sum(x["export_revenue_candidate_ct"] for x in rows),2)}}
 
-def build_boiler_permission_shadow(model,decision,day_plan):
-    """Conservative read-only pellet boiler permission recommendation."""
-    def point(kind,name):
-        for c in model.components_by_kind(kind):
-            p=c.point(name)
-            if p is not None and p.value is not None and p.quality.value=="GOOD":return p
-        return None
-    upper=point("BUFFER","temperature_upper");lower=point("BUFFER","temperature_lower")
-    dhw=point("DHW","temperature")
-    circuits=model.components_by_kind("HEATING_CIRCUIT")
-    targets=[]
-    active=[]
-    for c in circuits:
-        t=c.point("target_flow_temperature");p=c.point("pump_state")
-        if t is not None and t.value is not None and t.quality.value=="GOOD":targets.append(float(t.value))
-        if p is not None and p.value is not None and p.quality.value=="GOOD":
-            active.append(str(p.value).strip().lower() in ("on","ein","true","1","running","heating","heat"))
-    summary=(day_plan or {}).get("summary") or {}
-    pv_heat=float(summary.get("pv_to_heat_candidate_kwh") or 0)
-    reasons=[];guards=[]
-    if upper is None:
-        guards.append("Puffer oben fehlt")
-    if dhw is None:
-        guards.append("Warmwassertemperatur fehlt")
-    if guards:
-        return {"permission":"ALLOW","confidence":"LOW","guards":guards,"reason":"Fail-safe Freigabe: "+", ".join(guards)}
-    upper_c=float(upper.value);lower_c=float(lower.value) if lower is not None else None;dhw_c=float(dhw.value)
-    max_target=max(targets) if targets else 0.0
-    heating_active=any(active) if active else False
-    # Hard comfort guards. DHW minimum comes from the existing strategy requirement.
-    req=(decision.inputs.get("strategy") or {}).get("requirements") or {}
-    dhw_min=float(req.get("dhw_min_c",50.0))
-    required_upper=max(max_target+5.0 if heating_active else 0.0,dhw_min)
-    if dhw_c<=dhw_min:
-        return {"permission":"ALLOW","confidence":"HIGH","guards":["DHW_MIN"],"reason":f"Warmwasser {dhw_c:.1f} °C <= Mindestwert {dhw_min:.1f} °C."}
-    if heating_active and upper_c<=required_upper:
-        return {"permission":"ALLOW","confidence":"HIGH","guards":["HEATING_RESERVE"],"reason":f"Heizkreise aktiv; Puffer oben {upper_c:.1f} °C <= erforderliche Reserve {required_upper:.1f} °C."}
-    if pv_heat>=2.0:
-        return {"permission":"BLOCK","confidence":"MEDIUM","guards":[],"reason":f"Puffer oben {upper_c:.1f} °C und WW {dhw_c:.1f} °C ausreichend; Day Planner erwartet {pv_heat:.2f} kWh wirtschaftliche PV-Waerme. Pelletkessel vorlaeufig zurueckhalten."}
-    return {"permission":"ALLOW","confidence":"MEDIUM","guards":[],"reason":f"Nur {pv_heat:.2f} kWh wirtschaftliche PV-Waerme erwartet; keine belastbare Grundlage fuer Kesselsperre."}
-
 def boiler_permission_shadow(model,decision,day_plan):
     def good(kind,name):
         for c in model.components_by_kind(kind):
@@ -368,14 +327,10 @@ def main():
             vrm_series=load(VRM_SERIES,[])
             planner_inputs=build_day_plan_inputs(vrm_series,market_series,market_cfg)
             day_plan=build_shadow_day_plan(planner_inputs,decision)
-            boiler_permission=build_boiler_permission_shadow(model,decision,day_plan)
-            day_plan["boiler_permission"]=boiler_permission
             bp=boiler_permission_shadow(model,decision,day_plan)
             day_plan["boiler_permission"]=bp
             DAY_PLAN.write_text(json.dumps(day_plan,ensure_ascii=False,indent=2),encoding="utf-8")
             log.info("boiler permission shadow | current_mode=%s | recommendation=%s | confidence=%s | reason=%s",bp.get("current_mode"),bp.get("permission"),bp.get("confidence"),bp.get("reason"))
-            log.info("boiler permission shadow | permission=%s | confidence=%s | guards=%s | reason=%s",
-                boiler_permission.get("permission"),boiler_permission.get("confidence"),boiler_permission.get("guards"),boiler_permission.get("reason"))
             if day_plan.get("slots"):
                 rows=day_plan["slots"];log.info("day planner | status=%s | slots=%d | start=%s | end=%s | pv=%.2f kWh | load=%.2f kWh | grid_import=%.2f kWh | surplus_after_battery=%.2f kWh | end_soc=%.1f %%",
                     day_plan["status"],len(rows),rows[0]["time"],rows[-1]["time"],sum(x["pv_kwh"] for x in rows),sum(x["load_kwh"] for x in rows),
