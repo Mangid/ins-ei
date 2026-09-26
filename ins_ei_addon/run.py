@@ -16,7 +16,7 @@ from ins_ei.plugins.mypv import MyPVPlugin
 from ins_ei.plugins.shrdzm import SHRDZMPlugin
 from ins_ei.model import DataPoint,DataQuality,DataRole
 
-OPTIONS=Path("/data/options.json");UI=Path("/data/ui_mappings.json");VRM_SERIES=Path("/data/vrm_forecast_series.json");DAY_PLAN=Path("/data/day_plan.json");DISC=Path("/data/discovery.json");COMPONENTS=Path("/data/components.json");SITE=Path("/data/site_model.json");SHADOW=Path("/data/shadow_decision.json");MARKET=Path("/data/market.json");MARKET_SERIES=Path("/data/market_series.json");STRATEGY=Path("/data/strategy.json");SERVER=Path("/data/server.json");TELEMETRY_STATUS=Path("/data/telemetry_status.json");PLUGINS=Path("/data/plugins.json")
+OPTIONS=Path("/data/options.json");UI=Path("/data/ui_mappings.json");VRM_SERIES=Path("/data/vrm_forecast_series.json");DAY_PLAN=Path("/data/day_plan.json");DISC=Path("/data/discovery.json");COMPONENTS=Path("/data/components.json");SITE=Path("/data/site_model.json");SHADOW=Path("/data/shadow_decision.json");MARKET=Path("/data/market.json");MARKET_SERIES=Path("/data/market_series.json");STRATEGY=Path("/data/strategy.json");SERVER=Path("/data/server.json");TELEMETRY_STATUS=Path("/data/telemetry_status.json");PLUGINS=Path("/data/plugins.json");ASSIST=Path("/data/assisted_thermal.json")
 MULTI={"HEATING_CIRCUIT","ROOM","LOAD"}
 
 def load(path,default):
@@ -203,6 +203,28 @@ def boiler_permission_shadow(model,decision,day_plan):
         return {"permission":"BLOCK","current_mode":current_mode,"confidence":"MEDIUM","reason":f"Puffer oben {upper_c:.1f} C und WW {dhw_c:.1f} C ausreichend; {pv_heat:.2f} kWh wirtschaftliche PV-Waerme geplant."}
     return {"permission":"ALLOW","current_mode":current_mode,"confidence":"MEDIUM","reason":f"Nur {pv_heat:.2f} kWh wirtschaftliche PV-Waerme geplant."}
 
+def apply_assisted_thermal(plugin_cfg,bp,dw,log):
+    o=plugin_cfg.get("oekofen") or {}
+    if not o.get("thermal_assist_enabled"):return
+    plugin=_PLUGIN_CACHE.get("oekofen")
+    if plugin is None:return
+    state=load(ASSIST,{"boiler_owned":False,"dhw_last_request":0})
+    now=time.time()
+    current=str(bp.get("current_mode")).strip().lower()
+    try:
+        if bp.get("permission")=="BLOCK" and current in ("1","1.0","auto") and not state.get("boiler_owned"):
+            plugin.set_boiler_mode(0);state["boiler_owned"]=True;state["boiler_blocked_at"]=now
+            log.warning("assisted thermal | actuator=pe1.mode | command=0 | ownership=INS_EI | reason=%s",bp.get("reason"))
+        elif bp.get("permission")=="ALLOW" and state.get("boiler_owned"):
+            plugin.set_boiler_mode(1);state["boiler_owned"]=False
+            log.warning("assisted thermal | actuator=pe1.mode | command=1 | ownership=RELEASED | reason=%s",bp.get("reason"))
+        if dw.get("recommendation")=="HEAT_ONE" and str(dw.get("current")).lower() not in ("true","1","on") and now-float(state.get("dhw_last_request",0))>=900:
+            plugin.set_dhw_once(True);state["dhw_last_request"]=now
+            log.warning("assisted thermal | actuator=ww1.heat_once | command=true | cooldown=900s | reason=%s",dw.get("reason"))
+    except Exception as exc:
+        log.error("assisted thermal | write failed | %s",exc)
+    ASSIST.write_text(json.dumps(state,ensure_ascii=False,indent=2),encoding="utf-8")
+
 def supervisor_token():
     value=os.environ.get("SUPERVISOR_TOKEN")
     if value:return value
@@ -350,6 +372,7 @@ def main():
             day_plan["boiler_permission"]=bp
             DAY_PLAN.write_text(json.dumps(day_plan,ensure_ascii=False,indent=2),encoding="utf-8")
             log.info("boiler permission shadow | current_mode=%s | recommendation=%s | confidence=%s | reason=%s",bp.get("current_mode"),bp.get("permission"),bp.get("confidence"),bp.get("reason"))
+            apply_assisted_thermal(plugin_cfg,bp,dw,log)
             if day_plan.get("slots"):
                 rows=day_plan["slots"];log.info("day planner | status=%s | slots=%d | start=%s | end=%s | pv=%.2f kWh | load=%.2f kWh | grid_import=%.2f kWh | surplus_after_battery=%.2f kWh | end_soc=%.1f %%",
                     day_plan["status"],len(rows),rows[0]["time"],rows[-1]["time"],sum(x["pv_kwh"] for x in rows),sum(x["load_kwh"] for x in rows),
