@@ -38,6 +38,7 @@ class OekoFENPlugin:
         add("system","L_boiler_temp","pellet_boiler","boiler_temperature","°C",.1)
         add("pu1","L_tpo_act","buffer","temperature_upper","°C",.1)
         add("pu1","L_tpm_act","buffer","temperature_lower","°C",.1)
+        add("pu1","mintemp_off","buffer","min_temperature_off","°C",1)
         add("ww1","L_ontemp_act","dhw","temperature","°C",.1)
         # DHW charging signals for Thermal Shadow monitoring.  Each point is
         # added only when the controller actually exposes the corresponding
