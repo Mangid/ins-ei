@@ -125,3 +125,6 @@
 .clickable-oekofen{cursor:pointer}
 .oekofen-detail-status.severity-warning{border-left:4px solid #d97706}
 .oekofen-detail-status.severity-error{border-left:4px solid #dc2626}
+
+.oekofen-hidden-toggle{display:flex!important;align-items:center;gap:8px;white-space:nowrap}.oekofen-hidden-toggle input{width:auto!important;margin:0}
+.oekofen-settings{display:grid;gap:10px;margin:12px 0}.oekofen-settings label{display:flex;align-items:flex-start;gap:12px;padding:12px;border:1px solid var(--border,#334155);border-radius:10px;cursor:pointer}.oekofen-settings input{width:20px!important;height:20px;margin-top:2px;flex:0 0 auto}.oekofen-settings span{display:flex;flex-direction:column;gap:3px}.oekofen-settings small{opacity:.72;line-height:1.35}.oekofen-settings input:disabled+span{opacity:.45}
