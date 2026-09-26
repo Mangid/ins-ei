@@ -97,10 +97,10 @@ def read_vrm_forecast(config,log):
         pvd={int(x[0]):float(x[1])/1000.0 for x in pv if len(x)>=2};ld={int(x[0]):float(x[1])/1000.0 for x in load_fc if len(x)>=2}
         slots=[{"timestamp_ms":ts,"pv_kwh":pvd[ts],"load_kwh":ld[ts]} for ts in sorted(set(pvd)&set(ld))]
         VRM_SERIES.write_text(json.dumps(slots,ensure_ascii=False,indent=2),encoding="utf-8")
-        log.info("vrm forecast series | pv_slots=%d | load_slots=%d | common_slots=%d | pv_kwh=%.3f | load_kwh=%.3f",len(pv),len(load_fc),len(slots),sum(x["pv_kwh"] for x in slots),sum(x["load_kwh"] for x in slots))
+        log.info("forecast series | provider=VRM | pv_slots=%d | load_slots=%d | common_slots=%d | pv_kwh=%.3f | load_kwh=%.3f",len(pv),len(load_fc),len(slots),sum(x["pv_kwh"] for x in slots),sum(x["load_kwh"] for x in slots))
         return slots
     except Exception as exc:
-        log.warning("vrm forecast series failed | %s",exc);return None
+        log.warning("forecast series failed | provider=VRM | %s",exc);return None
 
 def supervisor_token():
     value=os.environ.get("SUPERVISOR_TOKEN")
