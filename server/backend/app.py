@@ -26,7 +26,7 @@ from fastapi.responses import FileResponse
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
-VERSION = "1.4.0"
+VERSION = "1.4.1"
 DB_PATH = Path("/data/ins_ei.db")
 PUSHSAFER_KEY = Path("/run/secrets/pushsafer_private_key")
 MANAGEMENT_KEY = Path("/run/secrets/management_api_key")
@@ -2557,18 +2557,18 @@ from(bucket: "{INFLUX_BUCKET}")
 
 
 def influx_consumption_forecast(installation_id: str, hours: int = 24) -> dict[str, Any]:
-    """Learn a manufacturer-neutral hourly load forecast from grid/PV/battery telemetry."""
+    """Learn base consumption while excluding controllable power-to-heat loads."""
     hours=max(1,min(int(hours),48))
     token=INFLUX_TOKEN.read_text().strip()
     safe_id=installation_id.replace('"','\\"')
-    # Approximate house load from the common sign convention used by INS-EI:
-    # load = PV + grid + battery power. Negative battery power means charging.
+    fields=("pv.power","grid.power","battery.power","power_to_heat.electrical_power")
+    field_filter=" or ".join(f'r._field == "{field}"' for field in fields)
     flux=f"""
 from(bucket: "{INFLUX_BUCKET}")
   |> range(start: -30d)
   |> filter(fn: (r) => r._measurement == "ins_ei_telemetry")
   |> filter(fn: (r) => r.installation_id == "{safe_id}")
-  |> filter(fn: (r) => r._field == "pv.power" or r._field == "grid.power" or r._field == "battery.power")
+  |> filter(fn: (r) => {field_filter})
   |> aggregateWindow(every: 15m, fn: mean, createEmpty: false)
   |> keep(columns: ["_time", "_field", "_value"])
 """
@@ -2584,30 +2584,50 @@ from(bucket: "{INFLUX_BUCKET}")
     tz=ZoneInfo("Europe/Vienna")
     buckets={}
     days=set()
+    valid_points=0
     for ts,v in points.items():
-        if not all(k in v for k in ("pv.power","grid.power","battery.power")): continue
+        if "pv.power" not in v or "grid.power" not in v: continue
         try: dt=datetime.fromisoformat(ts.replace("Z","+00:00")).astimezone(tz)
         except ValueError: continue
-        load_w=max(0.0,v["pv.power"]+v["grid.power"]+v["battery.power"])
-        # Reject obvious telemetry/sign glitches, but retain real household peaks.
-        if load_w>30000: continue
+        # INS-EI normalized convention: grid + = import, grid - = export.
+        # battery.power is treated as + discharge / - charge when present.
+        battery=v.get("battery.power",0.0)
+        total_load=max(0.0,v["pv.power"]+v["grid.power"]+battery)
+        controllable=max(0.0,v.get("power_to_heat.electrical_power",0.0))
+        base_load=max(0.0,total_load-controllable)
+        if base_load>15000: continue
         key=(dt.weekday(),dt.hour)
-        buckets.setdefault(key,[]).append(load_w)
+        buckets.setdefault(key,[]).append(base_load)
         days.add(dt.date())
+        valid_points+=1
     now=datetime.now(tz)
     slots=[]
     for n in range(hours):
-        start=(now.replace(minute=0,second=0,microsecond=0)+timedelta(hours=n))
-        vals=buckets.get((start.weekday(),start.hour),[])
-        # Fall back to the same hour across all weekdays while the profile is still learning.
+        slot_start=now.replace(minute=0,second=0,microsecond=0)+timedelta(hours=n)
+        vals=buckets.get((slot_start.weekday(),slot_start.hour),[])
         if len(vals)<4:
-            vals=[v for (wd,h),items in buckets.items() if h==start.hour for v in items]
-        mean_w=sum(vals)/len(vals) if vals else 0.0
-        slots.append({"start":start.isoformat(),"kwh":round(mean_w/1000.0,3),"samples":len(vals)})
+            vals=[value for (wd,hour),items in buckets.items() if hour==slot_start.hour for value in items]
+        # Median is deliberately robust while a site is still learning.
+        vals=sorted(vals)
+        if vals:
+            mid=len(vals)//2
+            estimate_w=vals[mid] if len(vals)%2 else (vals[mid-1]+vals[mid])/2
+        else:
+            estimate_w=0.0
+        slots.append({"start":slot_start.isoformat(),"kwh":round(estimate_w/1000.0,3),"samples":len(vals)})
     learned_days=len(days)
     quality="GOOD" if learned_days>=21 else ("MEDIUM" if learned_days>=7 else "LEARNING")
-    return {"installation_id":installation_id,"model":"INS_EI_LOAD_PROFILE_V1","quality":quality,"learned_days":learned_days,"hours":hours,"total_kwh":round(sum(x["kwh"] for x in slots),3),"slots":slots}
-
+    return {
+        "installation_id":installation_id,
+        "model":"INS_EI_BASE_LOAD_PROFILE_V2",
+        "quality":quality,
+        "learned_days":learned_days,
+        "valid_points":valid_points,
+        "hours":hours,
+        "controllable_loads_excluded":["power_to_heat.electrical_power"],
+        "total_kwh":round(sum(x["kwh"] for x in slots),3),
+        "slots":slots,
+    }
 
 def telemetry_status() -> dict[str, Any]:
     """Return status of all INS-EI telemetry installations."""
