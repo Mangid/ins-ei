@@ -1533,6 +1533,86 @@ def sync_oekofen_plants() -> dict[str, Any]:
     }
 
 
+def oekofen_fetch_variables(plant_id: str, names: list[str]) -> list[dict[str, Any]]:
+    auth = oekofen_login()
+    def fetch(token: str):
+        url = "https://my.oekofen.info/api/pwa/v1/plants/" + plant_id + "/remotecontrol/variables"
+        request = Request(url, data=json.dumps(names).encode("utf-8"), method="POST", headers={
+            "Authorization": "Bearer " + token,
+            "Accept": "application/json",
+            "Accept-Language": "de",
+            "Content-Type": "text/plain",
+            "X-App-Version": "3.28.4+393",
+        })
+        with urlopen(request, timeout=30) as response:
+            result = json.loads(response.read().decode("utf-8"))
+        if result.get("status") != "success":
+            raise RuntimeError(str(result.get("message") or "OekoFEN variables request failed"))
+        return result.get("data") or []
+    try:
+        return fetch(auth["access_token"])
+    except urllib.error.HTTPError as exc:
+        if exc.code != 401:
+            raise
+        return fetch(oekofen_login()["access_token"])
+
+def oekofen_format_variable(item):
+    if not item or item.get("status") != "OK":
+        return None
+    raw = str(item.get("value") or "")
+    formats = str(item.get("formatTexts") or "")
+    if formats:
+        try:
+            idx = int(float(raw)); parts = formats.split("|")
+            if 0 <= idx < len(parts):
+                return parts[idx]
+        except Exception:
+            pass
+    try:
+        value = float(raw) / float(item.get("divisor") or 1)
+        text = (("%.2f" % value).rstrip("0").rstrip(".")).replace(".", ",")
+    except Exception:
+        text = raw
+    unit = str(item.get("unitText") or "").strip()
+    return text + ((" " + unit) if unit else "")
+
+OEKOFEN_MEASUREMENTS = [
+ ("Bedienteil","CAPPL:LOCAL.touch[0].version",None),
+ ("Außentemperatur","CAPPL:LOCAL.L_aussentemperatur_ist",None),
+ ("Bestehender Kessel","CAPPL:LOCAL.L_bestke_temp_ist",None),
+ ("Kesseltemperatur","CAPPL:LOCAL.L_ke_temp_ist","CAPPL:LOCAL.L_ke_temp_soll"),
+ ("Brenneranforderung","CAPPL:LOCAL.L_ke_brennerkontakt_1",None),
+ ("Umschaltventil","CAPPL:LOCAL.L_bestke_umschaltventil",None),
+ ("PU1 Oben TPO","CAPPL:LOCAL.L_pu[0].einschaltfuehler_ist","CAPPL:LOCAL.L_pu[0].einschaltfuehler_soll"),
+ ("PU1 Mitte TPM","CAPPL:LOCAL.L_pu[0].ausschaltfuehler_ist","CAPPL:LOCAL.L_pu[0].ausschaltfuehler_soll"),
+ ("PU1 Pumpe","CAPPL:LOCAL.L_pu[0].pumpe",None),
+ ("WW1 Temperatur","CAPPL:LOCAL.L_ww[0].einschaltfuehler_ist","CAPPL:LOCAL.L_ww[0].temp_soll"),
+ ("WW1 Pumpe","CAPPL:LOCAL.L_ww[0].pumpe",None),
+ ("HK1 Vorlauftemperatur","CAPPL:LOCAL.L_hk[0].vorlauftemp_ist","CAPPL:LOCAL.L_hk[0].vorlauftemp_soll"),
+ ("HK2 Vorlauftemperatur","CAPPL:LOCAL.L_hk[1].vorlauftemp_ist","CAPPL:LOCAL.L_hk[1].vorlauftemp_soll"),
+ ("HK1 Raumtemperatur","CAPPL:LOCAL.L_hk[0].raumtemp_ist","CAPPL:LOCAL.L_hk[0].raumtemp_soll"),
+ ("HK2 Raumtemperatur","CAPPL:LOCAL.L_hk[1].raumtemp_ist","CAPPL:LOCAL.L_hk[1].raumtemp_soll"),
+ ("HK1 Pumpe","CAPPL:LOCAL.L_hk[0].pumpe",None),
+ ("HK2 Pumpe","CAPPL:LOCAL.L_hk[1].pumpe",None),
+ ("Kesseltemperatur PE1","CAPPL:FA[0].L_kesseltemperatur","CAPPL:FA[0].L_kesseltemperatur_soll_anzeige"),
+ ("Abgastemperatur PE1","CAPPL:FA[0].L_abgastemperatur",None),
+ ("Feuerraumtemperatur PE1","CAPPL:FA[0].L_feuerraumtemperatur","CAPPL:FA[0].L_feuerraumtemperatur_soll"),
+ ("Kesselstatus PE1","CAPPL:FA[0].L_kesselstatus",None),
+ ("Modulation PE1","CAPPL:FA[0].L_modulationsstufe",None),
+ ("Unterdruck PE1","CAPPL:FA[0].L_unterdruck","CAPPL:FA[0].L_unterdruck_soll_anzeige"),
+ ("Pelletfüllstand","CAPPL:FA[0].L_fuellstand_aktuell",None),
+ ("Aschemenge","CAPPL:FA[0].L_aschemenge_info",None),
+ ("Brennerstarts","CAPPL:FA[0].L_brennerstarts",None),
+ ("Brennerlaufzeit","CAPPL:FA[0].L_brennerlaufzeit_anzeige",None),
+ ("Mittlere Laufzeit","CAPPL:FA[0].L_mittlere_laufzeit",None),
+ ("Akt. Temperatur","CAPPL:LOCAL.L_weather_temp",None),
+ ("Durchschnittliche Temperatur Morgen","CAPPL:LOCAL.L_weather_forecast_temp",None),
+ ("Akt. Bewölkung","CAPPL:LOCAL.L_weather_forecast_clouds",None),
+]
+OEKOFEN_INFO_VARIABLES = ["CAPPL:LOCAL.L_fernwartung_datum_zeit_sek"] + sum(
+    ([f"CAPPL:LOCAL.L_fehlerlog[{i}].code", f"CAPPL:LOCAL.L_fehlerlog[{i}].date"] for i in range(10)), []
+)
+
 def oekofen_fetch_csv(
     plant_id: str,
     day: str,
@@ -2900,6 +2980,34 @@ def api_oekofen_link(plant_id: str,item: OekofenPlantLink):
             if cur.rowcount==0: raise HTTPException(404,"Device not found")
     return {"status":"updated","plant_id":plant_id,"device_id":device_id,"synced_fields":["manufacturer","model","serial_number"] if device_id is not None else []}
 
+
+@app.get("/api/v1/oekofen/plants/{plant_id}/measurements")
+def api_oekofen_measurements(plant_id: str):
+    names=[]
+    for _,actual,target in OEKOFEN_MEASUREMENTS:
+        names.append(actual)
+        if target: names.append(target)
+    values=oekofen_fetch_variables(plant_id,list(dict.fromkeys(names)))
+    by_name={x.get("name"):x for x in values if isinstance(x,dict)}
+    rows=[]
+    for label,actual,target in OEKOFEN_MEASUREMENTS:
+        av=oekofen_format_variable(by_name.get(actual))
+        tv=oekofen_format_variable(by_name.get(target)) if target else None
+        if av is not None or tv is not None:
+            rows.append({"label":label,"actual":av,"target":tv})
+    return {"plant_id":plant_id,"rows":rows}
+
+@app.get("/api/v1/oekofen/plants/{plant_id}/infos")
+def api_oekofen_infos(plant_id: str):
+    values=oekofen_fetch_variables(plant_id,OEKOFEN_INFO_VARIABLES)
+    by_name={x.get("name"):x for x in values if isinstance(x,dict)}
+    entries=[]
+    for i in range(10):
+        code=by_name.get(f"CAPPL:LOCAL.L_fehlerlog[{i}].code",{}).get("value")
+        date=by_name.get(f"CAPPL:LOCAL.L_fehlerlog[{i}].date",{}).get("value")
+        if code and str(code) not in ("0","0.000000"):
+            entries.append({"index":i,"code":str(code),"date":str(date or "")})
+    return {"plant_id":plant_id,"entries":entries}
 
 @app.post("/api/v1/oekofen/sync")
 def api_oekofen_sync():
