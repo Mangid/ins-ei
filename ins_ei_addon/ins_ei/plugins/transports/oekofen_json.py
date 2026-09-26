@@ -12,7 +12,7 @@ class OekoFENTransport:
     def set_value(self,section:str,variable:str,value)->str:
         """Set one explicitly selected OekoFEN JSON value."""
         from urllib.parse import quote
-        if (section,variable) not in {("pe1","mode")}:
+        if (section,variable) not in {("pe1","mode"),("ww1","heat_once")}:
             raise RuntimeError("OEKOFEN_WRITE_NOT_ALLOWED")
         url=f"http://{self.host}:{self.port}/{self.password}/{quote(section)}.{quote(variable)}={quote(str(value))}"
         req=Request(url,headers={"Accept":"application/json","Connection":"close"})
