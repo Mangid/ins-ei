@@ -26,7 +26,7 @@ from fastapi.responses import FileResponse
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
-VERSION = "1.5.1"
+VERSION = "1.5.2"
 DB_PATH = Path("/data/ins_ei.db")
 PUSHSAFER_KEY = Path("/run/secrets/pushsafer_private_key")
 MANAGEMENT_KEY = Path("/run/secrets/management_api_key")
@@ -1222,6 +1222,18 @@ def init_customer_db():
             )
             """
         )
+
+
+        if not column_exists(con, "telemetry_installations", "latitude"):
+            con.execute("ALTER TABLE telemetry_installations ADD COLUMN latitude REAL")
+        if not column_exists(con, "telemetry_installations", "longitude"):
+            con.execute("ALTER TABLE telemetry_installations ADD COLUMN longitude REAL")
+        if not column_exists(con, "telemetry_installations", "elevation"):
+            con.execute("ALTER TABLE telemetry_installations ADD COLUMN elevation REAL")
+        if not column_exists(con, "telemetry_installations", "time_zone"):
+            con.execute("ALTER TABLE telemetry_installations ADD COLUMN time_zone TEXT")
+        if not column_exists(con, "telemetry_installations", "location_name"):
+            con.execute("ALTER TABLE telemetry_installations ADD COLUMN location_name TEXT")
 
 
 def init_oekofen_db():
@@ -2662,6 +2674,12 @@ from(bucket: "{INFLUX_BUCKET}")
 def installation_location(installation_id: str) -> dict[str, Any] | None:
     """Resolve an INS-EI telemetry id to the stored customer/installation address and geocode it."""
     with db() as con:
+        telemetry=con.execute("""SELECT latitude,longitude,elevation,time_zone,location_name
+            FROM telemetry_installations WHERE installation_id=?""",(installation_id,)).fetchone()
+        if telemetry and telemetry["latitude"] is not None and telemetry["longitude"] is not None:
+            return {"latitude":float(telemetry["latitude"]),"longitude":float(telemetry["longitude"]),
+                    "elevation":telemetry["elevation"],"time_zone":telemetry["time_zone"],
+                    "name":telemetry["location_name"] or installation_id,"source":"HOME_ASSISTANT"}
         row=con.execute("""
             SELECT COALESCE(NULLIF(i.address,''),c.address) address,
                    COALESCE(NULLIF(i.postal_code,''),c.postal_code) postal_code,
@@ -2855,6 +2873,7 @@ class TelemetryPayload(BaseModel):
     installation_id: str
     timestamp: datetime
     data: dict[str, Any] = Field(default_factory=dict)
+    site: dict[str, Any] = Field(default_factory=dict)
 
 
 class PushSubscription(BaseModel):
@@ -3348,6 +3367,16 @@ def receive_telemetry(payload: TelemetryPayload):
                 payload.timestamp.isoformat(),
             ),
         )
+
+    if payload.site:
+        lat=payload.site.get("latitude");lon=payload.site.get("longitude")
+        if lat is not None and lon is not None:
+            with db() as con:
+                con.execute("""UPDATE telemetry_installations
+                    SET latitude=?,longitude=?,elevation=?,time_zone=?,location_name=?
+                    WHERE installation_id=?""",
+                    (lat,lon,payload.site.get("elevation"),payload.site.get("time_zone"),
+                     payload.site.get("location_name"),payload.installation_id))
 
     try:
         write_telemetry_to_influx(
