@@ -23,6 +23,12 @@ class OekoFENPlugin:
         if self._last_data is None or now-self._last_read>=2.6:
             self._last_data=self.transport.read_all();self._last_read=now
         return self._last_data
+    def set_boiler_mode(self,mode:int):
+        mode=int(mode)
+        if mode not in (0,1):raise ValueError("OEKOFEN_BOILER_MODE_INVALID")
+        result=self.transport.set_value("pe1","mode",mode)
+        self._last_data=None
+        return result
     def detect(self):
         data=self._data()
         caps={k for k in ("pe1","pu1","ww1","hk1","hk2") if isinstance(data.get(k),dict)}
