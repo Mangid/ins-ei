@@ -1,5 +1,5 @@
 name: INS-EI Pilot
-version: "0.28.22"
+version: "0.28.23"
 slug: ins_ei
 description: Local-first energy intelligence pilot collector
 url: https://github.com/Mangid/ins-ei
