@@ -209,6 +209,30 @@ def evaluate(site,market_series=None,strategy=None):
     # battery headroom and tariff forecasts.
     if forecast_balance is not None:
         inputs["pv_surplus_after_battery_headroom_kwh"]=max(forecast_balance-battery_free_kwh,0.0)
+    # Economic shadow comparison for one surplus PV kWh:
+    # using Power-to-Heat forfeits export revenue but can replace pellet heat.
+    economic_margin_ct=float((strategy.get("economics") or {}).get("minimum_advantage_ct_kwh",1.0))
+    surplus_after_battery=inputs.get("pv_surplus_after_battery_headroom_kwh")
+    thermal_economics={"decision":"NO_SURPLUS","export_ct_kwh":export_ct,
+        "pellet_heat_ct_kwh":pellet_heat_ct,"minimum_advantage_ct_kwh":economic_margin_ct,
+        "surplus_after_battery_kwh":surplus_after_battery,"advantage_heat_ct_kwh":None,
+        "reason":"Kein prognostizierter PV-Ueberschuss nach Batteriefreiraum."}
+    if surplus_after_battery is not None and surplus_after_battery>0 and export_ct is not None and pellet_heat_ct is not None:
+        advantage=pellet_heat_ct-export_ct
+        thermal_economics["advantage_heat_ct_kwh"]=advantage
+        if advantage>=economic_margin_ct:
+            thermal_economics["decision"]="PV_TO_HEAT"
+            thermal_economics["reason"]=f"PV-Waerme spart Pelletwaerme zu {pellet_heat_ct:.2f} ct/kWh; Einspeisung bringt nur {export_ct:.2f} ct/kWh. Vorteil Waerme {advantage:.2f} ct/kWh."
+        elif -advantage>=economic_margin_ct:
+            thermal_economics["decision"]="EXPORT"
+            thermal_economics["reason"]=f"Einspeisung bringt {export_ct:.2f} ct/kWh; Pelletwaerme kostet {pellet_heat_ct:.2f} ct/kWh. Vorteil Einspeisung {-advantage:.2f} ct/kWh."
+        else:
+            thermal_economics["decision"]="NEUTRAL"
+            thermal_economics["reason"]=f"Differenz zwischen PV-Waerme und Einspeisung liegt mit {abs(advantage):.2f} ct/kWh unter der Mindestschwelle {economic_margin_ct:.2f} ct/kWh."
+    elif surplus_after_battery is not None and surplus_after_battery>0:
+        thermal_economics["decision"]="UNKNOWN"
+        thermal_economics["reason"]="PV-Ueberschuss vorhanden, aber Einspeise- oder Pelletwaermekosten fehlen."
+    inputs["thermal_economics"]=thermal_economics
     inputs["buffer_strategy"]={"name":buffer_strategy,"deep_charge_allowed":deep_allowed,
         "current_min_off_c":float(buffer_min_off.value) if _usable(buffer_min_off) else None,
         "recommended_min_off_c":recommended_min_off,"reason":buffer_strategy_reason}
