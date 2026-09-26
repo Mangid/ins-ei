@@ -28,6 +28,7 @@ BUFFER_DEEP_CHARGE_DESCRIPTION = (
 )
 
 MARKET_DEFAULT = {
+    "export_strategy": "SELF_CONSUMPTION",
     "import": {"mode": "DYNAMIC", "provider": "AWATTAR_AT", "markup_ct": 1.5, "adjust_percent": 0.0, "vat_percent": 20.0, "static_ct": 25.0},
     "export": {"mode": "DYNAMIC", "provider": "SPOT_AT", "markup_ct": 0.0, "adjust_percent": -19.0, "vat_percent": 0.0, "static_ct": 8.0},
 }
