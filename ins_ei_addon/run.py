@@ -1,6 +1,7 @@
 """INS-EI runtime: persistent installation model + collector."""
 from __future__ import annotations
 import json,logging,os,time
+from datetime import datetime,timezone
 from urllib.request import Request,urlopen
 from urllib.error import URLError,HTTPError
 from pathlib import Path
@@ -104,7 +105,6 @@ def read_vrm_plugin(config,log):
 
 def build_day_plan_inputs(vrm_slots,market_series,market_cfg):
     """Normalize future VRM + market data into vendor-neutral hourly planner slots."""
-    from datetime import datetime,timezone
     if not vrm_slots or not market_series:return []
     def hour_utc_from_ms(ms):
         return datetime.fromtimestamp(ms/1000,timezone.utc).replace(minute=0,second=0,microsecond=0)
