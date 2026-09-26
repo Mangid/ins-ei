@@ -243,6 +243,12 @@ def main():
                 be.get("capacity_kwh"),round(be.get("available_kwh"),2) if be.get("available_kwh") is not None else None,
                 round(be.get("free_kwh"),2) if be.get("free_kwh") is not None else None,be.get("min_soc_percent"),be.get("max_soc_percent"),
                 round(decision.inputs.get("pv_surplus_after_battery_headroom_kwh"),2) if decision.inputs.get("pv_surplus_after_battery_headroom_kwh") is not None else None)
+            te=decision.inputs.get("thermal_economics") or {}
+            log.info("thermal economics | decision=%s | surplus_after_battery=%s kWh | export=%s ct/kWh | pellet_heat=%s ct/kWh | advantage_heat=%s ct/kWh | reason=%s",
+                te.get("decision"),round(te.get("surplus_after_battery_kwh"),2) if te.get("surplus_after_battery_kwh") is not None else None,
+                round(te.get("export_ct_kwh"),2) if te.get("export_ct_kwh") is not None else None,
+                round(te.get("pellet_heat_ct_kwh"),2) if te.get("pellet_heat_ct_kwh") is not None else None,
+                round(te.get("advantage_heat_ct_kwh"),2) if te.get("advantage_heat_ct_kwh") is not None else None,te.get("reason"))
             bs=decision.inputs.get("buffer_strategy") or {}
             log.info("buffer strategy | mode=%s | deep_charge_allowed=%s | current_min_off=%s C | recommended_min_off=%s C | reason=%s",
                 bs.get("name"),bs.get("deep_charge_allowed"),bs.get("current_min_off_c"),bs.get("recommended_min_off_c"),bs.get("reason"))
