@@ -55,6 +55,7 @@ class OekoFENPlugin:
         add("pe1","L_modulation","pellet_boiler","modulation","%",1)
         add("pe1","L_br","pellet_boiler","burner_state",None,1,True)
         add("pe1","L_statetext","pellet_boiler","state",None,1,True)
+        add("pe1","mode","pellet_boiler","operating_mode",None,1,True)
         for hk in ("hk1","hk2"):
             add(hk,"L_flowtemp_act",hk,"flow_temperature","°C",.1)
             add(hk,"L_flowtemp_set",hk,"target_flow_temperature","°C",.1)
