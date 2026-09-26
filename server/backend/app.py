@@ -1241,6 +1241,13 @@ def init_oekofen_db():
             """
         )
 
+        if not column_exists(con, "oekofen_plants", "analysis_enabled"):
+            con.execute("ALTER TABLE oekofen_plants ADD COLUMN analysis_enabled INTEGER NOT NULL DEFAULT 0")
+        if not column_exists(con, "oekofen_plants", "monitoring_enabled"):
+            con.execute("ALTER TABLE oekofen_plants ADD COLUMN monitoring_enabled INTEGER NOT NULL DEFAULT 1")
+        if not column_exists(con, "oekofen_plants", "visible_in_overview"):
+            con.execute("ALTER TABLE oekofen_plants ADD COLUMN visible_in_overview INTEGER NOT NULL DEFAULT 1")
+
         con.execute(
             """
             CREATE TABLE IF NOT EXISTS oekofen_problems (
@@ -1423,7 +1430,7 @@ def sync_oekofen_plants() -> dict[str, Any]:
 
             existing = con.execute(
                 """
-                SELECT push_enabled, first_seen_at, problem_count
+                SELECT push_enabled, first_seen_at, problem_count, monitoring_enabled
                 FROM oekofen_plants
                 WHERE plant_id = ?
                 """,
@@ -1480,7 +1487,8 @@ def sync_oekofen_plants() -> dict[str, Any]:
                 (plant_id,),
             )
 
-            if is_new_problem and push_enabled:
+            monitoring_enabled = int(existing["monitoring_enabled"]) if existing and "monitoring_enabled" in existing.keys() else 1
+            if is_new_problem and push_enabled and monitoring_enabled:
                 first_problem = errors[0] if errors and isinstance(errors[0], dict) else {}
                 problem_message = str(first_problem.get("message") or first_problem.get("type") or "Störung erkannt")
                 try:
@@ -2819,6 +2827,28 @@ def api_oekofen_plants():
             x["problems"]=[dict(p) for p in problems]
             result.append(x)
     return {"plants":result,"sync_interval_seconds":300}
+
+
+class OekofenPlantSettings(BaseModel):
+    visible_in_overview: bool = True
+    monitoring_enabled: bool = True
+    push_enabled: bool = False
+    analysis_enabled: bool = False
+
+
+@app.put("/api/v1/oekofen/plants/{plant_id}/settings")
+def api_oekofen_settings(plant_id: str,item: OekofenPlantSettings):
+    visible=bool(item.visible_in_overview)
+    monitoring=bool(item.monitoring_enabled) if visible else False
+    push=bool(item.push_enabled) if visible else False
+    analysis=bool(item.analysis_enabled) if visible else False
+    with db() as con:
+        cur=con.execute("""UPDATE oekofen_plants SET visible_in_overview=?,monitoring_enabled=?,
+            push_enabled=?,analysis_enabled=? WHERE plant_id=?""",
+            (int(visible),int(monitoring),int(push),int(analysis),plant_id))
+        if cur.rowcount==0: raise HTTPException(404,"OekoFEN plant not found")
+    return {"status":"updated","plant_id":plant_id,"visible_in_overview":visible,
+            "monitoring_enabled":monitoring,"push_enabled":push,"analysis_enabled":analysis}
 
 
 class OekofenPlantLink(BaseModel):
