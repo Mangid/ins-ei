@@ -462,6 +462,32 @@ def snapshot(client,mappings):
     mapped={m.entity_id:f"{m.component_id}.{m.point}" for m in mappings};items=discover(client.states(),mapped)
     DISC.write_text(json.dumps([{"entity_id":x.entity_id,"name":x.name,"state":x.state,"unit":x.unit,"suggested_domain":x.suggested_domain,"suggested_point":x.suggested_point,"score":x.score,"mapped_to":x.mapped_to,"source_kind":x.source_kind} for x in items],ensure_ascii=False,indent=2),encoding="utf-8")
 
+def check_remote_update(url,installation_id,token,log,timeout=10):
+    """Poll central server for an update command; Supervisor performs only this add-on's update."""
+    if not url:return False
+    try:
+        with urlopen(Request(url.rstrip("/")+f"/api/v1/fleet/{installation_id}/command",headers={"Accept":"application/json"}),timeout=timeout) as response:
+            cmd=(json.loads(response.read().decode("utf-8")) or {}).get("command")
+        if not cmd:return False
+        if cmd.get("type")!="UPDATE_ADDON":return False
+        target=cmd.get("target_version");cid=cmd.get("id")
+        log.warning("remote update | claimed | command=%s | target=%s",cid,target)
+        # Home Assistant Supervisor resolves the repository version and updates
+        # only this add-on. No arbitrary shell/code command is accepted.
+        req=Request("http://supervisor/addons/self/update",data=b"{}",headers={"Authorization":f"Bearer {token}","Content-Type":"application/json"},method="POST")
+        with urlopen(req,timeout=120) as response:
+            ok=200<=response.status<300
+        body=json.dumps({"ok":ok,"target_version":target}).encode()
+        try:urlopen(Request(url.rstrip("/")+f"/api/v1/fleet/{installation_id}/command/{cid}/result",data=body,headers={"Content-Type":"application/json"},method="POST"),timeout=5).read()
+        except Exception:pass
+        log.warning("remote update | supervisor accepted | command=%s | target=%s",cid,target)
+        return ok
+    except HTTPError as exc:
+        log.warning("remote update | failed | HTTP %s | %s",exc.code,exc.reason)
+    except (URLError,TimeoutError,OSError,json.JSONDecodeError) as exc:
+        log.warning("remote update | failed | %s",exc)
+    return False
+
 def home_assistant_site_meta(client):
     try:
         cfg=client._get_json("/api/config")
@@ -475,8 +501,13 @@ def main():
     logging.basicConfig(level=getattr(logging,options.get("log_level","INFO")),format="%(asctime)s %(levelname)s %(message)s");log=logging.getLogger("ins_ei")
     token=supervisor_token()
     if not token:log.error("Supervisor token unavailable");return
-    client=HomeAssistantClient("http://supervisor/core",token);site_meta=home_assistant_site_meta(client);log.info("site location | source=HOME_ASSISTANT | latitude=%s | longitude=%s | elevation=%s | timezone=%s",site_meta.get("latitude"),site_meta.get("longitude"),site_meta.get("elevation"),site_meta.get("time_zone"));signature=None;last=0;interval=int(options.get("interval_seconds",30));server_cfg=load(SERVER,{"url":"https://ins-ei.ins-enertech.net","installation_id":options.get("installation_id","pilot-local"),"interval_seconds":30,"enabled":False});telemetry_url=server_cfg.get("url","").strip() if server_cfg.get("enabled") else "";telemetry_interval=int(server_cfg.get("interval_seconds",30));last_telemetry=0;server_forecast=None;last_server_forecast=0
+    client=HomeAssistantClient("http://supervisor/core",token);site_meta=home_assistant_site_meta(client);log.info("site location | source=HOME_ASSISTANT | latitude=%s | longitude=%s | elevation=%s | timezone=%s",site_meta.get("latitude"),site_meta.get("longitude"),site_meta.get("elevation"),site_meta.get("time_zone"));signature=None;last=0;interval=int(options.get("interval_seconds",30));server_cfg=load(SERVER,{"url":"https://ins-ei.ins-enertech.net","installation_id":options.get("installation_id","pilot-local"),"interval_seconds":30,"enabled":False});telemetry_url=server_cfg.get("url","").strip() if server_cfg.get("enabled") else "";telemetry_interval=int(server_cfg.get("interval_seconds",30));last_telemetry=0;server_forecast=None;last_server_forecast=0;last_update_check=0
     while True:
+        if telemetry_url and time.time()-last_update_check>=60:
+            installation_id=server_cfg.get("installation_id",options.get("installation_id","pilot-local"))
+            last_update_check=time.time()
+            if check_remote_update(telemetry_url,installation_id,token,log):
+                time.sleep(5)
         cfg=effective_config(options);component_cfg=load(COMPONENTS,{});market_cfg=load(MARKET,{"mode":"AWATTAR_AT","export_strategy":"SELF_CONSUMPTION","import_markup_ct":1.5,"vat_percent":20.0,"export_factor_percent":81.0});strategy_cfg=load(STRATEGY,{"profile":"AUTO","priorities":{"thermal_storage":80,"battery_economics":60,"export":40,"ev":50},"requirements":{"dhw_min_c":50.0}})
         sig=json.dumps({"mappings":cfg.get("mappings",[]),"components":component_cfg,"market":market_cfg,"strategy":strategy_cfg,"topology":options.get("thermal_topology")},sort_keys=True,ensure_ascii=False)
         if sig!=signature:
