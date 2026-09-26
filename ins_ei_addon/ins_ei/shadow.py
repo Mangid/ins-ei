@@ -169,6 +169,16 @@ def evaluate(site,market_series=None,strategy=None):
         return ShadowDecision("OBSERVE_ONLY","Keine Optimierungsentscheidung, weil kritische Eingangsdaten fehlen oder nicht GOOD sind: "+", ".join(missing),"LOW",inputs,alternatives,guards,now)
 
     pv_w=float(pv.value);grid_w=float(grid.value);soc_pct=float(soc.value)
+    battery_component=(site.components_by_kind("BATTERY") or [None])[0]
+    battery_cfg=(battery_component.config or {}) if battery_component else {}
+    battery_capacity_kwh=float(battery_cfg.get("capacity_kwh",30.0))
+    battery_min_soc=float(battery_cfg.get("min_soc_percent",20.0))
+    battery_max_soc=float(battery_cfg.get("max_soc_percent",100.0))
+    battery_available_kwh=battery_capacity_kwh*max(soc_pct-battery_min_soc,0.0)/100.0
+    battery_free_kwh=battery_capacity_kwh*max(battery_max_soc-soc_pct,0.0)/100.0
+    inputs["battery_energy"]={"capacity_kwh":battery_capacity_kwh,"min_soc_percent":battery_min_soc,
+        "max_soc_percent":battery_max_soc,"available_kwh":battery_available_kwh,"free_kwh":battery_free_kwh}
+
     pv_fc=float(forecast_pv.value) if _usable(forecast_pv) else None
     load_fc=float(forecast_load.value) if _usable(forecast_load) else None
     forecast_balance=(pv_fc-load_fc) if pv_fc is not None and load_fc is not None else None
@@ -197,6 +207,8 @@ def evaluate(site,market_series=None,strategy=None):
     # Economic context is reported separately for now. It does not yet switch
     # the recommendation because export-vs-heat requires time-aligned PV,
     # battery headroom and tariff forecasts.
+    if forecast_balance is not None:
+        inputs["pv_surplus_after_battery_headroom_kwh"]=max(forecast_balance-battery_free_kwh,0.0)
     inputs["buffer_strategy"]={"name":buffer_strategy,"deep_charge_allowed":deep_allowed,
         "current_min_off_c":float(buffer_min_off.value) if _usable(buffer_min_off) else None,
         "recommended_min_off_c":recommended_min_off,"reason":buffer_strategy_reason}
