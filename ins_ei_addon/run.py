@@ -231,7 +231,9 @@ def archive_day_plan(day_plan,log):
     PLAN_HISTORY.mkdir(parents=True,exist_ok=True)
     local_now=datetime.now().astimezone();day=local_now.strftime("%Y-%m-%d")
     folder=PLAN_HISTORY/day;folder.mkdir(parents=True,exist_ok=True)
-    payload=json.dumps(day_plan,ensure_ascii=False,sort_keys=True)
+    # generated_at changes every cycle and must not create a fake revision.
+    comparable=dict(day_plan);comparable.pop("generated_at",None)
+    payload=json.dumps(comparable,ensure_ascii=False,sort_keys=True)
     baseline=folder/"baseline.json"
     if not baseline.exists():
         baseline.write_text(json.dumps(day_plan,ensure_ascii=False,indent=2),encoding="utf-8")
