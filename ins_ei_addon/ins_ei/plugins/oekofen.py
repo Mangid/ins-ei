@@ -48,6 +48,7 @@ class OekoFENPlugin:
         add("ww1","L_offtemp_act","dhw","temperature_bottom","°C",.1)
         add("ww1","L_pump","dhw","pump_state",None,1,True)
         add("ww1","L_statetext","dhw","state",None,1,True)
+        add("ww1","heat_one","dhw","one_time_charge",None,1,True)
         add("pu1","L_pump","buffer","pump_state",None,1,True)
         add("pu1","L_statetext","buffer","state",None,1,True)
         add("pe1","L_temp_act","pellet_boiler","boiler_temperature","°C",.1)
