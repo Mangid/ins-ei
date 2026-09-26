@@ -29,6 +29,10 @@ class OekoFENPlugin:
         result=self.transport.set_value("pe1","mode",mode)
         self._last_data=None
         return result
+    def set_dhw_once(self,value:bool):
+        result=self.transport.set_value("ww1","heat_once","true" if value else "false")
+        self._last_data=None
+        return result
     def detect(self):
         data=self._data()
         caps={k for k in ("pe1","pu1","ww1","hk1","hk2") if isinstance(data.get(k),dict)}
