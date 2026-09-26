@@ -15,7 +15,7 @@ from ins_ei.plugins.mypv import MyPVPlugin
 from ins_ei.plugins.shrdzm import SHRDZMPlugin
 from ins_ei.model import DataPoint,DataQuality,DataRole
 
-OPTIONS=Path("/data/options.json");UI=Path("/data/ui_mappings.json");DISC=Path("/data/discovery.json");COMPONENTS=Path("/data/components.json");SITE=Path("/data/site_model.json");SHADOW=Path("/data/shadow_decision.json");MARKET=Path("/data/market.json");MARKET_SERIES=Path("/data/market_series.json");STRATEGY=Path("/data/strategy.json");SERVER=Path("/data/server.json");TELEMETRY_STATUS=Path("/data/telemetry_status.json");PLUGINS=Path("/data/plugins.json")
+OPTIONS=Path("/data/options.json");UI=Path("/data/ui_mappings.json");VRM_SERIES=Path("/data/vrm_forecast_series.json");DISC=Path("/data/discovery.json");COMPONENTS=Path("/data/components.json");SITE=Path("/data/site_model.json");SHADOW=Path("/data/shadow_decision.json");MARKET=Path("/data/market.json");MARKET_SERIES=Path("/data/market_series.json");STRATEGY=Path("/data/strategy.json");SERVER=Path("/data/server.json");TELEMETRY_STATUS=Path("/data/telemetry_status.json");PLUGINS=Path("/data/plugins.json")
 MULTI={"HEATING_CIRCUIT","ROOM","LOAD"}
 
 def load(path,default):
@@ -84,6 +84,23 @@ def read_plugins(model,config,log):
             log.info("plugin | shrdzm | model=%s profile=%s points=%d diagnostics=%d",probe.identity.family,probe.identity.profile,len(probe.points),len(probe.unmapped))
         except Exception as exc:log.warning("plugin | shrdzm failed | %s",exc)
     return count
+
+def read_vrm_forecast(config,log):
+    v=config.get("vrm") or {}
+    if not v.get("enabled") or not v.get("installation_id") or not v.get("authorization"):return None
+    now=int(time.time());end=now+48*3600
+    url=f"https://vrmapi.victronenergy.com/v2/installations/{v['installation_id']}/stats?type=forecast&interval=hours&start={now}&end={end}"
+    req=Request(url,headers={"X-Authorization":v["authorization"],"Accept":"application/json"})
+    try:
+        with urlopen(req,timeout=30) as response:data=json.loads(response.read().decode("utf-8"))
+        records=data.get("records") or {};pv=records.get("solar_yield_forecast") or [];load_fc=records.get("vrm_consumption_fc") or []
+        pvd={int(x[0]):float(x[1])/1000.0 for x in pv if len(x)>=2};ld={int(x[0]):float(x[1])/1000.0 for x in load_fc if len(x)>=2}
+        slots=[{"timestamp_ms":ts,"pv_kwh":pvd[ts],"load_kwh":ld[ts]} for ts in sorted(set(pvd)&set(ld))]
+        VRM_SERIES.write_text(json.dumps(slots,ensure_ascii=False,indent=2),encoding="utf-8")
+        log.info("vrm forecast series | pv_slots=%d | load_slots=%d | common_slots=%d | pv_kwh=%.3f | load_kwh=%.3f",len(pv),len(load_fc),len(slots),sum(x["pv_kwh"] for x in slots),sum(x["load_kwh"] for x in slots))
+        return slots
+    except Exception as exc:
+        log.warning("vrm forecast series failed | %s",exc);return None
 
 def supervisor_token():
     value=os.environ.get("SUPERVISOR_TOKEN")
@@ -211,7 +228,10 @@ def main():
                     last=time.time()
         if signature is not None:
             result=collector.collect(mappings)
-            plugin_points=read_plugins(model,load(PLUGINS,{}),log)
+            plugin_cfg=load(PLUGINS,{})
+            plugin_points=read_plugins(model,plugin_cfg,log)
+            if not VRM_SERIES.exists() or time.time()-VRM_SERIES.stat().st_mtime>=900:
+                read_vrm_forecast(plugin_cfg,log)
             log.info("collector | read=%d good=%d stale=%d unavailable=%d plugin_points=%d",result.read,result.good,result.stale,result.unavailable,plugin_points)
             if result.stale or result.unavailable:
                 for component in model.components.values():
