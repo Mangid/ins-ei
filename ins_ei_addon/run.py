@@ -146,11 +146,18 @@ def build_shadow_day_plan(slots,decision):
         batt_to_load=min(load_left,max(energy-emin,0));energy-=batt_to_load;load_left-=batt_to_load
         pv_to_batt=min(pv_left,max(emax-energy,0));energy+=pv_to_batt;pv_left-=pv_to_batt
         econ="PV_TO_HEAT" if pellet and x["sell_ct_kwh"]+1.0<=pellet else "EXPORT"
+        heat_kwh=pv_left if econ=="PV_TO_HEAT" else 0.0
+        export_kwh=pv_left if econ=="EXPORT" else 0.0
         rows.append({**x,"pv_to_load_kwh":round(direct,4),"pv_to_battery_kwh":round(pv_to_batt,4),
             "battery_to_load_kwh":round(batt_to_load,4),"grid_import_kwh":round(load_left,4),
-            "surplus_after_battery_kwh":round(pv_left,4),"thermal_economic_action":econ,
+            "surplus_after_battery_kwh":round(pv_left,4),"pv_to_heat_candidate_kwh":round(heat_kwh,4),
+            "pv_export_candidate_kwh":round(export_kwh,4),"export_revenue_candidate_ct":round(export_kwh*x["sell_ct_kwh"],2),
+            "thermal_economic_action":econ,
             "soc_after_percent":round((energy/cap*100) if cap else soc,1)})
-    return {"status":"SHADOW_V1","generated_at":datetime.now(timezone.utc).isoformat(),"slots":rows}
+    return {"status":"SHADOW_V1","generated_at":datetime.now(timezone.utc).isoformat(),"slots":rows,
+        "summary":{"pv_to_heat_candidate_kwh":round(sum(x["pv_to_heat_candidate_kwh"] for x in rows),4),
+        "pv_export_candidate_kwh":round(sum(x["pv_export_candidate_kwh"] for x in rows),4),
+        "export_revenue_candidate_ct":round(sum(x["export_revenue_candidate_ct"] for x in rows),2)}}
 
 def supervisor_token():
     value=os.environ.get("SUPERVISOR_TOKEN")
@@ -298,6 +305,11 @@ def main():
                 rows=day_plan["slots"];log.info("day planner | status=%s | slots=%d | start=%s | end=%s | pv=%.2f kWh | load=%.2f kWh | grid_import=%.2f kWh | surplus_after_battery=%.2f kWh | end_soc=%.1f %%",
                     day_plan["status"],len(rows),rows[0]["time"],rows[-1]["time"],sum(x["pv_kwh"] for x in rows),sum(x["load_kwh"] for x in rows),
                     sum(x["grid_import_kwh"] for x in rows),sum(x["surplus_after_battery_kwh"] for x in rows),rows[-1]["soc_after_percent"])
+                ps=day_plan.get("summary") or {}
+                log.info("day planner economics | pv_to_heat=%s kWh | export=%s kWh | export_revenue=%s EUR | pellet_heat=%s ct/kWh",
+                    ps.get("pv_to_heat_candidate_kwh"),ps.get("pv_export_candidate_kwh"),
+                    round((ps.get("export_revenue_candidate_ct") or 0)/100,2),
+                    round(decision.inputs.get("pellet_heat_cost_ct_kwh") or 0,2))
 
             SHADOW.write_text(json.dumps(decision.to_dict(),ensure_ascii=False,indent=2),encoding="utf-8")
             spot_input=decision.inputs.get("market_spot_price",{})
