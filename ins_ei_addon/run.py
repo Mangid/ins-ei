@@ -231,8 +231,12 @@ def build_shadow_day_plan(slots,decision):
     pellet=float(decision.inputs.get("pellet_heat_cost_ct_kwh") or 0)
     thermal=decision.inputs.get("thermal_buffer") or {}
     buffer_strategy=decision.inputs.get("buffer_strategy") or {}
+    # PV-to-heat may use real free thermal capacity independently of pellet
+    # deep-charge permission. deep_charge_allowed only governs deliberate
+    # high-temperature charging by the heat generator.
     thermal_budget=max(0.0,float(thermal.get("free_kwh") or 0.0))
-    if not buffer_strategy.get("deep_charge_allowed"): thermal_budget=0.0
+    has_p2h=bool(decision.inputs.get("power_to_heat",{}).get("quality")=="GOOD")
+    if not has_p2h: thermal_budget=0.0
     rows=[]
     for x in slots:
         pv=x["pv_kwh"];load=x["load_kwh"];direct=min(pv,load);pv_left=pv-direct;load_left=load-direct
@@ -295,8 +299,11 @@ def boiler_permission_shadow(model,decision,day_plan):
     if active and upper_c<=required:
         return {"permission":"ALLOW","current_mode":current_mode,"confidence":"HIGH","reason":f"Heizkreise aktiv; Puffer oben {upper_c:.1f} C liegt an Reservegrenze {required:.1f} C."}
     pv_heat=float(((day_plan or {}).get("summary") or {}).get("pv_to_heat_candidate_kwh") or 0)
+    surplus=float(sum((x.get("surplus_after_battery_kwh") or 0) for x in ((day_plan or {}).get("slots") or [])))
     if pv_heat>=2.0:
-        return {"permission":"BLOCK","current_mode":current_mode,"confidence":"MEDIUM","reason":f"Puffer oben {upper_c:.1f} C und WW {dhw_c:.1f} C ausreichend; {pv_heat:.2f} kWh wirtschaftliche PV-Waerme geplant."}
+        return {"permission":"BLOCK","current_mode":current_mode,"confidence":"MEDIUM","reason":f"Puffer oben {upper_c:.1f} C und WW {dhw_c:.1f} C ausreichend; {pv_heat:.2f} kWh PV-Waerme geplant."}
+    if surplus>=5.0 and upper_c>=required and dhw_c>dhw_charge:
+        return {"permission":"BLOCK","current_mode":current_mode,"confidence":"MEDIUM","reason":f"Puffer oben {upper_c:.1f} C und WW {dhw_c:.1f} C ausreichend; {surplus:.2f} kWh PV-Ueberschuss im Fahrplan. Pelletkessel zurueckhalten."}
     # Fallback for installations without an hourly planner series yet:
     # use only the generic FORECAST daily PV signal, never invent hourly slots.
     fpv=decision.inputs.get("forecast_pv_today") or {}
