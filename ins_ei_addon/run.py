@@ -16,7 +16,7 @@ from ins_ei.plugins.mypv import MyPVPlugin
 from ins_ei.plugins.shrdzm import SHRDZMPlugin
 from ins_ei.model import DataPoint,DataQuality,DataRole
 
-OPTIONS=Path("/data/options.json");UI=Path("/data/ui_mappings.json");VRM_SERIES=Path("/data/vrm_forecast_series.json");DAY_PLAN=Path("/data/day_plan.json");DISC=Path("/data/discovery.json");COMPONENTS=Path("/data/components.json");SITE=Path("/data/site_model.json");SHADOW=Path("/data/shadow_decision.json");MARKET=Path("/data/market.json");MARKET_SERIES=Path("/data/market_series.json");STRATEGY=Path("/data/strategy.json");SERVER=Path("/data/server.json");TELEMETRY_STATUS=Path("/data/telemetry_status.json");PLUGINS=Path("/data/plugins.json");ASSIST=Path("/data/assisted_thermal.json")
+OPTIONS=Path("/data/options.json");UI=Path("/data/ui_mappings.json");VRM_SERIES=Path("/data/vrm_forecast_series.json");DAY_PLAN=Path("/data/day_plan.json");PLAN_HISTORY=Path("/data/plan_history");DISC=Path("/data/discovery.json");COMPONENTS=Path("/data/components.json");SITE=Path("/data/site_model.json");SHADOW=Path("/data/shadow_decision.json");MARKET=Path("/data/market.json");MARKET_SERIES=Path("/data/market_series.json");STRATEGY=Path("/data/strategy.json");SERVER=Path("/data/server.json");TELEMETRY_STATUS=Path("/data/telemetry_status.json");PLUGINS=Path("/data/plugins.json");ASSIST=Path("/data/assisted_thermal.json")
 MULTI={"HEATING_CIRCUIT","ROOM","LOAD"}
 
 def load(path,default):
@@ -225,6 +225,26 @@ def apply_assisted_thermal(plugin_cfg,bp,dw,log):
         log.error("assisted thermal | write failed | %s",exc)
     ASSIST.write_text(json.dumps(state,ensure_ascii=False,indent=2),encoding="utf-8")
 
+def archive_day_plan(day_plan,log):
+    """Persist immutable daily baseline plus changed plan revisions."""
+    if not day_plan or not day_plan.get("slots"):return
+    PLAN_HISTORY.mkdir(parents=True,exist_ok=True)
+    local_now=datetime.now().astimezone();day=local_now.strftime("%Y-%m-%d")
+    folder=PLAN_HISTORY/day;folder.mkdir(parents=True,exist_ok=True)
+    payload=json.dumps(day_plan,ensure_ascii=False,sort_keys=True)
+    baseline=folder/"baseline.json"
+    if not baseline.exists():
+        baseline.write_text(json.dumps(day_plan,ensure_ascii=False,indent=2),encoding="utf-8")
+        log.info("day planner archive | baseline=%s | slots=%d",day,len(day_plan.get("slots",[])))
+    latest=folder/"latest.json"
+    previous=latest.read_text(encoding="utf-8") if latest.exists() else None
+    if previous!=payload:
+        stamp=local_now.strftime("%H%M%S")
+        revision=folder/f"revision_{stamp}.json"
+        revision.write_text(json.dumps(day_plan,ensure_ascii=False,indent=2),encoding="utf-8")
+        latest.write_text(payload,encoding="utf-8")
+        log.info("day planner archive | revision=%s | slots=%d",revision.name,len(day_plan.get("slots",[])))
+
 def supervisor_token():
     value=os.environ.get("SUPERVISOR_TOKEN")
     if value:return value
@@ -371,6 +391,7 @@ def main():
             bp=boiler_permission_shadow(model,decision,day_plan)
             day_plan["boiler_permission"]=bp
             DAY_PLAN.write_text(json.dumps(day_plan,ensure_ascii=False,indent=2),encoding="utf-8")
+            archive_day_plan(day_plan,log)
             log.info("boiler permission shadow | current_mode=%s | recommendation=%s | confidence=%s | reason=%s",bp.get("current_mode"),bp.get("permission"),bp.get("confidence"),bp.get("reason"))
             apply_assisted_thermal(plugin_cfg,bp,dw,log)
             if day_plan.get("slots"):
