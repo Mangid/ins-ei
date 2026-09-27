@@ -151,3 +151,5 @@
 @media(max-width:760px){.detail-tabs{top:52px}.detail-tabs button{padding:8px 10px;font-size:13px}}
 
 .group-title-row{display:flex;align-items:center;justify-content:space-between;gap:12px}.live-overview{margin-bottom:14px}.live-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}.live-metrics .metric b{font-size:24px}.live-metrics .metric{min-height:86px}@media(max-width:900px){.live-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:520px){.live-metrics{grid-template-columns:1fr 1fr}.live-metrics .metric b{font-size:20px}}
+
+.live-metrics .metric{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:7px}.live-metrics .metric span{display:block;color:#8fb0cc;font-size:13px}.live-metrics .metric b{display:block;line-height:1.05}
