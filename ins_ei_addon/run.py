@@ -500,11 +500,13 @@ def check_remote_update(url,installation_id,token,log,timeout=10):
         if not addon_slug:
             raise RuntimeError("INS-EI add-on slug missing in Supervisor response")
         log.warning("remote update | supervisor slug=%s | installed=%s | latest=%s",addon_slug,addon.get("version"),addon.get("version_latest"))
-        if addon.get("version_latest") != target:
-            log.warning("remote update | refreshing Supervisor store | target=%s | latest=%s",target,addon.get("version_latest"))
-            refresh=Request("http://supervisor/store/reload",data=b"{}",headers={"Authorization":f"Bearer {token}","Content-Type":"application/json"},method="POST")
-            with urlopen(refresh,timeout=60): pass
-            time.sleep(3)
+        latest=addon.get("version_latest")
+        if version_tuple(latest) is None or version_tuple(target) is None or version_tuple(latest) < version_tuple(target):
+            body=json.dumps({"ok":False,"retry":True,"error":"TARGET_NOT_YET_AVAILABLE","target_version":target}).encode()
+            try:urlopen(Request(url.rstrip("/")+f"/api/v1/fleet/{installation_id}/command/{cid}/result",data=body,headers={"Content-Type":"application/json"},method="POST"),timeout=5).read()
+            except Exception:pass
+            log.warning("remote update | waiting for release | target=%s | latest=%s",target,latest)
+            return False
         req=Request("http://supervisor/store/addons/"+addon_slug+"/update",data=json.dumps({"backup":False,"background":False}).encode("utf-8"),headers={"Authorization":f"Bearer {token}","Content-Type":"application/json"},method="POST")
         with urlopen(req,timeout=120) as response:
             ok=200<=response.status<300
