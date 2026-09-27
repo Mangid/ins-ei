@@ -334,7 +334,8 @@ def actuator_ensure_baseline(state,key,current,source):
     return baseline[key]
 
 def actuator_capture(state,key,current,source):
-    baseline=actuator_ensure_baseline(state,key,current,source)
+    baseline=(state.get("baseline") or {}).get(key)
+    if baseline is None: raise RuntimeError(f"ACTUATOR_BASELINE_MISSING:{key}")
     owned=state.setdefault("owned",{})
     if key not in owned:
         owned[key]={"source":source,"owned_at":datetime.now(timezone.utc).isoformat()}
