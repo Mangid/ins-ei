@@ -2963,6 +2963,14 @@ class TelemetryPayload(BaseModel):
     health: dict[str, Any] = Field(default_factory=dict)
 
 
+def version_tuple(value: str | None) -> tuple[int, ...] | None:
+    """Parse numeric dotted add-on versions for monotonic fleet comparisons."""
+    if not value: return None
+    raw=value.strip().lstrip("v")
+    try: return tuple(int(part) for part in raw.split("."))
+    except (TypeError,ValueError): return None
+
+
 class FleetUpdateRequest(BaseModel):
     target_version: str
 
@@ -3519,15 +3527,17 @@ def receive_telemetry(payload: TelemetryPayload):
         with db() as con:
             fleet_row=con.execute("SELECT * FROM telemetry_installations WHERE installation_id=?",(payload.installation_id,)).fetchone()
             reported_version=payload.health.get("addon_version")
-            if reported_version:
-                completed=con.execute("""SELECT id,target_version FROM fleet_update_commands
+            reported_tuple=version_tuple(reported_version)
+            if reported_tuple:
+                active_updates=con.execute("""SELECT id,target_version FROM fleet_update_commands
                     WHERE installation_id=? AND status IN ('PENDING','CLAIMED')
-                    AND target_version=? ORDER BY id DESC LIMIT 1""",
-                    (payload.installation_id,reported_version)).fetchone()
-                if completed:
-                    con.execute("""UPDATE fleet_update_commands
-                        SET status='COMPLETED',completed_at=?,error=NULL
-                        WHERE id=?""",(received_at,completed["id"]))
+                    ORDER BY id""",(payload.installation_id,)).fetchall()
+                for update in active_updates:
+                    target_tuple=version_tuple(update["target_version"])
+                    if target_tuple and reported_tuple >= target_tuple:
+                        con.execute("""UPDATE fleet_update_commands
+                            SET status='COMPLETED',completed_at=?,error=NULL
+                            WHERE id=?""",(received_at,update["id"]))
         status,issues=evaluate_fleet_health(payload.installation_id,0,payload.health,fleet_row)
         fleet_transition(payload.installation_id,status,issues,payload.health.get("addon_version"))
 
