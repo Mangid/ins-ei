@@ -2574,6 +2574,13 @@ def influx_history(
         "buffer.temperature_upper",
         "dhw.temperature",
         "weather.outdoor_temperature",
+        "heat_pump.electrical_power",
+        "heat_pump.thermal_power",
+        "heat_pump.flow_temperature",
+        "heat_pump.return_temperature",
+        "heat_pump.source_temperature",
+        "power_to_heat.electrical_power",
+        "pellet_boiler.current_power",
     )
 
     field_filter = " or ".join(
