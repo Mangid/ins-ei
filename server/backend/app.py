@@ -27,7 +27,7 @@ from fastapi.responses import FileResponse
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
-VERSION = "1.6.0"
+VERSION = "1.6.1"
 DB_PATH = Path("/data/ins_ei.db")
 PUSHSAFER_KEY = Path("/run/secrets/pushsafer_private_key")
 MANAGEMENT_KEY = Path("/run/secrets/management_api_key")
@@ -42,6 +42,10 @@ VAPID_PRIVATE_KEY = Path("/run/secrets/vapid_private_key")
 VAPID_PUBLIC_KEY = Path("/run/secrets/vapid_public_key")
 MQTT_USERNAME = Path("/run/secrets/mqtt_username")
 MQTT_PASSWORD = Path("/run/secrets/mqtt_password")
+SEVDESK_API_TOKEN = Path("/run/secrets/sevdesk_api_token")
+FINANCE_TAX_RESERVE_PERCENT = Path("/run/secrets/finance_tax_reserve_percent")
+FINANCE_OPERATING_BUFFER_EUR = Path("/run/secrets/finance_operating_buffer_eur")
+SEVDESK_API_BASE = "https://my.sevdesk.de/api/v1"
 MQTT_HOST = "mqtt.ins-enertech.net"
 MQTT_PORT = 8883
 MQTT_LIVE = {}
@@ -124,6 +128,129 @@ def ins_ei_status() -> dict[str, Any]:
         "service": "ins-ei-api",
         "version": VERSION,
     }
+
+
+def _secret_float(path: Path, default: float = 0.0) -> float:
+    if not path.exists():
+        return default
+    try:
+        return float(path.read_text().strip().replace(",", "."))
+    except (ValueError, OSError):
+        return default
+
+
+def _sevdesk_get(resource: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    """Read one sevdesk collection. This integration is intentionally GET-only."""
+    if not SEVDESK_API_TOKEN.exists():
+        raise RuntimeError("SEVDESK_API_TOKEN_MISSING")
+    token = SEVDESK_API_TOKEN.read_text().strip()
+    if not token:
+        raise RuntimeError("SEVDESK_API_TOKEN_EMPTY")
+    url = f"{SEVDESK_API_BASE}/{resource}"
+    if params:
+        url += "?" + urlencode(params)
+    request = Request(
+        url,
+        headers={
+            "Authorization": token,
+            "Accept": "application/json",
+            "User-Agent": f"INS-EI/{VERSION}",
+        },
+        method="GET",
+    )
+    try:
+        with urlopen(request, timeout=20) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        raise RuntimeError(f"SEVDESK_HTTP_{exc.code}") from exc
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"SEVDESK_REQUEST_FAILED: {exc}") from exc
+    objects = payload.get("objects", [])
+    return objects if isinstance(objects, list) else [objects]
+
+
+def _money(value: Any) -> float:
+    try:
+        return round(float(value or 0), 2)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _sevdesk_finance_check() -> dict[str, Any]:
+    accounts = _sevdesk_get("CheckAccount")
+    active_accounts = [
+        a for a in accounts
+        if str(a.get("status", "100")) == "100"
+        and str(a.get("currency", "EUR")).upper() == "EUR"
+    ]
+    liquidity = round(sum(_money(a.get("balance")) for a in active_accounts), 2)
+
+    open_invoices = []
+    for status in (200, 750):
+        open_invoices.extend(_sevdesk_get("Invoice", {"status": status}))
+    receivables = round(sum(_money(i.get("sumGross")) for i in open_invoices), 2)
+
+    # sevdesk voucher states differ from invoice states. Query the collection once
+    # and treat every non-draft, non-paid expense voucher as an outstanding payable.
+    vouchers = _sevdesk_get("Voucher")
+    open_vouchers = [
+        v for v in vouchers
+        if str(v.get("voucherType", "")).upper() in {"VOU", "RE", "AUSGABE", ""}
+        and str(v.get("status", "")) not in {"50", "100", "1000"}
+    ]
+    payables = round(sum(_money(v.get("sumGross")) for v in open_vouchers), 2)
+
+    tax_percent = max(0.0, min(100.0, _secret_float(FINANCE_TAX_RESERVE_PERCENT, 0.0)))
+    operating_buffer = max(0.0, _secret_float(FINANCE_OPERATING_BUFFER_EUR, 0.0))
+    tax_reserve = round(max(0.0, liquidity - payables) * tax_percent / 100.0, 2)
+    withdrawable = round(max(0.0, liquidity - payables - tax_reserve - operating_buffer), 2)
+
+    configured = FINANCE_TAX_RESERVE_PERCENT.exists() and FINANCE_OPERATING_BUFFER_EUR.exists()
+    return {
+        "as_of": datetime.now(timezone.utc).isoformat(),
+        "currency": "EUR",
+        "liquidity": liquidity,
+        "open_receivables": receivables,
+        "open_payables": payables,
+        "tax_reserve_percent": tax_percent,
+        "tax_reserve": tax_reserve,
+        "operating_buffer": round(operating_buffer, 2),
+        "withdrawable_now": withdrawable if configured else None,
+        "recommendation_ready": configured,
+        "warning": None if configured else "FINANCE_RESERVES_NOT_CONFIGURED",
+        "accounts": [
+            {
+                "id": a.get("id"),
+                "name": a.get("name"),
+                "type": a.get("type"),
+                "balance": _money(a.get("balance")),
+                "last_sync": a.get("lastSync"),
+            }
+            for a in active_accounts
+        ],
+        "counts": {
+            "accounts": len(active_accounts),
+            "open_invoices": len(open_invoices),
+            "open_vouchers": len(open_vouchers),
+        },
+        "formula": "liquidity - open_payables - tax_reserve - operating_buffer",
+        "read_only": True,
+    }
+
+
+@mcp.tool()
+def ins_ei_finance_check() -> dict[str, Any]:
+    """Return the current read-only sevdesk finance check and possible private withdrawal."""
+    return _sevdesk_finance_check()
+
+
+@app.get("/api/v1/finance/check")
+def finance_check(_: bool = Depends(require_management_api_key)):
+    """Read-only finance check based on sevdesk data and configured reserves."""
+    try:
+        return _sevdesk_finance_check()
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc)) from exc
 
 
 @mcp.tool()
