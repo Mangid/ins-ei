@@ -505,6 +505,18 @@ def check_remote_update(url,installation_id,token,log,timeout=10):
         addon=candidates[0];addon_slug=addon.get("slug")
         if not addon_slug:
             raise RuntimeError("INS-EI add-on slug missing in Supervisor response")
+        # The collection endpoint can lag behind the Supervisor UI. Fetch the
+        # selected add-on detail, which is the source used for current/latest state.
+        try:
+            detail_req=Request("http://supervisor/addons/"+addon_slug+"/info",
+                               headers={"Authorization":f"Bearer {token}","Accept":"application/json"})
+            with urlopen(detail_req,timeout=10) as response:
+                detail_payload=json.loads(response.read().decode("utf-8")) or {}
+            detail=detail_payload.get("data",detail_payload)
+            if isinstance(detail,dict):
+                addon={**addon,**detail}
+        except (HTTPError,URLError,TimeoutError,OSError,json.JSONDecodeError) as exc:
+            log.warning("remote update | addon detail unavailable | slug=%s | %s",addon_slug,exc)
         log.warning("remote update | supervisor slug=%s | installed=%s | latest=%s",addon_slug,addon.get("version"),addon.get("version_latest"))
         latest=addon.get("version_latest")
         if addon_version_tuple(latest) is None or addon_version_tuple(target) is None or addon_version_tuple(latest) < addon_version_tuple(target):
