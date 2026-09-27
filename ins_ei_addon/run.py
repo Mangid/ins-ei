@@ -339,9 +339,10 @@ def apply_assisted_thermal(plugin_cfg,bp,dw,log):
         if bp.get("permission")=="BLOCK" and current in ("1","1.0","auto") and not state.get("boiler_owned"):
             plugin.set_boiler_mode(0);state["boiler_owned"]=True;state["boiler_blocked_at"]=now
             log.warning("assisted thermal | actuator=pe1.mode | command=0 | ownership=INS_EI | reason=%s",bp.get("reason"))
-        elif bp.get("permission")=="ALLOW" and state.get("boiler_owned"):
+        elif bp.get("permission")=="ALLOW" and (state.get("boiler_owned") or (bp.get("confidence")=="HIGH" and current in ("0","0.0","off","aus"))):
+            safety_override=not state.get("boiler_owned")
             plugin.set_boiler_mode(1);state["boiler_owned"]=False
-            log.warning("assisted thermal | actuator=pe1.mode | command=1 | ownership=RELEASED | reason=%s",bp.get("reason"))
+            log.warning("assisted thermal | actuator=pe1.mode | command=1 | ownership=%s | safety_override=%s | reason=%s","RELEASED" if not safety_override else "THERMAL_SAFETY",safety_override,bp.get("reason"))
         dhw_current=str(dw.get("current")).strip().lower()
         if dw.get("recommendation")=="HEAT_ONE" and dhw_current not in ("true","1","on") and not state.get("dhw_owned"):
             plugin.set_dhw_once(True);state["dhw_owned"]=True;state["dhw_started_at"]=now
