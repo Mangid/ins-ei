@@ -132,7 +132,7 @@ def main():
         try:
             _, payload = request_json(
                 server
-                + f"/api/v1/fleet/{installation_id}/command",
+                + f"/api/v1/fleet/{installation_id}/update-agent/command",
                 timeout=15,
             )
 
