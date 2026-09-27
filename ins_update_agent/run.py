@@ -10,7 +10,7 @@ OPTIONS = Path("/data/options.json")
 
 TARGET_NAME = "INS-EI Pilot"
 TARGET_SUFFIX = "_ins_ei"
-AGENT_VERSION = "0.1.3"
+AGENT_VERSION = "0.1.4"
 
 
 def load_options():
@@ -159,6 +159,12 @@ def main():
                 )
 
                 try:
+                    try:
+                        request_json("http://supervisor/reload_updates",token=token,method="POST",body={},timeout=60)
+                        log.info("update | Supervisor updates reloaded | command=%s",command_id)
+                        time.sleep(2)
+                    except Exception as reload_exc:
+                        log.warning("update | reload_updates failed | command=%s | %s",command_id,reload_exc)
                     status, _ = request_json(
                         "http://supervisor/store/addons/"
                         + slug
