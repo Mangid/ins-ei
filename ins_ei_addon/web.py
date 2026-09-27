@@ -21,6 +21,7 @@ PLUGINS = Path("/data/plugins.json")
 DAY_PLAN = Path("/data/day_plan.json")
 CONTROL = Path("/data/control.json")
 ACTUATORS = Path("/data/actuator_state.json")
+ACTUATOR_PREVIEW = Path("/data/actuator_preview.json")
 MQTT = Path("/data/mqtt.json")
 MQTT_STATUS = Path("/data/mqtt_status.json")
 
@@ -111,7 +112,7 @@ class H(BaseHTTPRequestHandler):
         if p.endswith("/api/day-plan"):
             return self.js(load(DAY_PLAN, {"status":"NO_PLAN","slots":[]}))
         if p.endswith("/api/control"):
-            return self.js({"control":load(CONTROL,{"enabled":True,"emergency_stop":False}),"actuators":load(ACTUATORS,{"owned":{}})})
+            return self.js({"control":load(CONTROL,{"enabled":True,"emergency_stop":False}),"actuators":load(ACTUATORS,{"baseline":{},"owned":{}}),"preview":load(ACTUATOR_PREVIEW,{})})
         if p.endswith("/api/discovery"):
             return self.js(load(DISC, []))
         if p.endswith("/api/entities"):
@@ -139,19 +140,18 @@ class H(BaseHTTPRequestHandler):
         n = int(self.headers.get("Content-Length", "0"))
         body = json.loads(self.rfile.read(n) or b"{}")
         if p.endswith("/api/control/baseline"):
-            assist=load(Path("/data/assisted_thermal.json"),{})
             state=load(ACTUATORS,{"version":2,"baseline":{},"owned":{}})
             if state.get("owned"):
                 return self.js({"error":"ACTUATORS_CURRENTLY_OWNED","owned":list(state["owned"])},409)
-            baseline=state.setdefault("baseline",{})
-            # Commission only values that have already been observed by the local
-            # controller logic; never invent a restore target.
-            if "last_boiler_mode" in assist:
-                baseline["oekofen.pe1.mode"]={"value":assist["last_boiler_mode"],"source":"commissioning","captured_at":datetime.now(timezone.utc).isoformat()}
-            if "last_dhw_once" in assist:
-                baseline["oekofen.ww1.heat_once"]={"value":assist["last_dhw_once"],"source":"commissioning","captured_at":datetime.now(timezone.utc).isoformat()}
+            preview=load(ACTUATOR_PREVIEW,{})
+            required=("oekofen.pe1.mode","oekofen.ww1.heat_once")
+            missing=[key for key in required if preview.get(key) is None]
+            if missing:return self.js({"error":"BASELINE_PREVIEW_INCOMPLETE","missing":missing},409)
+            now=datetime.now(timezone.utc).isoformat()
+            state["baseline"]={key:{"value":preview[key],"source":"commissioning","captured_at":now} for key in required}
+            state["commissioned_at"]=now
             ACTUATORS.write_text(json.dumps(state,ensure_ascii=False,indent=2),encoding="utf-8")
-            return self.js({"saved":True,"baseline":baseline})
+            return self.js({"saved":True,"baseline":state["baseline"]})
         if p.endswith("/api/control"):
             current=load(CONTROL,{"enabled":True,"emergency_stop":False})
             action=str(body.get("action") or "").upper()
