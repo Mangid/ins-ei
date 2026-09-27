@@ -3444,15 +3444,20 @@ def fleet_get_command(installation_id: str):
 
 @app.post("/api/v1/fleet/{installation_id}/command/{command_id}/result")
 def fleet_command_result(installation_id: str, command_id: int, body: dict[str,Any]):
-    status="COMPLETED" if body.get("ok") else "FAILED"
+    retry=bool(body.get("retry"))
+    status="PENDING" if retry else ("COMPLETED" if body.get("ok") else "FAILED")
     now=datetime.now(timezone.utc).isoformat()
     with db() as con:
         row=con.execute("SELECT * FROM fleet_update_commands WHERE id=? AND installation_id=?",
                         (command_id,installation_id)).fetchone()
         if row is None:
             raise HTTPException(404, "Update command not found")
-        con.execute("""UPDATE fleet_update_commands SET status=?,completed_at=?,error=?
-            WHERE id=? AND installation_id=?""",(status,now,body.get("error"),command_id,installation_id))
+        if retry:
+            con.execute("""UPDATE fleet_update_commands SET status='PENDING',claimed_at=NULL,completed_at=NULL,error=?
+                WHERE id=? AND installation_id=?""",(body.get("error"),command_id,installation_id))
+        else:
+            con.execute("""UPDATE fleet_update_commands SET status=?,completed_at=?,error=?
+                WHERE id=? AND installation_id=?""",(status,now,body.get("error"),command_id,installation_id))
     if status=="FAILED":
         send_native_push_all(f"INS-EI · {installation_id} · UPDATE FAILED",
                              body.get("error") or f"Update auf {row['target_version']} fehlgeschlagen.",
