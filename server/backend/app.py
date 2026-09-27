@@ -3518,6 +3518,16 @@ def receive_telemetry(payload: TelemetryPayload):
                 (json.dumps(payload.health,ensure_ascii=False),payload.health.get("addon_version"),received_at,payload.installation_id))
         with db() as con:
             fleet_row=con.execute("SELECT * FROM telemetry_installations WHERE installation_id=?",(payload.installation_id,)).fetchone()
+            reported_version=payload.health.get("addon_version")
+            if reported_version:
+                completed=con.execute("""SELECT id,target_version FROM fleet_update_commands
+                    WHERE installation_id=? AND status IN ('PENDING','CLAIMED')
+                    AND target_version=? ORDER BY id DESC LIMIT 1""",
+                    (payload.installation_id,reported_version)).fetchone()
+                if completed:
+                    con.execute("""UPDATE fleet_update_commands
+                        SET status='COMPLETED',completed_at=?,error=NULL
+                        WHERE id=?""",(received_at,completed["id"]))
         status,issues=evaluate_fleet_health(payload.installation_id,0,payload.health,fleet_row)
         fleet_transition(payload.installation_id,status,issues,payload.health.get("addon_version"))
 
