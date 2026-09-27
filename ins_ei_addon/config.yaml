@@ -1,5 +1,5 @@
 name: INS-EI Pilot
-version: "0.28.62"
+version: "0.28.63"
 slug: ins_ei
 description: Local-first energy intelligence pilot collector
 url: https://github.com/Mangid/ins-ei
@@ -8,7 +8,7 @@ boot: auto
 init: false
 homeassistant_api: true
 hassio_api: true
-hassio_role: manager
+hassio_role: admin
 ingress: true
 ingress_port: 8099
 panel_icon: mdi:lightning-bolt
