@@ -14,3 +14,8 @@ class PluginManager:
         obj=self._registry[plugin_id].factory(instance_id,config);self._instances[instance_id]=obj;return obj
     def instances(self):return dict(self._instances)
     def get(self,instance_id):return self._instances[instance_id]
+
+def builtin_manager():
+    from .plugins.oekofen_v2 import MANIFEST as OEKOFEN_MANIFEST,factory as oekofen_factory
+    manager=PluginManager();manager.register(OEKOFEN_MANIFEST,oekofen_factory)
+    return manager
