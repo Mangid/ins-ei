@@ -18,6 +18,8 @@ SERVER = Path("/data/server.json")
 TELEMETRY_STATUS = Path("/data/telemetry_status.json")
 PLUGINS = Path("/data/plugins.json")
 DAY_PLAN = Path("/data/day_plan.json")
+MQTT = Path("/data/mqtt.json")
+MQTT_STATUS = Path("/data/mqtt_status.json")
 
 BUFFER_DEEP_CHARGE_DESCRIPTION = (
     "Erlaubt dem Optimierer, eine gezielte tiefe Pufferladung durch den "
@@ -96,6 +98,11 @@ class H(BaseHTTPRequestHandler):
             return self.js(load(STRATEGY, {"mode":"AUTO","active_profile":"TRANSITION","profile_reason":"Noch keine automatische Profilbewertung verfügbar","profiles":{"HEATING":{"thermal_storage":90,"battery_economics":60,"export":25,"ev":50},"TRANSITION":{"thermal_storage":65,"battery_economics":65,"export":55,"ev":50},"SUMMER":{"thermal_storage":30,"battery_economics":65,"export":80,"ev":50}},"requirements":{"dhw_min_c":50.0}}))
         if p.endswith("/api/server"):
             return self.js(load(SERVER, {"url":"https://ins-ei.ins-enertech.net","installation_id":"pilot-local","interval_seconds":30,"enabled":False}))
+        if p.endswith("/api/mqtt"):
+            cfg=load(MQTT, {})
+            return self.js({**cfg,"password":"********" if cfg.get("password") else ""})
+        if p.endswith("/api/mqtt-status"):
+            return self.js(load(MQTT_STATUS, {"connected":False}))
         if p.endswith("/api/telemetry-status"):
             return self.js(load(TELEMETRY_STATUS, {"connected":False}))
         if p.endswith("/api/day-plan"):
@@ -129,6 +136,11 @@ class H(BaseHTTPRequestHandler):
         if p.endswith("/api/server"):
             SERVER.write_text(json.dumps(body, ensure_ascii=False, indent=2), encoding="utf-8")
             return self.js({"saved": True})
+        if p.endswith("/api/mqtt"):
+            current=load(MQTT,{})
+            if body.get("password") in (None,"","********"): body["password"]=current.get("password","")
+            MQTT.write_text(json.dumps(body,ensure_ascii=False,indent=2),encoding="utf-8")
+            return self.js({"saved":True})
         if p.endswith("/api/strategy"):
             STRATEGY.write_text(json.dumps(body, ensure_ascii=False, indent=2), encoding="utf-8")
             return self.js({"saved": True})
