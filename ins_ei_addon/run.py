@@ -1,6 +1,6 @@
 """INS-EI runtime: persistent installation model + collector."""
 from __future__ import annotations
-import json,logging,os,time
+import json,logging,os,time,threading
 import paho.mqtt.client as mqtt
 from datetime import datetime,timezone
 from urllib.request import Request,urlopen
@@ -481,6 +481,37 @@ def home_assistant_site_meta(client):
     except Exception:
         return {}
 
+def mqtt_live_snapshot(client,mappings):
+    values={}
+    for mapping in mappings:
+        try:
+            state=client.state(mapping.entity_id);raw=state.get("state")
+            if raw in (None,"unknown","unavailable",""): continue
+            try:
+                value=float(raw)*mapping.scale
+                if mapping.invert_sign:value*=-1
+            except (TypeError,ValueError): value=raw
+            values[f"{mapping.component_id}.{mapping.point}"]=value
+        except Exception:
+            continue
+    return values
+
+def mqtt_live_loop(mqtt_client,ha_client,get_mappings,installation_id,log):
+    last={}
+    while True:
+        try:
+            mappings=get_mappings()
+            if mqtt_client is not None and mappings:
+                values=mqtt_live_snapshot(ha_client,mappings)
+                if values!=last:
+                    mqtt_client.publish(f"ins-ei/{installation_id}/state",
+                        json.dumps({"ts":datetime.now(timezone.utc).isoformat(),"values":values},ensure_ascii=False),
+                        qos=0,retain=True)
+                    last=values
+            time.sleep(2)
+        except Exception as exc:
+            log.warning("mqtt live | %s",exc);time.sleep(5)
+
 def mqtt_snapshot(model):
     values={}
     for component in model.components.values():
@@ -520,6 +551,8 @@ def main():
     mqtt_client=None
     mqtt_last_publish=0.0
     installation_id=options.get("installation_id","pilot-local")
+    live_mappings=[]
+    live_thread_started=False
     if hasattr(time,"tzset"):time.tzset()
     logging.basicConfig(level=getattr(logging,options.get("log_level","INFO")),format="%(asctime)s %(levelname)s %(message)s");log=logging.getLogger("ins_ei")
     token=supervisor_token()
@@ -541,6 +574,7 @@ def main():
                     kinds={}
                     for component in model.components.values():kinds[component.kind]=kinds.get(component.kind,0)+1
                     log.info("site model | components=%d kinds=%s topology=%s ids=%s",len(model.components),kinds,model.thermal_topology.value if model.thermal_topology else "none",sorted(model.components))
+                    live_mappings[:]=mappings
                     log.info("mapping | active=%d",len(mappings));snapshot(client,mappings)
                     for mapping in mappings:
                         if base_kind(mapping.component_id)=="MARKET" and mapping.point=="spot_price":
@@ -568,7 +602,11 @@ def main():
                             collector_issues.append({"point":f"{component.id}.{point_name}","quality":point.quality.value,
                                 "source":point.source,"value":point.value,"unit":point.unit})
             if mqtt_client is None and options.get("mqtt_enabled"):
-                try: mqtt_client=mqtt_connect(options,installation_id,log)
+                try:
+                    mqtt_client=mqtt_connect(options,installation_id,log)
+                    if mqtt_client is not None and not live_thread_started:
+                        threading.Thread(target=mqtt_live_loop,args=(mqtt_client,client,lambda: list(live_mappings),installation_id,log),daemon=True,name="mqtt-live").start()
+                        live_thread_started=True
                 except Exception as exc: log.warning("mqtt | connect failed | %s",exc)
             if mqtt_client is not None and time.time()-mqtt_last_publish>=5:
                 try:
