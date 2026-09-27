@@ -18,6 +18,8 @@ SERVER = Path("/data/server.json")
 TELEMETRY_STATUS = Path("/data/telemetry_status.json")
 PLUGINS = Path("/data/plugins.json")
 DAY_PLAN = Path("/data/day_plan.json")
+CONTROL = Path("/data/control.json")
+ACTUATORS = Path("/data/actuator_state.json")
 MQTT = Path("/data/mqtt.json")
 MQTT_STATUS = Path("/data/mqtt_status.json")
 
@@ -107,6 +109,8 @@ class H(BaseHTTPRequestHandler):
             return self.js(load(TELEMETRY_STATUS, {"connected":False}))
         if p.endswith("/api/day-plan"):
             return self.js(load(DAY_PLAN, {"status":"NO_PLAN","slots":[]}))
+        if p.endswith("/api/control"):
+            return self.js({"control":load(CONTROL,{"enabled":True,"emergency_stop":False}),"actuators":load(ACTUATORS,{"owned":{}})})
         if p.endswith("/api/discovery"):
             return self.js(load(DISC, []))
         if p.endswith("/api/entities"):
@@ -133,6 +137,15 @@ class H(BaseHTTPRequestHandler):
         p = urlparse(self.path).path
         n = int(self.headers.get("Content-Length", "0"))
         body = json.loads(self.rfile.read(n) or b"{}")
+        if p.endswith("/api/control"):
+            current=load(CONTROL,{"enabled":True,"emergency_stop":False})
+            action=str(body.get("action") or "").upper()
+            if action=="EMERGENCY_STOP": current["emergency_stop"]=True;current["enabled"]=False
+            elif action=="DISABLE": current["enabled"]=False
+            elif action=="ENABLE": current["emergency_stop"]=False;current["enabled"]=True
+            else:return self.js({"error":"invalid action"},400)
+            CONTROL.write_text(json.dumps(current,ensure_ascii=False,indent=2),encoding="utf-8")
+            return self.js({"saved":True,"control":current})
         if p.endswith("/api/server"):
             SERVER.write_text(json.dumps(body, ensure_ascii=False, indent=2), encoding="utf-8")
             return self.js({"saved": True})
