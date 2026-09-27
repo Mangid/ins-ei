@@ -489,6 +489,10 @@ def check_remote_update(url,installation_id,token,log,timeout=10):
         with urlopen(Request("http://supervisor/addons",headers={"Authorization":f"Bearer {token}","Accept":"application/json"}),timeout=10) as response:
             addons_payload=json.loads(response.read().decode("utf-8")) or {}
         addons=addons_payload.get("data",{}).get("addons",addons_payload.get("addons",[]))
+        summary=[{"slug":a.get("slug"),"name":a.get("name"),"version":a.get("version"),
+                  "version_latest":a.get("version_latest"),"installed":a.get("installed")}
+                 for a in addons]
+        log.warning("remote update | supervisor addons=%s",json.dumps(summary,ensure_ascii=False))
         candidates=[a for a in addons if a.get("installed") and (a.get("version")==ADDON_VERSION or a.get("name")=="INS-EI Pilot")]
         if not candidates:
             raise RuntimeError("INS-EI add-on slug not found in Supervisor")
