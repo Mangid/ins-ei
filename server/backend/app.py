@@ -3456,6 +3456,13 @@ def fleet_requeue_claimed_command(installation_id: str):
 
 @app.get("/api/v1/fleet/{installation_id}/command")
 def fleet_get_command(installation_id: str):
+    # Legacy endpoint kept intentionally empty so older INS-EI Pilot versions
+    # cannot steal update commands from the dedicated Update Agent.
+    return {"command":None}
+
+
+@app.get("/api/v1/fleet/{installation_id}/update-agent/command")
+def fleet_update_agent_get_command(installation_id: str):
     with db() as con:
         row=con.execute("""SELECT * FROM fleet_update_commands
             WHERE installation_id=? AND status='PENDING' ORDER BY id DESC LIMIT 1""",(installation_id,)).fetchone()
