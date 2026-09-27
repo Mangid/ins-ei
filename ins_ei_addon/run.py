@@ -16,7 +16,16 @@ from ins_ei.plugins.mypv import MyPVPlugin
 from ins_ei.plugins.shrdzm import SHRDZMPlugin
 from ins_ei.model import DataPoint,DataQuality,DataRole
 
-ADDON_VERSION=os.environ.get("BUILD_VERSION") or os.environ.get("INS_EI_ADDON_VERSION") or "unknown"
+def detect_addon_version():
+    value=os.environ.get("BUILD_VERSION") or os.environ.get("INS_EI_ADDON_VERSION")
+    if value and value != "unknown": return value
+    try:
+        value=Path("/opt/ins-ei-addon-version").read_text(encoding="utf-8").strip()
+        if value: return value
+    except OSError: pass
+    return "unknown"
+
+ADDON_VERSION=detect_addon_version()
 OPTIONS=Path("/data/options.json");UI=Path("/data/ui_mappings.json");VRM_SERIES=Path("/data/vrm_forecast_series.json");DAY_PLAN=Path("/data/day_plan.json");PLAN_HISTORY=Path("/data/plan_history");DISC=Path("/data/discovery.json");COMPONENTS=Path("/data/components.json");SITE=Path("/data/site_model.json");SHADOW=Path("/data/shadow_decision.json");MARKET=Path("/data/market.json");MARKET_SERIES=Path("/data/market_series.json");STRATEGY=Path("/data/strategy.json");SERVER=Path("/data/server.json");TELEMETRY_STATUS=Path("/data/telemetry_status.json");PLUGINS=Path("/data/plugins.json");ASSIST=Path("/data/assisted_thermal.json")
 MULTI={"HEATING_CIRCUIT","ROOM","LOAD"}
 
