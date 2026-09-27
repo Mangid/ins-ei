@@ -43,7 +43,7 @@ VAPID_PUBLIC_KEY = Path("/run/secrets/vapid_public_key")
 MQTT_USERNAME = Path("/run/secrets/mqtt_username")
 MQTT_PASSWORD = Path("/run/secrets/mqtt_password")
 SEVDESK_API_TOKEN = Path("/run/secrets/sevdesk_api_token")
-FINANCE_TAX_RESERVE_PERCENT = Path("/run/secrets/finance_tax_reserve_percent")
+FINANCE_TAX_RESERVE_EUR = Path("/run/secrets/finance_tax_reserve_eur")
 FINANCE_OPERATING_BUFFER_EUR = Path("/run/secrets/finance_operating_buffer_eur")
 SEVDESK_API_BASE = "https://my.sevdesk.de/api/v1"
 MQTT_HOST = "mqtt.ins-enertech.net"
@@ -200,20 +200,18 @@ def _sevdesk_finance_check() -> dict[str, Any]:
     ]
     payables = round(sum(_money(v.get("sumGross")) for v in open_vouchers), 2)
 
-    tax_percent = max(0.0, min(100.0, _secret_float(FINANCE_TAX_RESERVE_PERCENT, 0.0)))
+    tax_reserve = max(0.0, _secret_float(FINANCE_TAX_RESERVE_EUR, 0.0))
     operating_buffer = max(0.0, _secret_float(FINANCE_OPERATING_BUFFER_EUR, 0.0))
-    tax_reserve = round(max(0.0, liquidity - payables) * tax_percent / 100.0, 2)
     withdrawable = round(max(0.0, liquidity - payables - tax_reserve - operating_buffer), 2)
 
-    configured = FINANCE_TAX_RESERVE_PERCENT.exists() and FINANCE_OPERATING_BUFFER_EUR.exists()
+    configured = FINANCE_TAX_RESERVE_EUR.exists() and FINANCE_OPERATING_BUFFER_EUR.exists()
     return {
         "as_of": datetime.now(timezone.utc).isoformat(),
         "currency": "EUR",
         "liquidity": liquidity,
         "open_receivables": receivables,
         "open_payables": payables,
-        "tax_reserve_percent": tax_percent,
-        "tax_reserve": tax_reserve,
+        "tax_reserve": round(tax_reserve, 2),
         "operating_buffer": round(operating_buffer, 2),
         "withdrawable_now": withdrawable if configured else None,
         "recommendation_ready": configured,
