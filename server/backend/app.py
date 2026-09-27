@@ -27,7 +27,7 @@ from fastapi.responses import FileResponse
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
-VERSION = "1.6.1"
+VERSION = "1.6.2"
 DB_PATH = Path("/data/ins_ei.db")
 PUSHSAFER_KEY = Path("/run/secrets/pushsafer_private_key")
 MANAGEMENT_KEY = Path("/run/secrets/management_api_key")
@@ -234,6 +234,69 @@ def _sevdesk_finance_check() -> dict[str, Any]:
         "formula": "liquidity - open_payables - tax_reserve - operating_buffer",
         "read_only": True,
     }
+
+
+def _date_value(item: dict[str, Any], *keys: str) -> str:
+    for key in keys:
+        value = item.get(key)
+        if value:
+            return str(value)[:10]
+    return ""
+
+
+def _sevdesk_month_summary(year: int, month: int) -> dict[str, Any]:
+    if month < 1 or month > 12:
+        raise ValueError("month must be between 1 and 12")
+    start = date(year, month, 1)
+    end = date(year, month, monthrange(year, month)[1])
+
+    invoices = _sevdesk_get("Invoice")
+    month_invoices = [
+        i for i in invoices
+        if start.isoformat() <= _date_value(i, "invoiceDate", "create") <= end.isoformat()
+        and str(i.get("status", "")) not in {"50", "100"}
+    ]
+    revenue_gross = round(sum(_money(i.get("sumGross")) for i in month_invoices), 2)
+    revenue_net = round(sum(_money(i.get("sumNet")) for i in month_invoices), 2)
+
+    vouchers = _sevdesk_get("Voucher")
+    month_vouchers = [
+        v for v in vouchers
+        if start.isoformat() <= _date_value(v, "voucherDate", "deliveryDate", "create") <= end.isoformat()
+        and str(v.get("status", "")) not in {"50"}
+    ]
+    expenses_gross = round(sum(_money(v.get("sumGross")) for v in month_vouchers), 2)
+    expenses_net = round(sum(_money(v.get("sumNet")) for v in month_vouchers), 2)
+
+    operating_surplus_net = round(revenue_net - expenses_net, 2)
+    return {
+        "period": f"{year:04d}-{month:02d}",
+        "revenue_gross": revenue_gross,
+        "revenue_net": revenue_net,
+        "expenses_gross": expenses_gross,
+        "expenses_net": expenses_net,
+        "operating_surplus_net_before_tax_svs": operating_surplus_net,
+        "counts": {
+            "invoices": len(month_invoices),
+            "vouchers": len(month_vouchers),
+        },
+        "read_only": True,
+        "note": "Accounting month summary from sevdesk invoices and vouchers; before income tax and SVS.",
+    }
+
+
+@mcp.tool()
+def ins_ei_finance_month(year: int, month: int) -> dict[str, Any]:
+    """Return sevdesk revenue, expenses and operating surplus for one month."""
+    return _sevdesk_month_summary(year, month)
+
+
+@app.get("/api/v1/finance/month/{year}/{month}")
+def finance_month(year: int, month: int, _: bool = Depends(require_management_api_key)):
+    try:
+        return _sevdesk_month_summary(year, month)
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(503, str(exc)) from exc
 
 
 @mcp.tool()
