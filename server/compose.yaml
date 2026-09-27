@@ -17,6 +17,9 @@ services:
       - ./secrets/vapid_public_key:/run/secrets/vapid_public_key:ro
       - ./secrets/mqtt_username:/run/secrets/mqtt_username:ro
       - ./secrets/mqtt_password:/run/secrets/mqtt_password:ro
+      - ./secrets/sevdesk_api_token:/run/secrets/sevdesk_api_token:ro
+      - ./secrets/finance_tax_reserve_percent:/run/secrets/finance_tax_reserve_percent:ro
+      - ./secrets/finance_operating_buffer_eur:/run/secrets/finance_operating_buffer_eur:ro
     networks:
       - ins-platform
 
