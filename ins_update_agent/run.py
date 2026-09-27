@@ -10,7 +10,7 @@ OPTIONS = Path("/data/options.json")
 
 TARGET_NAME = "INS-EI Pilot"
 TARGET_SUFFIX = "_ins_ei"
-AGENT_VERSION = "0.1.2"
+AGENT_VERSION = "0.1.3"
 
 
 def load_options():
@@ -188,25 +188,22 @@ def main():
                     )
 
                 except HTTPError as exc:
-                    detail = exc.read().decode(
-                        "utf-8",
-                        errors="replace",
-                    )
-
-                    report_result(
-                        server,
-                        installation_id,
-                        command_id,
-                        False,
-                        f"HTTP_{exc.code}: {detail[:300]}",
-                    )
-
-                    log.error(
-                        "update | failed | command=%s | HTTP %s | %s",
-                        command_id,
-                        exc.code,
-                        detail,
-                    )
+                    detail = exc.read().decode("utf-8", errors="replace")
+                    no_update = exc.code in (400, 409) and "No update available" in detail
+                    if no_update:
+                        try:
+                            request_json(
+                                server.rstrip("/") + f"/api/v1/fleet/{installation_id}/command/{command_id}/result",
+                                method="POST",
+                                body={"ok":False,"retry":True,"error":"TARGET_NOT_YET_AVAILABLE"},
+                                timeout=10,
+                            )
+                            log.warning("update | waiting for release | command=%s | target=%s",command_id,target)
+                        except Exception as retry_exc:
+                            log.error("update | requeue failed | command=%s | %s",command_id,retry_exc)
+                    else:
+                        report_result(server,installation_id,command_id,False,f"HTTP_{exc.code}: {detail[:300]}")
+                        log.error("update | failed | command=%s | HTTP %s | %s",command_id,exc.code,detail)
 
         except (
             HTTPError,
