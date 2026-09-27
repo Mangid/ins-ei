@@ -3489,9 +3489,14 @@ def fleet_request_update(installation_id: str, payload: FleetUpdateRequest):
         active=con.execute("""SELECT id,status,target_version FROM fleet_update_commands
             WHERE installation_id=? AND status IN ('PENDING','CLAIMED')
             ORDER BY id DESC LIMIT 1""",(installation_id,)).fetchone()
-        if active:
+        if active and active["target_version"]==payload.target_version:
             return {"status":"already_queued","installation_id":installation_id,
                     "target_version":active["target_version"],"command_id":active["id"]}
+        if active:
+            con.execute("""UPDATE fleet_update_commands
+                SET status='SUPERSEDED',completed_at=?,error=?
+                WHERE installation_id=? AND status IN ('PENDING','CLAIMED')""",
+                (now,f"SUPERSEDED_BY_{payload.target_version}",installation_id))
         cur=con.execute("""INSERT INTO fleet_update_commands(installation_id,target_version,status,created_at)
             VALUES(?,?, 'PENDING',?)""",(installation_id,payload.target_version,now))
         command_id=cur.lastrowid
