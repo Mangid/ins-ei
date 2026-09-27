@@ -27,7 +27,7 @@ def detect_addon_version():
     return "unknown"
 
 ADDON_VERSION=detect_addon_version()
-OPTIONS=Path("/data/options.json");UI=Path("/data/ui_mappings.json");VRM_SERIES=Path("/data/vrm_forecast_series.json");DAY_PLAN=Path("/data/day_plan.json");MQTT_CONFIG=Path("/data/mqtt.json");MQTT_STATUS=Path("/data/mqtt_status.json");PLAN_HISTORY=Path("/data/plan_history");DISC=Path("/data/discovery.json");COMPONENTS=Path("/data/components.json");SITE=Path("/data/site_model.json");SHADOW=Path("/data/shadow_decision.json");MARKET=Path("/data/market.json");MARKET_SERIES=Path("/data/market_series.json");STRATEGY=Path("/data/strategy.json");SERVER=Path("/data/server.json");TELEMETRY_STATUS=Path("/data/telemetry_status.json");PLUGINS=Path("/data/plugins.json");ASSIST=Path("/data/assisted_thermal.json")
+OPTIONS=Path("/data/options.json");UI=Path("/data/ui_mappings.json");VRM_SERIES=Path("/data/vrm_forecast_series.json");DAY_PLAN=Path("/data/day_plan.json");MQTT_CONFIG=Path("/data/mqtt.json");MQTT_STATUS=Path("/data/mqtt_status.json");PLAN_HISTORY=Path("/data/plan_history");DISC=Path("/data/discovery.json");COMPONENTS=Path("/data/components.json");SITE=Path("/data/site_model.json");SHADOW=Path("/data/shadow_decision.json");MARKET=Path("/data/market.json");MARKET_SERIES=Path("/data/market_series.json");STRATEGY=Path("/data/strategy.json");SERVER=Path("/data/server.json");TELEMETRY_STATUS=Path("/data/telemetry_status.json");PLUGINS=Path("/data/plugins.json");ASSIST=Path("/data/assisted_thermal.json");ACTUATORS=Path("/data/actuator_state.json");CONTROL=Path("/data/control.json")
 MULTI={"HEATING_CIRCUIT","ROOM","LOAD"}
 
 def load(path,default):
@@ -324,12 +324,54 @@ def boiler_permission_shadow(model,decision,day_plan):
         return {"permission":"BLOCK","current_mode":current_mode,"confidence":"LOW","reason":f"Kein Stundenfahrplan vorhanden, aber FORECAST erwartet {pv_day:.1f} kWh PV heute. Thermische Versorgung aktuell ausreichend; Pelletkessel konservativ zurueckhalten."}
     return {"permission":"ALLOW","current_mode":current_mode,"confidence":"MEDIUM","reason":f"Nur {pv_heat:.2f} kWh wirtschaftliche PV-Waerme geplant und kein starkes Tages-PV-Signal."}
 
+def actuator_state():
+    return load(ACTUATORS,{"version":1,"owned":{},"emergency_stop":False})
+
+def actuator_capture(state,key,current,source):
+    owned=state.setdefault("owned",{})
+    if key not in owned:
+        owned[key]={"original":current,"source":source,"captured_at":datetime.now(timezone.utc).isoformat()}
+    return owned[key]
+
+def actuator_release(state,key):
+    state.setdefault("owned",{}).pop(key,None)
+
+def actuator_save(state):
+    ACTUATORS.write_text(json.dumps(state,ensure_ascii=False,indent=2),encoding="utf-8")
+
+def actuator_restore_oekofen(plugin,state,log):
+    failures=[]
+    owned=dict(state.get("owned") or {})
+    for key,entry in owned.items():
+        try:
+            original=entry.get("original")
+            if key=="oekofen.pe1.mode":
+                plugin.set_boiler_mode(int(float(original)))
+            elif key=="oekofen.ww1.heat_once":
+                plugin.set_dhw_once(str(original).strip().lower() in ("true","1","on"))
+            else:
+                failures.append(f"{key}:NO_RESTORE_HANDLER");continue
+            actuator_release(state,key)
+            log.warning("actuator restore | %s | original=%s | OK",key,original)
+        except Exception as exc:
+            failures.append(f"{key}:{exc}");log.error("actuator restore | %s | FAILED | %s",key,exc)
+    actuator_save(state)
+    return failures
+
 def apply_assisted_thermal(plugin_cfg,bp,dw,log):
     o=plugin_cfg.get("oekofen") or {}
     if not o.get("thermal_assist_enabled"):return
     plugin=_PLUGIN_CACHE.get("oekofen")
     if plugin is None:return
     state=load(ASSIST,{"boiler_owned":False,"dhw_last_request":0})
+    control=load(CONTROL,{"enabled":True,"emergency_stop":False})
+    actuators=actuator_state()
+    if control.get("emergency_stop") or not control.get("enabled",True):
+        failures=actuator_restore_oekofen(plugin,actuators,log)
+        state["boiler_owned"]=False;state["dhw_owned"]=False
+        ASSIST.write_text(json.dumps(state,ensure_ascii=False,indent=2),encoding="utf-8")
+        log.warning("control stop | restore=%s","OK" if not failures else "INCOMPLETE: "+", ".join(failures))
+        return
     now=time.time()
     current=str(bp.get("current_mode")).strip().lower()
     if bp.get("confidence")=="LOW" or dw.get("confidence")=="LOW":
@@ -338,18 +380,22 @@ def apply_assisted_thermal(plugin_cfg,bp,dw,log):
         return
     try:
         if bp.get("permission")=="BLOCK" and current in ("1","1.0","auto") and not state.get("boiler_owned"):
+            actuator_capture(actuators,"oekofen.pe1.mode",bp.get("current_mode"),"assisted_thermal");actuator_save(actuators)
             plugin.set_boiler_mode(0);state["boiler_owned"]=True;state["boiler_blocked_at"]=now
             log.warning("assisted thermal | actuator=pe1.mode | command=0 | ownership=INS_EI | reason=%s",bp.get("reason"))
         elif bp.get("permission")=="ALLOW" and (state.get("boiler_owned") or (bp.get("confidence")=="HIGH" and current in ("0","0.0","off","aus"))):
             safety_override=not state.get("boiler_owned")
             plugin.set_boiler_mode(1);state["boiler_owned"]=False
+            actuator_release(actuators,"oekofen.pe1.mode");actuator_save(actuators)
             log.warning("assisted thermal | actuator=pe1.mode | command=1 | ownership=%s | safety_override=%s | reason=%s","RELEASED" if not safety_override else "THERMAL_SAFETY",safety_override,bp.get("reason"))
         dhw_current=str(dw.get("current")).strip().lower()
         if dw.get("recommendation")=="HEAT_ONE" and dhw_current not in ("true","1","on") and not state.get("dhw_owned"):
+            actuator_capture(actuators,"oekofen.ww1.heat_once",dw.get("current"),"assisted_thermal");actuator_save(actuators)
             plugin.set_dhw_once(True);state["dhw_owned"]=True;state["dhw_started_at"]=now
             log.warning("assisted thermal | actuator=ww1.heat_once | command=true | ownership=INS_EI | reason=%s",dw.get("reason"))
         elif dw.get("recommendation")=="HOLD" and state.get("dhw_owned") and dhw_current in ("true","1","on"):
             plugin.set_dhw_once(False);state["dhw_owned"]=False
+            actuator_release(actuators,"oekofen.ww1.heat_once");actuator_save(actuators)
             log.warning("assisted thermal | actuator=ww1.heat_once | command=false | ownership=RELEASED | reason=%s",dw.get("reason"))
         elif state.get("dhw_owned") and dhw_current in ("false","0","off"):
             state["dhw_owned"]=False
