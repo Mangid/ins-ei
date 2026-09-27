@@ -503,8 +503,16 @@ def check_remote_update(url,installation_id,token,log,timeout=10):
         latest=addon.get("version_latest")
         if version_tuple(latest) is None or version_tuple(target) is None or version_tuple(latest) < version_tuple(target):
             body=json.dumps({"ok":False,"retry":True,"error":"TARGET_NOT_YET_AVAILABLE","target_version":target}).encode()
-            try:urlopen(Request(url.rstrip("/")+f"/api/v1/fleet/{installation_id}/command/{cid}/result",data=body,headers={"Content-Type":"application/json"},method="POST"),timeout=5).read()
-            except Exception:pass
+            result_url=url.rstrip("/")+f"/api/v1/fleet/{installation_id}/command/{cid}/result"
+            try:
+                with urlopen(Request(result_url,data=body,headers={"Content-Type":"application/json"},method="POST"),timeout=5) as response:
+                    result_payload=response.read().decode("utf-8")
+                log.warning("remote update | requeue result | command=%s | HTTP %s | response=%s",cid,response.status,result_payload)
+            except HTTPError as exc:
+                detail=exc.read().decode("utf-8",errors="replace")
+                log.warning("remote update | requeue failed | command=%s | HTTP %s | response=%s",cid,exc.code,detail)
+            except (URLError,TimeoutError,OSError) as exc:
+                log.warning("remote update | requeue failed | command=%s | %s",cid,exc)
             log.warning("remote update | waiting for release | target=%s | latest=%s",target,latest)
             return False
         req=Request("http://supervisor/store/addons/"+addon_slug+"/update",data=json.dumps({"backup":False,"background":False}).encode("utf-8"),headers={"Authorization":f"Bearer {token}","Content-Type":"application/json"},method="POST")

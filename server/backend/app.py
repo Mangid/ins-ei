@@ -2901,7 +2901,13 @@ def telemetry_status() -> dict[str, Any]:
                     ORDER BY c.id DESC LIMIT 1) AS update_status,
                    (SELECT target_version FROM fleet_update_commands c
                     WHERE c.installation_id=ti.installation_id
-                    ORDER BY c.id DESC LIMIT 1) AS update_target_version
+                    ORDER BY c.id DESC LIMIT 1) AS update_target_version,
+                   (SELECT id FROM fleet_update_commands c
+                    WHERE c.installation_id=ti.installation_id
+                    ORDER BY c.id DESC LIMIT 1) AS update_command_id,
+                   (SELECT error FROM fleet_update_commands c
+                    WHERE c.installation_id=ti.installation_id
+                    ORDER BY c.id DESC LIMIT 1) AS update_error
             FROM telemetry_installations ti
             ORDER BY installation_id
             """
@@ -2937,6 +2943,7 @@ def telemetry_status() -> dict[str, Any]:
             "current": current,
             "fleet_status":fleet_status,"issues":issues,"health":health,"addon_version":row["addon_version"],
             "update_status":row["update_status"],"update_target_version":row["update_target_version"],
+            "update_command_id":row["update_command_id"],"update_error":row["update_error"],
             "online": age_seconds <= 180,
             "age_seconds": age_seconds,
             "first_seen_at": row["first_seen_at"],
