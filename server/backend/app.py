@@ -3438,6 +3438,22 @@ def fleet_request_update(installation_id: str, payload: FleetUpdateRequest):
     return {"status":"queued","installation_id":installation_id,"target_version":payload.target_version,"command_id":command_id}
 
 
+@app.post("/api/v1/fleet/{installation_id}/command/requeue")
+def fleet_requeue_claimed_command(installation_id: str):
+    """Release the newest claimed update command so the dedicated update agent can take it."""
+    with db() as con:
+        row=con.execute("""SELECT id,target_version FROM fleet_update_commands
+            WHERE installation_id=? AND status='CLAIMED' ORDER BY id DESC LIMIT 1""",
+            (installation_id,)).fetchone()
+        if row is None:
+            return {"status":"nothing_to_requeue","installation_id":installation_id}
+        con.execute("""UPDATE fleet_update_commands
+            SET status='PENDING',claimed_at=NULL,completed_at=NULL,error='REQUEUED_FOR_UPDATE_AGENT'
+            WHERE id=?""",(row["id"],))
+    return {"status":"PENDING","installation_id":installation_id,
+            "command_id":row["id"],"target_version":row["target_version"]}
+
+
 @app.get("/api/v1/fleet/{installation_id}/command")
 def fleet_get_command(installation_id: str):
     with db() as con:
