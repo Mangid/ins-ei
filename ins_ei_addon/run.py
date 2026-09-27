@@ -480,8 +480,36 @@ def home_assistant_site_meta(client):
     except Exception:
         return {}
 
+def mqtt_snapshot(model):
+    values={}
+    for component in model.components.values():
+        for point_name,point in component.points.items():
+            if point.quality.value=="GOOD" and point.value is not None:
+                values[f"{component.id}.{point_name}"]=point.value
+    return values
+
+def mqtt_connect(options,installation_id,log):
+    if not options.get("mqtt_enabled"): return None
+    host=str(options.get("mqtt_host") or "").strip()
+    username=str(options.get("mqtt_username") or "").strip()
+    password=str(options.get("mqtt_password") or "")
+    if not host or not username or not password:
+        log.warning("mqtt | disabled | incomplete configuration");return None
+    client=mqtt.Client(mqtt.CallbackAPIVersion.VERSION2,client_id=f"ins-ei-{installation_id}",clean_session=True)
+    client.username_pw_set(username,password)
+    client.tls_set()
+    status_topic=f"ins-ei/{installation_id}/status"
+    client.will_set(status_topic,json.dumps({"status":"offline"}),qos=1,retain=True)
+    client.connect(host,int(options.get("mqtt_port") or 8883),keepalive=30)
+    client.loop_start()
+    client.publish(status_topic,json.dumps({"status":"online","version":ADDON_VERSION}),qos=1,retain=True)
+    log.info("mqtt | connected | host=%s | installation=%s",host,installation_id)
+    return client
+
 def main():
     options=load(OPTIONS,{});os.environ["TZ"]=options.get("timezone","Europe/Vienna")
+    mqtt_client=None
+    mqtt_last_publish=0.0
     if hasattr(time,"tzset"):time.tzset()
     logging.basicConfig(level=getattr(logging,options.get("log_level","INFO")),format="%(asctime)s %(levelname)s %(message)s");log=logging.getLogger("ins_ei")
     token=supervisor_token()
@@ -529,6 +557,16 @@ def main():
                         if point.quality.value in ("STALE","UNAVAILABLE"):
                             collector_issues.append({"point":f"{component.id}.{point_name}","quality":point.quality.value,
                                 "source":point.source,"value":point.value,"unit":point.unit})
+            if mqtt_client is None and options.get("mqtt_enabled"):
+                try: mqtt_client=mqtt_connect(options,installation_id,log)
+                except Exception as exc: log.warning("mqtt | connect failed | %s",exc)
+            if mqtt_client is not None and time.time()-mqtt_last_publish>=5:
+                try:
+                    mqtt_client.publish(f"ins-ei/{installation_id}/state",
+                        json.dumps({"ts":datetime.now(timezone.utc).isoformat(),"values":mqtt_snapshot(model)},ensure_ascii=False),
+                        qos=0,retain=True)
+                    mqtt_last_publish=time.time()
+                except Exception as exc: log.warning("mqtt | publish failed | %s",exc)
             decision=shadow_evaluate(model,load(MARKET_SERIES,[]),strategy_cfg)
             market_series=load(MARKET_SERIES,[])
             installation_id=server_cfg.get("installation_id",options.get("installation_id","pilot-local"))
