@@ -17,6 +17,7 @@ import urllib.error
 import uuid
 import shutil
 import os
+import paho.mqtt.client as mqtt
 
 from pywebpush import webpush, WebPushException
 
@@ -39,9 +40,48 @@ INFLUX_ORG = "INS-EI"
 INFLUX_BUCKET = "ins_ei"
 VAPID_PRIVATE_KEY = Path("/run/secrets/vapid_private_key")
 VAPID_PUBLIC_KEY = Path("/run/secrets/vapid_public_key")
+MQTT_USERNAME = Path("/run/secrets/mqtt_username")
+MQTT_PASSWORD = Path("/run/secrets/mqtt_password")
+MQTT_HOST = "mqtt.ins-enertech.net"
+MQTT_PORT = 8883
+MQTT_LIVE = {}
+MQTT_LIVE_LOCK = threading.Lock()
 
 OEKOFEN_TOKEN_URL = "https://my.oekofen.info/api/pwa/v1/oauth2/token"
 OEKOFEN_PLANTS_URL = "https://my.oekofen.info/api/pwa/v3/plants"
+
+def mqtt_live_worker():
+    if not MQTT_USERNAME.exists() or not MQTT_PASSWORD.exists():
+        print("MQTT live disabled: credentials missing");return
+    username=MQTT_USERNAME.read_text().strip();password=MQTT_PASSWORD.read_text().strip()
+    client=mqtt.Client(mqtt.CallbackAPIVersion.VERSION2,client_id="ins-ei-service-live")
+    client.username_pw_set(username,password);client.tls_set()
+    def on_connect(client,userdata,flags,reason_code,properties):
+        print("MQTT live connected:",reason_code)
+        if reason_code==0: client.subscribe("ins-ei/+/state",qos=0);client.subscribe("ins-ei/+/status",qos=1)
+    def on_message(client,userdata,msg):
+        try:
+            parts=msg.topic.split("/")
+            if len(parts)!=3:return
+            installation_id,kind=parts[1],parts[2]
+            payload=json.loads(msg.payload.decode("utf-8"))
+            now=datetime.now(timezone.utc).isoformat()
+            with MQTT_LIVE_LOCK:
+                item=MQTT_LIVE.setdefault(installation_id,{"values":{},"online":False})
+                if kind=="state":
+                    item["values"]=payload.get("values") or {}
+                    item["source_timestamp"]=payload.get("ts");item["received_at"]=now
+                elif kind=="status":
+                    item["online"]=payload.get("status")=="online";item["version"]=payload.get("version");item["status_received_at"]=now
+        except Exception as exc: print("MQTT live message error:",repr(exc))
+    client.on_connect=on_connect;client.on_message=on_message
+    while True:
+        try:
+            client.connect(MQTT_HOST,MQTT_PORT,keepalive=30);client.loop_forever(retry_first_connection=True)
+        except Exception as exc:
+            print("MQTT live connection error:",repr(exc));time.sleep(5)
+
+threading.Thread(target=mqtt_live_worker,name="mqtt-live",daemon=True).start()
 
 app = FastAPI(
     title="INS-EI API",
@@ -3573,6 +3613,20 @@ def fleet_command_result(installation_id: str, command_id: int, body: dict[str,A
                              body.get("error") or f"Update auf {row['target_version']} fehlgeschlagen.",
                              "/#instances")
     return {"status":status,"target_version":row["target_version"]}
+
+
+@app.get("/api/v1/live/{installation_id}")
+def get_live_state(installation_id: str):
+    with MQTT_LIVE_LOCK:
+        item=dict(MQTT_LIVE.get(installation_id) or {})
+    if not item: raise HTTPException(404,"No MQTT live state")
+    received=item.get("received_at")
+    age=None
+    if received:
+        try: age=round((datetime.now(timezone.utc)-datetime.fromisoformat(received)).total_seconds(),1)
+        except ValueError: pass
+    item["installation_id"]=installation_id;item["age_seconds"]=age;item["point_count"]=len(item.get("values") or {})
+    return item
 
 
 @app.get("/api/v1/telemetry/history/{installation_id}")
