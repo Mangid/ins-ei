@@ -1,6 +1,7 @@
 """INS-EI runtime: persistent installation model + collector."""
 from __future__ import annotations
 import json,logging,os,time
+import paho.mqtt.client as mqtt
 from datetime import datetime,timezone
 from urllib.request import Request,urlopen
 from urllib.error import URLError,HTTPError
@@ -510,6 +511,7 @@ def main():
     options=load(OPTIONS,{});os.environ["TZ"]=options.get("timezone","Europe/Vienna")
     mqtt_client=None
     mqtt_last_publish=0.0
+    installation_id=options.get("installation_id","pilot-local")
     if hasattr(time,"tzset"):time.tzset()
     logging.basicConfig(level=getattr(logging,options.get("log_level","INFO")),format="%(asctime)s %(levelname)s %(message)s");log=logging.getLogger("ins_ei")
     token=supervisor_token()
