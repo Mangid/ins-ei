@@ -3528,12 +3528,20 @@ def fleet_get_command(installation_id: str):
 
 @app.get("/api/v1/fleet/{installation_id}/update-agent/command")
 def fleet_update_agent_get_command(installation_id: str):
+    now_dt=datetime.now(timezone.utc)
+    lease_cutoff=(now_dt-timedelta(minutes=3)).isoformat()
     with db() as con:
+        # A claim is a short lease. If an agent/HA instance restarts mid-update,
+        # the command becomes available again instead of remaining stuck forever.
+        con.execute("""UPDATE fleet_update_commands
+            SET status='PENDING',claimed_at=NULL,error='CLAIM_LEASE_EXPIRED'
+            WHERE installation_id=? AND status='CLAIMED'
+              AND (claimed_at IS NULL OR claimed_at<?)""",(installation_id,lease_cutoff))
         row=con.execute("""SELECT * FROM fleet_update_commands
             WHERE installation_id=? AND status='PENDING' ORDER BY id DESC LIMIT 1""",(installation_id,)).fetchone()
         if row is None:return {"command":None}
-        now=datetime.now(timezone.utc).isoformat()
-        con.execute("UPDATE fleet_update_commands SET status='CLAIMED',claimed_at=? WHERE id=?",(now,row["id"]))
+        now=now_dt.isoformat()
+        con.execute("UPDATE fleet_update_commands SET status='CLAIMED',claimed_at=?,error=NULL WHERE id=?",(now,row["id"]))
     return {"command":{"id":row["id"],"type":"UPDATE_ADDON","target_version":row["target_version"]}}
 
 
