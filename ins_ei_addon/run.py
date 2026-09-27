@@ -493,13 +493,18 @@ def check_remote_update(url,installation_id,token,log,timeout=10):
                   "version_latest":a.get("version_latest"),"installed":a.get("installed")}
                  for a in addons]
         log.warning("remote update | supervisor addons=%s",json.dumps(summary,ensure_ascii=False))
-        candidates=[a for a in addons if a.get("installed") and (a.get("version")==ADDON_VERSION or a.get("name")=="INS-EI Pilot")]
+        candidates=[a for a in addons if a.get("name")=="INS-EI Pilot" or str(a.get("slug") or "").endswith("_ins_ei")]
         if not candidates:
             raise RuntimeError("INS-EI add-on slug not found in Supervisor")
-        addon_slug=candidates[0].get("slug")
+        addon=candidates[0];addon_slug=addon.get("slug")
         if not addon_slug:
             raise RuntimeError("INS-EI add-on slug missing in Supervisor response")
-        log.warning("remote update | supervisor slug=%s | installed=%s | latest=%s",addon_slug,candidates[0].get("version"),candidates[0].get("version_latest"))
+        log.warning("remote update | supervisor slug=%s | installed=%s | latest=%s",addon_slug,addon.get("version"),addon.get("version_latest"))
+        if addon.get("version_latest") != target:
+            log.warning("remote update | refreshing Supervisor store | target=%s | latest=%s",target,addon.get("version_latest"))
+            refresh=Request("http://supervisor/store/reload",data=b"{}",headers={"Authorization":f"Bearer {token}","Content-Type":"application/json"},method="POST")
+            with urlopen(refresh,timeout=60): pass
+            time.sleep(3)
         req=Request("http://supervisor/store/addons/"+addon_slug+"/update",data=json.dumps({"backup":False,"background":False}).encode("utf-8"),headers={"Authorization":f"Bearer {token}","Content-Type":"application/json"},method="POST")
         with urlopen(req,timeout=120) as response:
             ok=200<=response.status<300
