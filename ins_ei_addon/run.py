@@ -27,7 +27,7 @@ def detect_addon_version():
     return "unknown"
 
 ADDON_VERSION=detect_addon_version()
-OPTIONS=Path("/data/options.json");UI=Path("/data/ui_mappings.json");VRM_SERIES=Path("/data/vrm_forecast_series.json");DAY_PLAN=Path("/data/day_plan.json");MQTT_CONFIG=Path("/data/mqtt.json");MQTT_STATUS=Path("/data/mqtt_status.json");PLAN_HISTORY=Path("/data/plan_history");DISC=Path("/data/discovery.json");COMPONENTS=Path("/data/components.json");SITE=Path("/data/site_model.json");SHADOW=Path("/data/shadow_decision.json");MARKET=Path("/data/market.json");MARKET_SERIES=Path("/data/market_series.json");STRATEGY=Path("/data/strategy.json");SERVER=Path("/data/server.json");TELEMETRY_STATUS=Path("/data/telemetry_status.json");PLUGINS=Path("/data/plugins.json");ASSIST=Path("/data/assisted_thermal.json");ACTUATORS=Path("/data/actuator_state.json");CONTROL=Path("/data/control.json");ACTUATOR_PREVIEW=Path("/data/actuator_preview.json")
+OPTIONS=Path("/data/options.json");UI=Path("/data/ui_mappings.json");VRM_SERIES=Path("/data/vrm_forecast_series.json");DAY_PLAN=Path("/data/day_plan.json");MQTT_CONFIG=Path("/data/mqtt.json");MQTT_STATUS=Path("/data/mqtt_status.json");PLAN_HISTORY=Path("/data/plan_history");DISC=Path("/data/discovery.json");COMPONENTS=Path("/data/components.json");SITE=Path("/data/site_model.json");SHADOW=Path("/data/shadow_decision.json");MARKET=Path("/data/market.json");MARKET_SERIES=Path("/data/market_series.json");STRATEGY=Path("/data/strategy.json");SERVER=Path("/data/server.json");TELEMETRY_STATUS=Path("/data/telemetry_status.json");PLUGINS=Path("/data/plugins.json");ASSIST=Path("/data/assisted_thermal.json");ACTUATORS=Path("/data/actuator_state.json");CONTROL=Path("/data/control.json");ACTUATOR_PREVIEW=Path("/data/actuator_preview.json");COMMISSIONING=Path("/data/commissioning.json")
 MULTI={"HEATING_CIRCUIT","ROOM","LOAD"}
 
 def load(path,default):
@@ -370,6 +370,29 @@ def actuator_restore_oekofen(plugin,state,log):
     actuator_save(state)
     return failures
 
+def process_commissioning(plugin,log):
+    req=load(COMMISSIONING,{})
+    if req.get("status")!="PENDING_RESTORE":return False
+    values=req.get("values") or {};failures=[]
+    try:
+        plugin.set_boiler_mode(int(float(values["oekofen.pe1.mode"])))
+    except Exception as exc: failures.append(f"oekofen.pe1.mode:{exc}")
+    try:
+        plugin.set_dhw_once(bool(values["oekofen.ww1.heat_once"]))
+    except Exception as exc: failures.append(f"oekofen.ww1.heat_once:{exc}")
+    if failures:
+        req["status"]="RESTORE_FAILED";req["errors"]=failures
+        COMMISSIONING.write_text(json.dumps(req,ensure_ascii=False,indent=2),encoding="utf-8")
+        log.error("commissioning | restore failed | %s",failures);return True
+    state=actuator_state();now=datetime.now(timezone.utc).isoformat()
+    state["baseline"]={key:{"value":value,"source":"admin_commissioning","captured_at":now} for key,value in values.items()}
+    state["owned"]={};state["sealed"]=True;state["version"]=3;state["commissioned_at"]=now
+    actuator_save(state)
+    req["status"]="COMPLETE";req["completed_at"]=now
+    COMMISSIONING.write_text(json.dumps(req,ensure_ascii=False,indent=2),encoding="utf-8")
+    log.warning("commissioning | COMPLETE | baseline sealed | actuators=%s",sorted(values))
+    return True
+
 def apply_assisted_thermal(plugin_cfg,bp,dw,log):
     o=plugin_cfg.get("oekofen") or {}
     if not o.get("thermal_assist_enabled"):return
@@ -378,6 +401,8 @@ def apply_assisted_thermal(plugin_cfg,bp,dw,log):
     try:
         ACTUATOR_PREVIEW.write_text(json.dumps(plugin.actuator_values(),ensure_ascii=False,indent=2),encoding="utf-8")
     except Exception as exc: log.warning("actuator preview | oekofen | %s",exc)
+    if process_commissioning(plugin,log):
+        state=load(ASSIST,{"boiler_owned":False});state["boiler_owned"]=False;state["dhw_owned"]=False;ASSIST.write_text(json.dumps(state,ensure_ascii=False,indent=2),encoding="utf-8");return
     state=load(ASSIST,{"boiler_owned":False,"dhw_last_request":0})
     control=load(CONTROL,{"enabled":True,"emergency_stop":False})
     actuators=actuator_state()
