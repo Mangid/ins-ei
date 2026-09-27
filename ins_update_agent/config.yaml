@@ -1,0 +1,26 @@
+name: INS Update Agent
+version: "0.1.0"
+slug: ins_update_agent
+description: Remote Update Agent für INS-EI
+url: https://github.com/Mangid/ins-ei
+startup: application
+boot: auto
+init: false
+
+hassio_api: true
+hassio_role: manager
+
+arch:
+  - aarch64
+  - amd64
+  - armv7
+
+options:
+  server_url: "https://ins-ei.ins-enertech.net"
+  installation_id: "pilot-local"
+  interval_seconds: 60
+
+schema:
+  server_url: url
+  installation_id: str
+  interval_seconds: int(30,3600)
