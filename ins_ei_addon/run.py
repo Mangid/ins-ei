@@ -496,7 +496,7 @@ def mqtt_connect(options,installation_id,log):
     password=str(options.get("mqtt_password") or "")
     if not host or not username or not password:
         log.warning("mqtt | disabled | incomplete configuration");return None
-    client=mqtt.Client(mqtt.CallbackAPIVersion.VERSION2,client_id=f"ins-ei-{installation_id}",clean_session=True)
+    client=mqtt.Client(client_id=f"ins-ei-{installation_id}",clean_session=True)
     client.username_pw_set(username,password)
     client.tls_set()
     status_topic=f"ins-ei/{installation_id}/status"
