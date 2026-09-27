@@ -23,6 +23,16 @@ class OekoFENPlugin:
         if self._last_data is None or now-self._last_read>=2.6:
             self._last_data=self.transport.read_all();self._last_read=now
         return self._last_data
+    def actuator_values(self):
+        d=self._data()
+        def raw(section,key):
+            value=(d.get(section) or {}).get(key)
+            return _raw(value)
+        return {
+            "oekofen.pe1.mode": raw("pe1","mode"),
+            "oekofen.ww1.heat_once": raw("ww1","heat_once"),
+        }
+
     def set_boiler_mode(self,mode:int):
         mode=int(mode)
         if mode not in (0,1):raise ValueError("OEKOFEN_BOILER_MODE_INVALID")
