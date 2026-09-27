@@ -472,68 +472,6 @@ def snapshot(client,mappings):
     mapped={m.entity_id:f"{m.component_id}.{m.point}" for m in mappings};items=discover(client.states(),mapped)
     DISC.write_text(json.dumps([{"entity_id":x.entity_id,"name":x.name,"state":x.state,"unit":x.unit,"suggested_domain":x.suggested_domain,"suggested_point":x.suggested_point,"score":x.score,"mapped_to":x.mapped_to,"source_kind":x.source_kind} for x in items],ensure_ascii=False,indent=2),encoding="utf-8")
 
-def addon_version_tuple(value):
-    if not value:return None
-    raw=str(value).strip().lstrip("v")
-    try:return tuple(int(part) for part in raw.split("."))
-    except (TypeError,ValueError):return None
-
-def check_remote_update(url,installation_id,token,log,timeout=10):
-    """Poll central server for an update command; Supervisor performs only this add-on's update."""
-    if not url:return False
-    try:
-        with urlopen(Request(url.rstrip("/")+f"/api/v1/fleet/{installation_id}/command",headers={"Accept":"application/json"}),timeout=timeout) as response:
-            cmd=(json.loads(response.read().decode("utf-8")) or {}).get("command")
-        if not cmd:return False
-        if cmd.get("type")!="UPDATE_ADDON":return False
-        target=cmd.get("target_version");cid=cmd.get("id")
-        log.warning("remote update | claimed | command=%s | target=%s",cid,target)
-        # Home Assistant Supervisor resolves the repository version and updates
-        # only this add-on. No arbitrary shell/code command is accepted.
-        # The legacy /addons/<addon>/update endpoint is deprecated. Resolve the
-        # repository-qualified slug first, then use the current store update API.
-        with urlopen(Request("http://supervisor/addons",headers={"Authorization":f"Bearer {token}","Accept":"application/json"}),timeout=10) as response:
-            addons_payload=json.loads(response.read().decode("utf-8")) or {}
-        addons=addons_payload.get("data",{}).get("addons",addons_payload.get("addons",[]))
-        summary=[{"slug":a.get("slug"),"name":a.get("name"),"version":a.get("version"),
-                  "version_latest":a.get("version_latest"),"installed":a.get("installed")}
-                 for a in addons]
-        log.warning("remote update | supervisor addons=%s",json.dumps(summary,ensure_ascii=False))
-        candidates=[a for a in addons if a.get("name")=="INS-EI Pilot" or str(a.get("slug") or "").endswith("_ins_ei")]
-        if not candidates:
-            raise RuntimeError("INS-EI add-on slug not found in Supervisor")
-        addon=candidates[0];addon_slug=addon.get("slug")
-        if not addon_slug:
-            raise RuntimeError("INS-EI add-on slug missing in Supervisor response")
-        # The collection endpoint can lag behind the Supervisor UI. Fetch the
-        # selected add-on detail, which is the source used for current/latest state.
-        try:
-            detail_req=Request("http://supervisor/addons/"+addon_slug+"/info",
-                               headers={"Authorization":f"Bearer {token}","Accept":"application/json"})
-            with urlopen(detail_req,timeout=10) as response:
-                detail_payload=json.loads(response.read().decode("utf-8")) or {}
-            detail=detail_payload.get("data",detail_payload)
-            if isinstance(detail,dict):
-                addon={**addon,**detail}
-        except (HTTPError,URLError,TimeoutError,OSError,json.JSONDecodeError) as exc:
-            log.warning("remote update | addon detail unavailable | slug=%s | %s",addon_slug,exc)
-        log.warning("remote update | supervisor slug=%s | installed=%s | latest=%s",addon_slug,addon.get("version"),addon.get("version_latest"))
-        latest=addon.get("version_latest")
-        log.warning("remote update | attempting Supervisor update directly | target=%s | latest_hint=%s",target,latest)
-        req=Request("http://supervisor/store/addons/"+addon_slug+"/update",data=json.dumps({"backup":False,"background":False}).encode("utf-8"),headers={"Authorization":f"Bearer {token}","Content-Type":"application/json"},method="POST")
-        with urlopen(req,timeout=120) as response:
-            ok=200<=response.status<300
-        body=json.dumps({"ok":ok,"target_version":target}).encode()
-        try:urlopen(Request(url.rstrip("/")+f"/api/v1/fleet/{installation_id}/command/{cid}/result",data=body,headers={"Content-Type":"application/json"},method="POST"),timeout=5).read()
-        except Exception:pass
-        log.warning("remote update | supervisor accepted | command=%s | target=%s",cid,target)
-        return ok
-    except HTTPError as exc:
-        log.warning("remote update | failed | HTTP %s | %s",exc.code,exc.reason)
-    except (URLError,TimeoutError,OSError,json.JSONDecodeError,RuntimeError) as exc:
-        log.warning("remote update | failed | %s",exc)
-    return False
-
 def home_assistant_site_meta(client):
     try:
         cfg=client._get_json("/api/config")
@@ -547,7 +485,7 @@ def main():
     logging.basicConfig(level=getattr(logging,options.get("log_level","INFO")),format="%(asctime)s %(levelname)s %(message)s");log=logging.getLogger("ins_ei")
     token=supervisor_token()
     if not token:log.error("Supervisor token unavailable");return
-    client=HomeAssistantClient("http://supervisor/core",token);site_meta=home_assistant_site_meta(client);log.info("site location | source=HOME_ASSISTANT | latitude=%s | longitude=%s | elevation=%s | timezone=%s",site_meta.get("latitude"),site_meta.get("longitude"),site_meta.get("elevation"),site_meta.get("time_zone"));signature=None;last=0;interval=int(options.get("interval_seconds",30));server_cfg=load(SERVER,{"url":"https://ins-ei.ins-enertech.net","installation_id":options.get("installation_id","pilot-local"),"interval_seconds":30,"enabled":False});telemetry_url=server_cfg.get("url","").strip() if server_cfg.get("enabled") else "";telemetry_interval=int(server_cfg.get("interval_seconds",30));last_telemetry=0;server_forecast=None;last_server_forecast=0;last_update_check=0
+    client=HomeAssistantClient("http://supervisor/core",token);site_meta=home_assistant_site_meta(client);log.info("site location | source=HOME_ASSISTANT | latitude=%s | longitude=%s | elevation=%s | timezone=%s",site_meta.get("latitude"),site_meta.get("longitude"),site_meta.get("elevation"),site_meta.get("time_zone"));signature=None;last=0;interval=int(options.get("interval_seconds",30));server_cfg=load(SERVER,{"url":"https://ins-ei.ins-enertech.net","installation_id":options.get("installation_id","pilot-local"),"interval_seconds":30,"enabled":False});telemetry_url=server_cfg.get("url","").strip() if server_cfg.get("enabled") else "";telemetry_interval=int(server_cfg.get("interval_seconds",30));last_telemetry=0;server_forecast=None;last_server_forecast=0
     while True:
         cfg=effective_config(options);component_cfg=load(COMPONENTS,{});market_cfg=load(MARKET,{"mode":"AWATTAR_AT","export_strategy":"SELF_CONSUMPTION","import_markup_ct":1.5,"vat_percent":20.0,"export_factor_percent":81.0});strategy_cfg=load(STRATEGY,{"profile":"AUTO","priorities":{"thermal_storage":80,"battery_economics":60,"export":40,"ev":50},"requirements":{"dhw_min_c":50.0}})
         sig=json.dumps({"mappings":cfg.get("mappings",[]),"components":component_cfg,"market":market_cfg,"strategy":strategy_cfg,"topology":options.get("thermal_topology")},sort_keys=True,ensure_ascii=False)
