@@ -325,13 +325,20 @@ def boiler_permission_shadow(model,decision,day_plan):
     return {"permission":"ALLOW","current_mode":current_mode,"confidence":"MEDIUM","reason":f"Nur {pv_heat:.2f} kWh wirtschaftliche PV-Waerme geplant und kein starkes Tages-PV-Signal."}
 
 def actuator_state():
-    return load(ACTUATORS,{"version":1,"owned":{},"emergency_stop":False})
+    return load(ACTUATORS,{"version":2,"baseline":{},"owned":{}})
+
+def actuator_ensure_baseline(state,key,current,source):
+    baseline=state.setdefault("baseline",{})
+    if key not in baseline:
+        baseline[key]={"value":current,"source":source,"captured_at":datetime.now(timezone.utc).isoformat()}
+    return baseline[key]
 
 def actuator_capture(state,key,current,source):
+    baseline=actuator_ensure_baseline(state,key,current,source)
     owned=state.setdefault("owned",{})
     if key not in owned:
-        owned[key]={"original":current,"source":source,"captured_at":datetime.now(timezone.utc).isoformat()}
-    return owned[key]
+        owned[key]={"source":source,"owned_at":datetime.now(timezone.utc).isoformat()}
+    return baseline
 
 def actuator_release(state,key):
     state.setdefault("owned",{}).pop(key,None)
@@ -344,7 +351,10 @@ def actuator_restore_oekofen(plugin,state,log):
     owned=dict(state.get("owned") or {})
     for key,entry in owned.items():
         try:
-            original=entry.get("original")
+            baseline=(state.get("baseline") or {}).get(key) or {}
+            original=baseline.get("value")
+            if original is None:
+                failures.append(f"{key}:BASELINE_MISSING");continue
             if key=="oekofen.pe1.mode":
                 plugin.set_boiler_mode(int(float(original)))
             elif key=="oekofen.ww1.heat_once":
