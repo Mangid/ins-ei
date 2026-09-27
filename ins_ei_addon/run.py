@@ -484,7 +484,19 @@ def check_remote_update(url,installation_id,token,log,timeout=10):
         log.warning("remote update | claimed | command=%s | target=%s",cid,target)
         # Home Assistant Supervisor resolves the repository version and updates
         # only this add-on. No arbitrary shell/code command is accepted.
-        req=Request("http://supervisor/addons/self/update",data=b"{}",headers={"Authorization":f"Bearer {token}","Content-Type":"application/json"},method="POST")
+        # The legacy /addons/<addon>/update endpoint is deprecated. Resolve the
+        # repository-qualified slug first, then use the current store update API.
+        with urlopen(Request("http://supervisor/addons",headers={"Authorization":f"Bearer {token}","Accept":"application/json"}),timeout=10) as response:
+            addons_payload=json.loads(response.read().decode("utf-8")) or {}
+        addons=addons_payload.get("data",{}).get("addons",addons_payload.get("addons",[]))
+        candidates=[a for a in addons if a.get("installed") and (a.get("version")==ADDON_VERSION or a.get("name")=="INS-EI Pilot")]
+        if not candidates:
+            raise RuntimeError("INS-EI add-on slug not found in Supervisor")
+        addon_slug=candidates[0].get("slug")
+        if not addon_slug:
+            raise RuntimeError("INS-EI add-on slug missing in Supervisor response")
+        log.warning("remote update | supervisor slug=%s | installed=%s | latest=%s",addon_slug,candidates[0].get("version"),candidates[0].get("version_latest"))
+        req=Request("http://supervisor/store/addons/"+addon_slug+"/update",data=json.dumps({"backup":False,"background":False}).encode("utf-8"),headers={"Authorization":f"Bearer {token}","Content-Type":"application/json"},method="POST")
         with urlopen(req,timeout=120) as response:
             ok=200<=response.status<300
         body=json.dumps({"ok":ok,"target_version":target}).encode()
@@ -494,7 +506,7 @@ def check_remote_update(url,installation_id,token,log,timeout=10):
         return ok
     except HTTPError as exc:
         log.warning("remote update | failed | HTTP %s | %s",exc.code,exc.reason)
-    except (URLError,TimeoutError,OSError,json.JSONDecodeError) as exc:
+    except (URLError,TimeoutError,OSError,json.JSONDecodeError,RuntimeError) as exc:
         log.warning("remote update | failed | %s",exc)
     return False
 
