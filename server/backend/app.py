@@ -1211,6 +1211,19 @@ def init_customer_db():
         )
 
 
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS telemetry_health_samples (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                installation_id TEXT NOT NULL,
+                timestamp TEXT NOT NULL,
+                good INTEGER NOT NULL DEFAULT 0,
+                stale INTEGER NOT NULL DEFAULT 0,
+                unavailable INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+        con.execute("""CREATE INDEX IF NOT EXISTS idx_telemetry_health_installation_time
+            ON telemetry_health_samples (installation_id,timestamp)""")
+
         con.execute(
             """
             CREATE TABLE IF NOT EXISTS telemetry_installations (
@@ -3538,6 +3551,22 @@ def get_telemetry_history(
         raise HTTPException(400, str(exc)) from exc
 
 
+@app.get("/api/v1/telemetry/health-history/{installation_id}")
+def get_telemetry_health_history(installation_id: str, period: str = "24h"):
+    periods={"24h":24,"7d":24*7,"30d":24*30}
+    if period not in periods: raise HTTPException(400,"period must be 24h, 7d or 30d")
+    since=(datetime.now(timezone.utc)-timedelta(hours=periods[period])).isoformat()
+    with db() as con:
+        rows=con.execute("""SELECT timestamp,good,stale,unavailable FROM telemetry_health_samples
+            WHERE installation_id=? AND timestamp>=? ORDER BY timestamp""",(installation_id,since)).fetchall()
+    samples=[dict(r) for r in rows]
+    totals={"samples":len(samples),"good":sum(r["good"] for r in samples),
+            "stale":sum(r["stale"] for r in samples),"unavailable":sum(r["unavailable"] for r in samples)}
+    points=totals["good"]+totals["stale"]+totals["unavailable"]
+    totals["good_percent"]=round(100*totals["good"]/points,2) if points else None
+    return {"installation_id":installation_id,"period":period,"totals":totals,"samples":samples}
+
+
 @app.get("/api/v1/telemetry/status")
 def get_telemetry_status():
     return telemetry_status()
@@ -3586,6 +3615,13 @@ def receive_telemetry(payload: TelemetryPayload):
         )
 
     if payload.health:
+        collector_health=payload.health.get("collector") or {}
+        with db() as con:
+            con.execute("""INSERT INTO telemetry_health_samples
+                (installation_id,timestamp,good,stale,unavailable)
+                VALUES (?,?,?,?,?)""",
+                (payload.installation_id,received_at,int(collector_health.get("good") or 0),
+                 int(collector_health.get("stale") or 0),int(collector_health.get("unavailable") or 0)))
         with db() as con:
             con.execute("""UPDATE telemetry_installations
                 SET health_json=?,addon_version=?,health_updated_at=?
