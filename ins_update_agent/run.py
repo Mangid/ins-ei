@@ -10,6 +10,7 @@ OPTIONS = Path("/data/options.json")
 
 TARGET_NAME = "INS-EI Pilot"
 TARGET_SUFFIX = "_ins_ei"
+AGENT_VERSION = "0.1.2"
 
 
 def load_options():
@@ -130,6 +131,12 @@ def main():
 
     while True:
         try:
+            try:
+                request_json(server+f"/api/v1/fleet/{installation_id}/update-agent/heartbeat",
+                             method="POST",body={"agent_version":AGENT_VERSION},timeout=10)
+            except Exception as exc:
+                log.warning("heartbeat | failed | %s",exc)
+
             _, payload = request_json(
                 server
                 + f"/api/v1/fleet/{installation_id}/update-agent/command",

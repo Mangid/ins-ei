@@ -1,5 +1,5 @@
 name: INS Update Agent
-version: "0.1.1"
+version: "0.1.2"
 slug: ins_update_agent
 description: Remote Update Agent für INS-EI
 url: https://github.com/Mangid/ins-ei
