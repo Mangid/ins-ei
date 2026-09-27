@@ -522,6 +522,13 @@ def main():
                     for point_name,point in component.points.items():
                         if point.quality.value in ("STALE","UNAVAILABLE"):
                             log.info("collector issue | %s.%s | quality=%s | value=%s %s | source=%s",component.id,point_name,point.quality.value,point.value,point.unit or "",point.source)
+            collector_issues=[]
+            if result.stale or result.unavailable:
+                for component in model.components.values():
+                    for point_name,point in component.points.items():
+                        if point.quality.value in ("STALE","UNAVAILABLE"):
+                            collector_issues.append({"point":f"{component.id}.{point_name}","quality":point.quality.value,
+                                "source":point.source,"value":point.value,"unit":point.unit})
             decision=shadow_evaluate(model,load(MARKET_SERIES,[]),strategy_cfg)
             market_series=load(MARKET_SERIES,[])
             installation_id=server_cfg.get("installation_id",options.get("installation_id","pilot-local"))
@@ -597,7 +604,7 @@ def main():
             log.info("profile detect | profile=%s | reason=%s",decision.inputs.get("detected_profile"),decision.inputs.get("profile_reason"))
             log.info("shadow | action=%s | confidence=%s | reason=%s",decision.action,decision.confidence,decision.reason)
             if telemetry_url and time.time()-last_telemetry>=telemetry_interval:
-                health={"addon_version":ADDON_VERSION,"collector":{"read":result.read,"good":result.good,"stale":result.stale,"unavailable":result.unavailable,"plugin_points":plugin_points},
+                health={"addon_version":ADDON_VERSION,"collector":{"read":result.read,"good":result.good,"stale":result.stale,"unavailable":result.unavailable,"plugin_points":plugin_points,"issues":collector_issues},
                     "server_forecast":{"connected":server_forecast is not None,"pv_slots":len(((server_forecast or {}).get("pv") or {}).get("slots") or []),"load_slots":len(((server_forecast or {}).get("consumption") or {}).get("slots") or []),
                     "pv_quality":((server_forecast or {}).get("pv") or {}).get("quality"),"load_quality":((server_forecast or {}).get("consumption") or {}).get("quality")},
                     "planner":{"status":day_plan.get("status"),"slots":len(day_plan.get("slots") or []),"export_strategy":day_plan.get("export_strategy"),

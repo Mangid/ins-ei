@@ -1212,6 +1212,21 @@ def init_customer_db():
 
 
         con.execute("""
+            CREATE TABLE IF NOT EXISTS telemetry_health_issues (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                installation_id TEXT NOT NULL,
+                timestamp TEXT NOT NULL,
+                point TEXT NOT NULL,
+                quality TEXT NOT NULL,
+                source TEXT,
+                value TEXT,
+                unit TEXT
+            )
+        """)
+        con.execute("""CREATE INDEX IF NOT EXISTS idx_telemetry_health_issues_installation_time
+            ON telemetry_health_issues (installation_id,timestamp)""")
+
+        con.execute("""
             CREATE TABLE IF NOT EXISTS telemetry_health_samples (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 installation_id TEXT NOT NULL,
@@ -3564,7 +3579,12 @@ def get_telemetry_health_history(installation_id: str, period: str = "24h"):
             "stale":sum(r["stale"] for r in samples),"unavailable":sum(r["unavailable"] for r in samples)}
     points=totals["good"]+totals["stale"]+totals["unavailable"]
     totals["good_percent"]=round(100*totals["good"]/points,2) if points else None
-    return {"installation_id":installation_id,"period":period,"totals":totals,"samples":samples}
+    with db() as con:
+        issue_rows=con.execute("""SELECT point,quality,COUNT(*) AS count,MAX(timestamp) AS last_seen
+            FROM telemetry_health_issues WHERE installation_id=? AND timestamp>=?
+            GROUP BY point,quality ORDER BY count DESC,point""",(installation_id,since)).fetchall()
+    return {"installation_id":installation_id,"period":period,"totals":totals,"samples":samples,
+            "issues":[dict(r) for r in issue_rows]}
 
 
 @app.get("/api/v1/telemetry/status")
@@ -3616,6 +3636,13 @@ def receive_telemetry(payload: TelemetryPayload):
 
     if payload.health:
         collector_health=payload.health.get("collector") or {}
+        issues=collector_health.get("issues") or []
+        if issues:
+            with db() as con:
+                con.executemany("""INSERT INTO telemetry_health_issues
+                    (installation_id,timestamp,point,quality,source,value,unit) VALUES (?,?,?,?,?,?,?)""",
+                    [(payload.installation_id,received_at,str(i.get("point") or ""),str(i.get("quality") or ""),
+                      i.get("source"),None if i.get("value") is None else str(i.get("value")),i.get("unit")) for i in issues])
         with db() as con:
             con.execute("""INSERT INTO telemetry_health_samples
                 (installation_id,timestamp,good,stale,unavailable)
