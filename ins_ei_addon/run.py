@@ -472,6 +472,12 @@ def snapshot(client,mappings):
     mapped={m.entity_id:f"{m.component_id}.{m.point}" for m in mappings};items=discover(client.states(),mapped)
     DISC.write_text(json.dumps([{"entity_id":x.entity_id,"name":x.name,"state":x.state,"unit":x.unit,"suggested_domain":x.suggested_domain,"suggested_point":x.suggested_point,"score":x.score,"mapped_to":x.mapped_to,"source_kind":x.source_kind} for x in items],ensure_ascii=False,indent=2),encoding="utf-8")
 
+def addon_version_tuple(value):
+    if not value:return None
+    raw=str(value).strip().lstrip("v")
+    try:return tuple(int(part) for part in raw.split("."))
+    except (TypeError,ValueError):return None
+
 def check_remote_update(url,installation_id,token,log,timeout=10):
     """Poll central server for an update command; Supervisor performs only this add-on's update."""
     if not url:return False
@@ -501,7 +507,7 @@ def check_remote_update(url,installation_id,token,log,timeout=10):
             raise RuntimeError("INS-EI add-on slug missing in Supervisor response")
         log.warning("remote update | supervisor slug=%s | installed=%s | latest=%s",addon_slug,addon.get("version"),addon.get("version_latest"))
         latest=addon.get("version_latest")
-        if version_tuple(latest) is None or version_tuple(target) is None or version_tuple(latest) < version_tuple(target):
+        if addon_version_tuple(latest) is None or addon_version_tuple(target) is None or addon_version_tuple(latest) < addon_version_tuple(target):
             body=json.dumps({"ok":False,"retry":True,"error":"TARGET_NOT_YET_AVAILABLE","target_version":target}).encode()
             result_url=url.rstrip("/")+f"/api/v1/fleet/{installation_id}/command/{cid}/result"
             try:
