@@ -1257,6 +1257,15 @@ def init_customer_db():
 
 
         con.execute("""
+            CREATE TABLE IF NOT EXISTS fleet_update_agents (
+                installation_id TEXT PRIMARY KEY,
+                agent_version TEXT,
+                last_seen_at TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'ONLINE'
+            )
+        """)
+
+        con.execute("""
             CREATE TABLE IF NOT EXISTS fleet_update_commands (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 installation_id TEXT NOT NULL,
@@ -2938,12 +2947,19 @@ def telemetry_status() -> dict[str, Any]:
         try: health=json.loads(row["health_json"] or "{}")
         except (TypeError,json.JSONDecodeError): pass
         fleet_status,issues=evaluate_fleet_health(row["installation_id"],age_seconds,health,row)
+        with db() as con:
+            agent=con.execute("SELECT * FROM fleet_update_agents WHERE installation_id=?",(row["installation_id"],)).fetchone()
+        agent_online=False
+        if agent:
+            try: agent_online=(now-datetime.fromisoformat(agent["last_seen_at"])).total_seconds()<=180
+            except (TypeError,ValueError): pass
         installations.append({
             "installation_id": row["installation_id"],
             "current": current,
             "fleet_status":fleet_status,"issues":issues,"health":health,"addon_version":row["addon_version"],
             "update_status":row["update_status"],"update_target_version":row["update_target_version"],
             "update_command_id":row["update_command_id"],"update_error":row["update_error"],
+            "update_agent_version":agent["agent_version"] if agent else None,"update_agent_online":agent_online,
             "online": age_seconds <= 180,
             "age_seconds": age_seconds,
             "first_seen_at": row["first_seen_at"],
@@ -2976,6 +2992,10 @@ def version_tuple(value: str | None) -> tuple[int, ...] | None:
     raw=value.strip().lstrip("v")
     try: return tuple(int(part) for part in raw.split("."))
     except (TypeError,ValueError): return None
+
+
+class FleetUpdateAgentHeartbeat(BaseModel):
+    agent_version: str
 
 
 class FleetUpdateRequest(BaseModel):
@@ -3415,6 +3435,18 @@ def get_consumption_forecast(installation_id: str, hours: int = 24):
         return influx_consumption_forecast(installation_id, hours)
     except Exception as exc:
         raise HTTPException(503, f"Consumption forecast unavailable: {exc}") from exc
+
+@app.post("/api/v1/fleet/{installation_id}/update-agent/heartbeat")
+def fleet_update_agent_heartbeat(installation_id: str, payload: FleetUpdateAgentHeartbeat):
+    now=datetime.now(timezone.utc).isoformat()
+    with db() as con:
+        con.execute("""INSERT INTO fleet_update_agents(installation_id,agent_version,last_seen_at,status)
+            VALUES(?,?,?,'ONLINE')
+            ON CONFLICT(installation_id) DO UPDATE SET
+              agent_version=excluded.agent_version,last_seen_at=excluded.last_seen_at,status='ONLINE'""",
+            (installation_id,payload.agent_version,now))
+    return {"status":"ok","installation_id":installation_id,"agent_version":payload.agent_version}
+
 
 @app.post("/api/v1/fleet/{installation_id}/update")
 def fleet_request_update(installation_id: str, payload: FleetUpdateRequest):
