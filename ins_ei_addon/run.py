@@ -27,7 +27,7 @@ def detect_addon_version():
     return "unknown"
 
 ADDON_VERSION=detect_addon_version()
-OPTIONS=Path("/data/options.json");UI=Path("/data/ui_mappings.json");VRM_SERIES=Path("/data/vrm_forecast_series.json");DAY_PLAN=Path("/data/day_plan.json");MQTT_CONFIG=Path("/data/mqtt.json");MQTT_STATUS=Path("/data/mqtt_status.json");PLAN_HISTORY=Path("/data/plan_history");DISC=Path("/data/discovery.json");COMPONENTS=Path("/data/components.json");SITE=Path("/data/site_model.json");SHADOW=Path("/data/shadow_decision.json");MARKET=Path("/data/market.json");MARKET_SERIES=Path("/data/market_series.json");STRATEGY=Path("/data/strategy.json");SERVER=Path("/data/server.json");TELEMETRY_STATUS=Path("/data/telemetry_status.json");PLUGINS=Path("/data/plugins.json");ASSIST=Path("/data/assisted_thermal.json");ACTUATORS=Path("/data/actuator_state.json");CONTROL=Path("/data/control.json")
+OPTIONS=Path("/data/options.json");UI=Path("/data/ui_mappings.json");VRM_SERIES=Path("/data/vrm_forecast_series.json");DAY_PLAN=Path("/data/day_plan.json");MQTT_CONFIG=Path("/data/mqtt.json");MQTT_STATUS=Path("/data/mqtt_status.json");PLAN_HISTORY=Path("/data/plan_history");DISC=Path("/data/discovery.json");COMPONENTS=Path("/data/components.json");SITE=Path("/data/site_model.json");SHADOW=Path("/data/shadow_decision.json");MARKET=Path("/data/market.json");MARKET_SERIES=Path("/data/market_series.json");STRATEGY=Path("/data/strategy.json");SERVER=Path("/data/server.json");TELEMETRY_STATUS=Path("/data/telemetry_status.json");PLUGINS=Path("/data/plugins.json");ASSIST=Path("/data/assisted_thermal.json");ACTUATORS=Path("/data/actuator_state.json");CONTROL=Path("/data/control.json");ACTUATOR_PREVIEW=Path("/data/actuator_preview.json")
 MULTI={"HEATING_CIRCUIT","ROOM","LOAD"}
 
 def load(path,default):
@@ -374,6 +374,9 @@ def apply_assisted_thermal(plugin_cfg,bp,dw,log):
     if not o.get("thermal_assist_enabled"):return
     plugin=_PLUGIN_CACHE.get("oekofen")
     if plugin is None:return
+    try:
+        ACTUATOR_PREVIEW.write_text(json.dumps(plugin.actuator_values(),ensure_ascii=False,indent=2),encoding="utf-8")
+    except Exception as exc: log.warning("actuator preview | oekofen | %s",exc)
     state=load(ASSIST,{"boiler_owned":False,"dhw_last_request":0})
     control=load(CONTROL,{"enabled":True,"emergency_stop":False})
     actuators=actuator_state()
