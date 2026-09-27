@@ -140,18 +140,20 @@ class H(BaseHTTPRequestHandler):
         n = int(self.headers.get("Content-Length", "0"))
         body = json.loads(self.rfile.read(n) or b"{}")
         if p.endswith("/api/control/baseline"):
-            state=load(ACTUATORS,{"version":2,"baseline":{},"owned":{}})
+            state=load(ACTUATORS,{"version":3,"baseline":{},"owned":{},"sealed":False})
+            if state.get("sealed") and not body.get("force"):
+                return self.js({"error":"BASELINE_SEALED"},409)
             if state.get("owned"):
                 return self.js({"error":"ACTUATORS_CURRENTLY_OWNED","owned":list(state["owned"])},409)
-            preview=load(ACTUATOR_PREVIEW,{})
+            values=body.get("values") or {}
             required=("oekofen.pe1.mode","oekofen.ww1.heat_once")
-            missing=[key for key in required if preview.get(key) is None]
-            if missing:return self.js({"error":"BASELINE_PREVIEW_INCOMPLETE","missing":missing},409)
+            missing=[key for key in required if key not in values]
+            if missing:return self.js({"error":"BASELINE_VALUES_INCOMPLETE","missing":missing},409)
             now=datetime.now(timezone.utc).isoformat()
-            state["baseline"]={key:{"value":preview[key],"source":"commissioning","captured_at":now} for key in required}
-            state["commissioned_at"]=now
+            state["baseline"]={key:{"value":values[key],"source":"admin_commissioning","captured_at":now} for key in required}
+            state["commissioned_at"]=now;state["sealed"]=True;state["version"]=3
             ACTUATORS.write_text(json.dumps(state,ensure_ascii=False,indent=2),encoding="utf-8")
-            return self.js({"saved":True,"baseline":state["baseline"]})
+            return self.js({"saved":True,"sealed":True,"baseline":state["baseline"]})
         if p.endswith("/api/control"):
             current=load(CONTROL,{"enabled":True,"emergency_stop":False})
             action=str(body.get("action") or "").upper()

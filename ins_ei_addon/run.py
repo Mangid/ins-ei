@@ -334,6 +334,7 @@ def actuator_ensure_baseline(state,key,current,source):
     return baseline[key]
 
 def actuator_capture(state,key,current,source):
+    if not state.get("sealed"): raise RuntimeError("ACTUATOR_BASELINE_NOT_COMMISSIONED")
     baseline=(state.get("baseline") or {}).get(key)
     if baseline is None: raise RuntimeError(f"ACTUATOR_BASELINE_MISSING:{key}")
     owned=state.setdefault("owned",{})
