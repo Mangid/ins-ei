@@ -9,7 +9,7 @@ LABEL io.hass.version="${BUILD_VERSION}"
 LABEL io.hass.type="app"
 LABEL io.hass.arch="${BUILD_ARCH}"
 
-RUN apk add --no-cache python3
+RUN apk add --no-cache python3 py3-paho-mqtt ca-certificates
 COPY ins_ei /opt/ins-ei/ins_ei
 COPY run.py /opt/ins-ei/run.py
 COPY web.py /opt/ins-ei/web.py
