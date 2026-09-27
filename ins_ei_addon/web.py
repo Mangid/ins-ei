@@ -2,6 +2,7 @@
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import json
+from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 from ins_ei.catalog import component_choices, point_choices, point_spec, point_description
@@ -137,6 +138,20 @@ class H(BaseHTTPRequestHandler):
         p = urlparse(self.path).path
         n = int(self.headers.get("Content-Length", "0"))
         body = json.loads(self.rfile.read(n) or b"{}")
+        if p.endswith("/api/control/baseline"):
+            assist=load(Path("/data/assisted_thermal.json"),{})
+            state=load(ACTUATORS,{"version":2,"baseline":{},"owned":{}})
+            if state.get("owned"):
+                return self.js({"error":"ACTUATORS_CURRENTLY_OWNED","owned":list(state["owned"])},409)
+            baseline=state.setdefault("baseline",{})
+            # Commission only values that have already been observed by the local
+            # controller logic; never invent a restore target.
+            if "last_boiler_mode" in assist:
+                baseline["oekofen.pe1.mode"]={"value":assist["last_boiler_mode"],"source":"commissioning","captured_at":datetime.now(timezone.utc).isoformat()}
+            if "last_dhw_once" in assist:
+                baseline["oekofen.ww1.heat_once"]={"value":assist["last_dhw_once"],"source":"commissioning","captured_at":datetime.now(timezone.utc).isoformat()}
+            ACTUATORS.write_text(json.dumps(state,ensure_ascii=False,indent=2),encoding="utf-8")
+            return self.js({"saved":True,"baseline":baseline})
         if p.endswith("/api/control"):
             current=load(CONTROL,{"enabled":True,"emergency_stop":False})
             action=str(body.get("action") or "").upper()
