@@ -22,6 +22,7 @@ DAY_PLAN = Path("/data/day_plan.json")
 CONTROL = Path("/data/control.json")
 ACTUATORS = Path("/data/actuator_state.json")
 ACTUATOR_PREVIEW = Path("/data/actuator_preview.json")
+COMMISSIONING = Path("/data/commissioning.json")
 MQTT = Path("/data/mqtt.json")
 MQTT_STATUS = Path("/data/mqtt_status.json")
 
@@ -112,7 +113,7 @@ class H(BaseHTTPRequestHandler):
         if p.endswith("/api/day-plan"):
             return self.js(load(DAY_PLAN, {"status":"NO_PLAN","slots":[]}))
         if p.endswith("/api/control"):
-            return self.js({"control":load(CONTROL,{"enabled":True,"emergency_stop":False}),"actuators":load(ACTUATORS,{"baseline":{},"owned":{}}),"preview":load(ACTUATOR_PREVIEW,{})})
+            return self.js({"control":load(CONTROL,{"enabled":True,"emergency_stop":False}),"actuators":load(ACTUATORS,{"baseline":{},"owned":{}}),"preview":load(ACTUATOR_PREVIEW,{}),"commissioning":load(COMMISSIONING,{})})
         if p.endswith("/api/discovery"):
             return self.js(load(DISC, []))
         if p.endswith("/api/entities"):
@@ -141,19 +142,20 @@ class H(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(n) or b"{}")
         if p.endswith("/api/control/baseline"):
             state=load(ACTUATORS,{"version":3,"baseline":{},"owned":{},"sealed":False})
-            if state.get("sealed") and not body.get("force"):
-                return self.js({"error":"BASELINE_SEALED"},409)
-            if state.get("owned"):
-                return self.js({"error":"ACTUATORS_CURRENTLY_OWNED","owned":list(state["owned"])},409)
             values=body.get("values") or {}
             required=("oekofen.pe1.mode","oekofen.ww1.heat_once")
             missing=[key for key in required if key not in values]
             if missing:return self.js({"error":"BASELINE_VALUES_INCOMPLETE","missing":missing},409)
-            now=datetime.now(timezone.utc).isoformat()
-            state["baseline"]={key:{"value":values[key],"source":"admin_commissioning","captured_at":now} for key in required}
-            state["commissioned_at"]=now;state["sealed"]=True;state["version"]=3
-            ACTUATORS.write_text(json.dumps(state,ensure_ascii=False,indent=2),encoding="utf-8")
-            return self.js({"saved":True,"sealed":True,"baseline":state["baseline"]})
+            # Existing installations may already be under INS-EI ownership.
+            # Enter a commissioning request; runtime performs the restore using
+            # the supplied intended baseline before the baseline is sealed.
+            request={
+                "requested_at":datetime.now(timezone.utc).isoformat(),
+                "values":{key:values[key] for key in required},
+                "status":"PENDING_RESTORE",
+            }
+            Path("/data/commissioning.json").write_text(json.dumps(request,ensure_ascii=False,indent=2),encoding="utf-8")
+            return self.js({"accepted":True,"status":"PENDING_RESTORE"})
         if p.endswith("/api/control"):
             current=load(CONTROL,{"enabled":True,"emergency_stop":False})
             action=str(body.get("action") or "").upper()
