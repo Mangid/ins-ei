@@ -3,6 +3,7 @@ FROM ${BUILD_FROM}
 
 ARG BUILD_VERSION
 ARG BUILD_ARCH
+RUN printf '%s' "${BUILD_VERSION}" > /opt/ins-ei-addon-version
 ENV INS_EI_ADDON_VERSION=${BUILD_VERSION}
 LABEL io.hass.version="${BUILD_VERSION}"
 LABEL io.hass.type="app"
