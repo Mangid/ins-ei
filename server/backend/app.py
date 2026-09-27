@@ -2895,8 +2895,14 @@ def telemetry_status() -> dict[str, Any]:
     with db() as con:
         rows = con.execute(
             """
-            SELECT *
-            FROM telemetry_installations
+            SELECT ti.*,
+                   (SELECT status FROM fleet_update_commands c
+                    WHERE c.installation_id=ti.installation_id
+                    ORDER BY c.id DESC LIMIT 1) AS update_status,
+                   (SELECT target_version FROM fleet_update_commands c
+                    WHERE c.installation_id=ti.installation_id
+                    ORDER BY c.id DESC LIMIT 1) AS update_target_version
+            FROM telemetry_installations ti
             ORDER BY installation_id
             """
         ).fetchall()
@@ -2930,6 +2936,7 @@ def telemetry_status() -> dict[str, Any]:
             "installation_id": row["installation_id"],
             "current": current,
             "fleet_status":fleet_status,"issues":issues,"health":health,"addon_version":row["addon_version"],
+            "update_status":row["update_status"],"update_target_version":row["update_target_version"],
             "online": age_seconds <= 180,
             "age_seconds": age_seconds,
             "first_seen_at": row["first_seen_at"],
@@ -3398,9 +3405,22 @@ def get_consumption_forecast(installation_id: str, hours: int = 24):
 def fleet_request_update(installation_id: str, payload: FleetUpdateRequest):
     now=datetime.now(timezone.utc).isoformat()
     with db() as con:
-        con.execute("""INSERT INTO fleet_update_commands(installation_id,target_version,status,created_at)
+        installation=con.execute("SELECT addon_version FROM telemetry_installations WHERE installation_id=?",(installation_id,)).fetchone()
+        if installation is None:
+            raise HTTPException(404, f"Unknown installation: {installation_id}")
+        current=installation["addon_version"]
+        if current and current==payload.target_version:
+            return {"status":"already_current","installation_id":installation_id,"target_version":payload.target_version}
+        active=con.execute("""SELECT id,status,target_version FROM fleet_update_commands
+            WHERE installation_id=? AND status IN ('PENDING','CLAIMED')
+            ORDER BY id DESC LIMIT 1""",(installation_id,)).fetchone()
+        if active:
+            return {"status":"already_queued","installation_id":installation_id,
+                    "target_version":active["target_version"],"command_id":active["id"]}
+        cur=con.execute("""INSERT INTO fleet_update_commands(installation_id,target_version,status,created_at)
             VALUES(?,?, 'PENDING',?)""",(installation_id,payload.target_version,now))
-    return {"status":"queued","installation_id":installation_id,"target_version":payload.target_version}
+        command_id=cur.lastrowid
+    return {"status":"queued","installation_id":installation_id,"target_version":payload.target_version,"command_id":command_id}
 
 
 @app.get("/api/v1/fleet/{installation_id}/command")
@@ -3419,9 +3439,17 @@ def fleet_command_result(installation_id: str, command_id: int, body: dict[str,A
     status="COMPLETED" if body.get("ok") else "FAILED"
     now=datetime.now(timezone.utc).isoformat()
     with db() as con:
+        row=con.execute("SELECT * FROM fleet_update_commands WHERE id=? AND installation_id=?",
+                        (command_id,installation_id)).fetchone()
+        if row is None:
+            raise HTTPException(404, "Update command not found")
         con.execute("""UPDATE fleet_update_commands SET status=?,completed_at=?,error=?
             WHERE id=? AND installation_id=?""",(status,now,body.get("error"),command_id,installation_id))
-    return {"status":status}
+    if status=="FAILED":
+        send_native_push_all(f"INS-EI · {installation_id} · UPDATE FAILED",
+                             body.get("error") or f"Update auf {row['target_version']} fehlgeschlagen.",
+                             "/#instances")
+    return {"status":status,"target_version":row["target_version"]}
 
 
 @app.get("/api/v1/telemetry/history/{installation_id}")
