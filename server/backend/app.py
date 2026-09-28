@@ -4919,6 +4919,19 @@ def update_customer_visit(customer_id: int, visit_id: int, visit: ServiceVisitCr
     return {"status":"updated","id":visit_id}
 
 
+@app.put("/api/v1/customers/{customer_id}/history/{entry_id}")
+def update_history_entry(customer_id: int, entry_id: int, item: ServiceVisitCreate):
+    with db() as con:
+        cur=con.execute("""UPDATE service_visits
+            SET visit_date=?,title=?,description=?,device_id=?,category=?,updated_at=?
+            WHERE id=? AND customer_id=?""",
+            (item.visit_date,item.title,item.description,item.device_id,item.category,
+             datetime.now(timezone.utc).isoformat(),entry_id,customer_id))
+        if cur.rowcount==0:
+            raise HTTPException(404,"History entry not found")
+    return {"status":"updated","id":entry_id}
+
+
 @app.post("/api/v1/customers/{customer_id}/visits")
 def create_customer_visit(customer_id: int, visit: ServiceVisitCreate):
     now=datetime.now(timezone.utc).isoformat()
