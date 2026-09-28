@@ -1274,6 +1274,10 @@ def init_customer_db():
             con.execute("ALTER TABLE service_visits ADD COLUMN follow_up TEXT")
         if not column_exists(con, "service_visits", "completed_at"):
             con.execute("ALTER TABLE service_visits ADD COLUMN completed_at TEXT")
+        if not column_exists(con, "service_visits", "device_id"):
+            con.execute("ALTER TABLE service_visits ADD COLUMN device_id INTEGER")
+        if not column_exists(con, "service_visits", "category"):
+            con.execute("ALTER TABLE service_visits ADD COLUMN category TEXT NOT NULL DEFAULT 'Notiz'")
 
         con.execute(
             """
@@ -4336,6 +4340,8 @@ class ServiceVisitCreate(BaseModel):
     visit_date: str
     title: str
     description: str | None = None
+    device_id: int | None = None
+    category: str = "Notiz"
     duration_hours: float | None = None
     travel_km: float | None = None
     material: str | None = None
@@ -4921,10 +4927,21 @@ def create_customer_visit(customer_id: int, visit: ServiceVisitCreate):
             raise HTTPException(404,"Customer not found")
         cur=con.execute("""INSERT INTO service_visits
             (customer_id,visit_date,title,description,duration_hours,travel_km,material,
-             invoice_reference,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)""",
+             invoice_reference,device_id,category,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?, 'completed',?,?)""",
             (customer_id,visit.visit_date,visit.title,visit.description,visit.duration_hours,
-             visit.travel_km,visit.material,visit.invoice_reference,now,now))
+             visit.travel_km,visit.material,visit.invoice_reference,visit.device_id,visit.category,now,now))
     return {"status":"created","id":cur.lastrowid}
+
+
+@app.get("/api/v1/customers/{customer_id}/history")
+def list_customer_history(customer_id: int):
+    with db() as con:
+        rows=con.execute("""SELECT v.*,d.manufacturer device_manufacturer,d.model device_model
+            FROM service_visits v
+            LEFT JOIN devices d ON d.id=v.device_id
+            WHERE v.customer_id=?
+            ORDER BY v.visit_date DESC,v.id DESC""",(customer_id,)).fetchall()
+    return {"history":[dict(r) for r in rows]}
 
 
 @app.get("/api/v1/customers/{customer_id}")
