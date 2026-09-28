@@ -20,6 +20,7 @@ import os
 import paho.mqtt.client as mqtt
 
 from pywebpush import webpush, WebPushException
+from cryptography.fernet import Fernet, InvalidToken
 
 from fastapi import FastAPI, HTTPException, Header, Depends, UploadFile, File, Form
 from pydantic import BaseModel, Field
@@ -27,7 +28,7 @@ from fastapi.responses import FileResponse
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
-VERSION = "1.6.2"
+VERSION = "1.6.3"
 DB_PATH = Path("/data/ins_ei.db")
 PUSHSAFER_KEY = Path("/run/secrets/pushsafer_private_key")
 MANAGEMENT_KEY = Path("/run/secrets/management_api_key")
@@ -45,6 +46,7 @@ MQTT_PASSWORD = Path("/run/secrets/mqtt_password")
 SEVDESK_API_TOKEN = Path("/run/secrets/sevdesk_api_token")
 FINANCE_TAX_RESERVE_EUR = Path("/run/secrets/finance_tax_reserve_eur")
 FINANCE_OPERATING_BUFFER_EUR = Path("/run/secrets/finance_operating_buffer_eur")
+CREDENTIAL_VAULT_KEY = Path("/data/credential_vault.key")
 SEVDESK_API_BASE = "https://my.sevdesk.de/api/v1"
 MQTT_HOST = "mqtt.ins-enertech.net"
 MQTT_PORT = 8883
@@ -975,6 +977,21 @@ def init_db():
             )
 
 
+def credential_cipher() -> Fernet:
+    if not CREDENTIAL_VAULT_KEY.exists():
+        CREDENTIAL_VAULT_KEY.write_bytes(Fernet.generate_key())
+        try: os.chmod(CREDENTIAL_VAULT_KEY, 0o600)
+        except OSError: pass
+    return Fernet(CREDENTIAL_VAULT_KEY.read_bytes().strip())
+
+def encrypt_credential(value: str | None) -> str | None:
+    return credential_cipher().encrypt(value.encode()).decode() if value else None
+
+def decrypt_credential(value: str | None) -> str | None:
+    if not value: return None
+    try: return credential_cipher().decrypt(value.encode()).decode()
+    except (InvalidToken, ValueError): raise HTTPException(500, "Credential vault decryption failed")
+
 VALID_RECURRENCES = {"none", "daily", "weekly", "monthly"}
 
 
@@ -1207,6 +1224,16 @@ def init_customer_db():
             )
             """
         )
+
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS customer_credentials (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, customer_id INTEGER NOT NULL, device_id INTEGER,
+                credential_type TEXT NOT NULL DEFAULT 'Sonstiges', title TEXT NOT NULL, url TEXT, username TEXT,
+                secret_encrypted TEXT, notes_encrypted TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                FOREIGN KEY (customer_id) REFERENCES customers(id), FOREIGN KEY (device_id) REFERENCES devices(id)
+            )
+        """)
+        con.execute("CREATE INDEX IF NOT EXISTS idx_customer_credentials_customer ON customer_credentials (customer_id)")
 
         con.execute(
             """
@@ -4974,6 +5001,65 @@ def list_customer_history(customer_id: int):
             ORDER BY v.visit_date DESC,v.id DESC""",(customer_id,)).fetchall()
     return {"history":[dict(r) for r in rows]}
 
+
+class CustomerCredentialWrite(BaseModel):
+    credential_type: str = "Sonstiges"
+    title: str
+    device_id: int | None = None
+    url: str | None = None
+    username: str | None = None
+    secret: str | None = None
+    notes: str | None = None
+
+def credential_public(row, reveal=False):
+    item=dict(row); secret=item.pop("secret_encrypted",None); notes=item.pop("notes_encrypted",None)
+    item["has_secret"]=bool(secret); item["secret"]=decrypt_credential(secret) if reveal else None
+    item["notes"]=decrypt_credential(notes)
+    return item
+
+@app.get("/api/v1/customers/{customer_id}/credentials")
+def list_customer_credentials(customer_id: int):
+    with db() as con:
+        rows=con.execute("""SELECT cc.*,d.manufacturer device_manufacturer,d.model device_model FROM customer_credentials cc
+            LEFT JOIN devices d ON d.id=cc.device_id WHERE cc.customer_id=? ORDER BY cc.title COLLATE NOCASE""",(customer_id,)).fetchall()
+    return {"credentials":[credential_public(r) for r in rows]}
+
+@app.get("/api/v1/customers/{customer_id}/credentials/{credential_id}")
+def reveal_customer_credential(customer_id: int, credential_id: int):
+    with db() as con: row=con.execute("SELECT * FROM customer_credentials WHERE id=? AND customer_id=?",(credential_id,customer_id)).fetchone()
+    if row is None: raise HTTPException(404,"Credential not found")
+    return credential_public(row,True)
+
+@app.post("/api/v1/customers/{customer_id}/credentials")
+def create_customer_credential(customer_id: int, item: CustomerCredentialWrite):
+    title=item.title.strip()
+    if not title: raise HTTPException(400,"Title is required")
+    now=datetime.now(timezone.utc).isoformat()
+    with db() as con:
+        if con.execute("SELECT 1 FROM customers WHERE id=?",(customer_id,)).fetchone() is None: raise HTTPException(404,"Customer not found")
+        cur=con.execute("""INSERT INTO customer_credentials (customer_id,device_id,credential_type,title,url,username,secret_encrypted,notes_encrypted,created_at,updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?)""",(customer_id,item.device_id,item.credential_type,title,item.url,item.username,encrypt_credential(item.secret),encrypt_credential(item.notes),now,now))
+    return {"status":"created","id":cur.lastrowid}
+
+@app.put("/api/v1/customers/{customer_id}/credentials/{credential_id}")
+def update_customer_credential(customer_id: int, credential_id: int, item: CustomerCredentialWrite):
+    title=item.title.strip()
+    if not title: raise HTTPException(400,"Title is required")
+    with db() as con:
+        old=con.execute("SELECT * FROM customer_credentials WHERE id=? AND customer_id=?",(credential_id,customer_id)).fetchone()
+        if old is None: raise HTTPException(404,"Credential not found")
+        secret=old["secret_encrypted"] if item.secret is None else encrypt_credential(item.secret)
+        notes=encrypt_credential(item.notes)
+        con.execute("""UPDATE customer_credentials SET device_id=?,credential_type=?,title=?,url=?,username=?,secret_encrypted=?,notes_encrypted=?,updated_at=? WHERE id=? AND customer_id=?""",
+            (item.device_id,item.credential_type,title,item.url,item.username,secret,notes,datetime.now(timezone.utc).isoformat(),credential_id,customer_id))
+    return {"status":"updated","id":credential_id}
+
+@app.delete("/api/v1/customers/{customer_id}/credentials/{credential_id}")
+def delete_customer_credential(customer_id: int, credential_id: int):
+    with db() as con:
+        cur=con.execute("DELETE FROM customer_credentials WHERE id=? AND customer_id=?",(credential_id,customer_id))
+        if cur.rowcount==0: raise HTTPException(404,"Credential not found")
+    return {"status":"deleted","id":credential_id}
 
 @app.get("/api/v1/customers/{customer_id}")
 def get_customer(customer_id: int):
