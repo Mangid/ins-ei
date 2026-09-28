@@ -4932,6 +4932,24 @@ def update_history_entry(customer_id: int, entry_id: int, item: ServiceVisitCrea
     return {"status":"updated","id":entry_id}
 
 
+@app.delete("/api/v1/customers/{customer_id}/history/{entry_id}")
+def delete_history_entry(customer_id: int, entry_id: int):
+    with db() as con:
+        row=con.execute("SELECT id FROM service_visits WHERE id=? AND customer_id=?",(entry_id,customer_id)).fetchone()
+        if row is None:
+            raise HTTPException(404,"History entry not found")
+        files=con.execute("SELECT stored_name FROM customer_files WHERE visit_id=?",(entry_id,)).fetchall()
+        con.execute("DELETE FROM customer_files WHERE visit_id=?",(entry_id,))
+        con.execute("DELETE FROM service_visits WHERE id=? AND customer_id=?",(entry_id,customer_id))
+    for f in files:
+        try:
+            path=FILES_PATH/f["stored_name"]
+            if path.exists(): path.unlink()
+        except Exception:
+            pass
+    return {"status":"deleted","id":entry_id}
+
+
 @app.post("/api/v1/customers/{customer_id}/visits")
 def create_customer_visit(customer_id: int, visit: ServiceVisitCreate):
     now=datetime.now(timezone.utc).isoformat()
