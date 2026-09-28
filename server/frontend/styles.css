@@ -169,3 +169,15 @@
 .plant-history-row{margin:0!important;padding:11px 0!important;border:0!important;border-top:1px solid #172e40!important;border-radius:0!important;background:transparent!important}
 .plant-history-row .device-title{border:0!important;padding:0!important;margin:0!important}
 @media(max-width:700px){.customer-hero{align-items:flex-start;flex-direction:column}.customer-quick{justify-content:flex-start}.customer-hero h1{font-size:25px}.device-list>.device-card{padding:14px}.device-title{align-items:flex-start}.device-title>div:last-child{display:flex;flex-wrap:wrap;gap:6px}}
+
+/* Customer credential vault */
+.credential-list{display:grid;gap:12px;margin-top:16px}
+.credential-card{border:1px solid rgba(120,130,140,.22);border-radius:14px;padding:16px;background:var(--card-bg,#fff)}
+.credential-main{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin-bottom:12px}
+.credential-main strong{display:block;font-size:1.05rem;margin:4px 0}.credential-main small{display:block;opacity:.7}
+.credential-type{display:inline-block;font-size:.75rem;font-weight:700;padding:3px 8px;border-radius:999px;background:rgba(80,110,140,.12)}
+.credential-actions{display:flex;gap:8px;flex-wrap:wrap}
+.credential-row{display:grid;grid-template-columns:90px minmax(0,1fr) auto;gap:10px;align-items:center;padding:8px 0;border-top:1px solid rgba(120,130,140,.14)}
+.credential-row>span{font-size:.82rem;opacity:.65}.credential-row code,.credential-row a{overflow-wrap:anywhere;white-space:normal}
+.credential-notes{margin-top:10px;padding-top:10px;border-top:1px solid rgba(120,130,140,.14);white-space:pre-wrap}
+@media(max-width:700px){.credential-main{display:block}.credential-actions{margin-top:10px}.credential-row{grid-template-columns:72px minmax(0,1fr)}.credential-row button{grid-column:2}}
