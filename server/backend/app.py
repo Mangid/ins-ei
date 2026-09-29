@@ -28,7 +28,7 @@ from fastapi.responses import FileResponse
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
-VERSION = "1.7.2"
+VERSION = "1.7.3"
 DB_PATH = Path("/data/ins_ei.db")
 PUSHSAFER_KEY = Path("/run/secrets/pushsafer_private_key")
 MANAGEMENT_KEY = Path("/run/secrets/management_api_key")
@@ -1249,6 +1249,8 @@ def init_customer_db():
             con.execute("ALTER TABLE devices ADD COLUMN source_notes TEXT")
         if not column_exists(con, "devices", "last_maintenance_date"):
             con.execute("ALTER TABLE devices ADD COLUMN last_maintenance_date TEXT")
+        if not column_exists(con, "devices", "maintenance_customer"):
+            con.execute("ALTER TABLE devices ADD COLUMN maintenance_customer INTEGER NOT NULL DEFAULT 0")
 
         con.execute(
             """
@@ -1388,6 +1390,8 @@ def init_customer_db():
             con.execute("ALTER TABLE service_visits ADD COLUMN device_id INTEGER")
         if not column_exists(con, "service_visits", "category"):
             con.execute("ALTER TABLE service_visits ADD COLUMN category TEXT NOT NULL DEFAULT 'Notiz'")
+        if not column_exists(con, "service_visits", "entry_type"):
+            con.execute("ALTER TABLE service_visits ADD COLUMN entry_type TEXT NOT NULL DEFAULT 'note'")
 
         con.execute(
             """
@@ -4392,7 +4396,25 @@ def list_customers(q: str | None = None):
             rows = con.execute(
                 "SELECT * FROM customers ORDER BY name COLLATE NOCASE"
             ).fetchall()
-    return {"count": len(rows), "customers": [dict(r) for r in rows]}
+    year_start = f"{date.today().year:04d}-01-01"
+    year_end = f"{date.today().year + 1:04d}-01-01"
+    customers = []
+    with db() as con:
+        for row in rows:
+            item = dict(row)
+            flagged = con.execute("""SELECT d.id FROM devices d
+                JOIN installations i ON i.id=d.installation_id
+                WHERE i.customer_id=? AND COALESCE(d.maintenance_customer,0)=1""",(row["id"],)).fetchall()
+            item["maintenance_customer"] = bool(flagged)
+            item["maintenance_due"] = any(
+                con.execute("""SELECT 1 FROM service_visits
+                    WHERE customer_id=? AND device_id=? AND visit_date>=? AND visit_date<?
+                      AND (entry_type='maintenance' OR category='Wartung') LIMIT 1""",
+                    (row["id"],device["id"],year_start,year_end)).fetchone() is None
+                for device in flagged
+            )
+            customers.append(item)
+    return {"count": len(customers), "customers": customers}
 
 
 class DeviceCreate(BaseModel):
@@ -4405,6 +4427,7 @@ class DeviceCreate(BaseModel):
     power_kw: float | None = None
     maintenance_interval_months: int = 12
     maintenance_next_due_date: str | None = None
+    maintenance_customer: bool = False
     notes: str | None = None
 
 
@@ -4429,11 +4452,12 @@ def create_customer_device(customer_id: int, device: DeviceCreate):
             installation_id = installation["id"]
         cur = con.execute("""INSERT INTO devices
             (installation_id,device_type,manufacturer,model,serial_number,touch_id,
-             construction_year,commissioning_date,power_kw,maintenance_interval_months,maintenance_next_due_date,online_capable,notes,created_at,updated_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+             construction_year,commissioning_date,power_kw,maintenance_interval_months,maintenance_next_due_date,maintenance_customer,online_capable,notes,created_at,updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (installation_id,"heating",device.manufacturer,device.model,device.serial_number,
              device.touch_id,device.construction_year,device.commissioning_date,device.power_kw,
              device.maintenance_interval_months,device.maintenance_next_due_date,
+             1 if device.maintenance_customer else 0,
              1 if device.manufacturer.lower() in ("ökofen","oekofen") else 0,
              device.notes,now,now))
         device_id=cur.lastrowid
@@ -4446,10 +4470,11 @@ def update_device(device_id: int, device: DeviceCreate):
     with db() as con:
         cur=con.execute("""UPDATE devices SET manufacturer=?,model=?,serial_number=?,touch_id=?,
             construction_year=?,commissioning_date=?,power_kw=?,maintenance_interval_months=?,
-            maintenance_next_due_date=?,online_capable=?,notes=?,updated_at=? WHERE id=?""",
+            maintenance_next_due_date=?,maintenance_customer=?,online_capable=?,notes=?,updated_at=? WHERE id=?""",
             (device.manufacturer,device.model,device.serial_number,device.touch_id,
              device.construction_year,device.commissioning_date,device.power_kw,
              device.maintenance_interval_months,device.maintenance_next_due_date,
+             1 if device.maintenance_customer else 0,
              1 if device.manufacturer.lower() in ("ökofen","oekofen") else 0,
              device.notes,now,device_id))
         if cur.rowcount==0:
@@ -4516,6 +4541,7 @@ class ServiceVisitCreate(BaseModel):
     description: str | None = None
     device_id: int | None = None
     category: str = "Notiz"
+    entry_type: str = "note"
     duration_hours: float | None = None
     travel_km: float | None = None
     material: str | None = None
@@ -5097,9 +5123,9 @@ def update_customer_visit(customer_id: int, visit_id: int, visit: ServiceVisitCr
 def update_history_entry(customer_id: int, entry_id: int, item: ServiceVisitCreate):
     with db() as con:
         cur=con.execute("""UPDATE service_visits
-            SET visit_date=?,title=?,description=?,device_id=?,category=?,updated_at=?
+            SET visit_date=?,title=?,description=?,device_id=?,category=?,entry_type=?,updated_at=?
             WHERE id=? AND customer_id=?""",
-            (item.visit_date,item.title,item.description,item.device_id,item.category,
+            (item.visit_date,item.title,item.description,item.device_id,item.category,item.entry_type,
              datetime.now(timezone.utc).isoformat(),entry_id,customer_id))
         if cur.rowcount==0:
             raise HTTPException(404,"History entry not found")
@@ -5132,9 +5158,9 @@ def create_customer_visit(customer_id: int, visit: ServiceVisitCreate):
             raise HTTPException(404,"Customer not found")
         cur=con.execute("""INSERT INTO service_visits
             (customer_id,visit_date,title,description,duration_hours,travel_km,material,
-             invoice_reference,device_id,category,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?, 'completed',?,?)""",
+             invoice_reference,device_id,category,entry_type,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?, 'completed',?,?)""",
             (customer_id,visit.visit_date,visit.title,visit.description,visit.duration_hours,
-             visit.travel_km,visit.material,visit.invoice_reference,visit.device_id,visit.category,now,now))
+             visit.travel_km,visit.material,visit.invoice_reference,visit.device_id,visit.category,visit.entry_type,now,now))
     return {"status":"created","id":cur.lastrowid}
 
 
