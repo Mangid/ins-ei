@@ -17,12 +17,15 @@ import urllib.error
 import uuid
 import shutil
 import os
+import hashlib
+import hmac
+import secrets
 import paho.mqtt.client as mqtt
 
 from pywebpush import webpush, WebPushException
 from cryptography.fernet import Fernet, InvalidToken
 
-from fastapi import FastAPI, HTTPException, Header, Depends, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, Header, Depends, UploadFile, File, Form, Cookie, Response
 from pydantic import BaseModel, Field
 from fastapi.responses import FileResponse
 from mcp.server.fastmcp import FastMCP
@@ -5514,22 +5517,73 @@ def reschedule_reminder(reminder_id: int, request: ReminderReschedule, _: None =
 app.mount("/mcp", mcp_http_app)
 
 
-@app.get("/portal/api/me")
-def customer_portal_me():
-    """Generic portal bootstrap. Authentication/tenant resolution replaces the pilot identity next."""
+class PortalLogin(BaseModel):
+    username: str
+    password: str
+
+
+def _portal_hash(password: str, salt: str) -> str:
+    return hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(salt), 200_000).hex()
+
+
+def _portal_session(token: str | None) -> dict[str, Any]:
+    if not token:
+        raise HTTPException(401, "PORTAL_LOGIN_REQUIRED")
+    with db() as con:
+        row = con.execute("""SELECT s.token,u.id,u.username,u.display_name,u.is_admin
+            FROM portal_sessions s JOIN portal_users u ON u.id=s.user_id
+            WHERE s.token=? AND s.expires_at>?""", (token, datetime.now(timezone.utc).isoformat())).fetchone()
+    if row is None:
+        raise HTTPException(401, "PORTAL_SESSION_INVALID")
+    return dict(row)
+
+
+def _portal_bootstrap(user: dict[str, Any]) -> dict[str, Any]:
+    with db() as con:
+        rows = con.execute("""SELECT d.id,d.name,d.description,d.module,d.config_json
+            FROM portal_dashboards d JOIN portal_user_dashboards ud ON ud.dashboard_id=d.id
+            WHERE ud.user_id=? ORDER BY d.sort_order,d.name""", (user["id"],)).fetchall()
+    dashboards = [{**dict(r), "config": json.loads(r["config_json"] or "{}")} for r in rows]
+    for d in dashboards:
+        d.pop("config_json", None)
     return {
-        "display_name": "Gertrude Oschmalz",
-        "status": "Pilot",
-        "message": "Kundenportal-Hülle aktiv. Geräteanbindung folgt über generische Portal-Module.",
+        "display_name": user["display_name"],
+        "is_admin": bool(user["is_admin"]),
+        "status": "Pilot" if not user["is_admin"] else "Administrator",
+        "message": "Kundenportal aktiv.",
+        "dashboards": dashboards,
         "systems": [
-            {
-                "id": "heating",
-                "name": "Temporäre Heizung",
-                "description": "Wohnzimmer, Küche, Schlafzimmer und Bad",
-                "status": "Bereit zur Anbindung",
-            }
+            {"id": d["id"], "name": d["name"], "description": d["description"], "status": "Bereit"}
+            for d in dashboards
         ],
     }
+
+
+@app.post("/portal/api/login")
+def customer_portal_login(request: PortalLogin, response: Response):
+    with db() as con:
+        row = con.execute("SELECT * FROM portal_users WHERE lower(username)=lower(?) AND active=1", (request.username.strip(),)).fetchone()
+        if row is None or not hmac.compare_digest(_portal_hash(request.password, row["password_salt"]), row["password_hash"]):
+            raise HTTPException(401, "PORTAL_LOGIN_FAILED")
+        token = secrets.token_urlsafe(32)
+        expires = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+        con.execute("INSERT INTO portal_sessions(token,user_id,expires_at) VALUES(?,?,?)", (token,row["id"],expires))
+    response.set_cookie("ins_portal_session", token, max_age=30*86400, httponly=True, secure=True, samesite="lax")
+    return {"logged_in": True, "display_name": row["display_name"]}
+
+
+@app.post("/portal/api/logout")
+def customer_portal_logout(response: Response, ins_portal_session: str | None = Cookie(default=None)):
+    if ins_portal_session:
+        with db() as con:
+            con.execute("DELETE FROM portal_sessions WHERE token=?", (ins_portal_session,))
+    response.delete_cookie("ins_portal_session")
+    return {"logged_in": False}
+
+
+@app.get("/portal/api/me")
+def customer_portal_me(ins_portal_session: str | None = Cookie(default=None)):
+    return _portal_bootstrap(_portal_session(ins_portal_session))
 
 
 @app.get("/portal")
