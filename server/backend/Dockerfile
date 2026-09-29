@@ -7,7 +7,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app.py .
 COPY notifications.py .
-COPY ../customer-portal /app/customer-portal
+COPY customer-portal /app/customer-portal
 
 EXPOSE 8100
 
