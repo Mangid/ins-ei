@@ -28,7 +28,7 @@ from fastapi.responses import FileResponse
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
-VERSION = "1.7.3"
+VERSION = "1.7.4"
 DB_PATH = Path("/data/ins_ei.db")
 PUSHSAFER_KEY = Path("/run/secrets/pushsafer_private_key")
 MANAGEMENT_KEY = Path("/run/secrets/management_api_key")
@@ -4480,6 +4480,21 @@ def update_device(device_id: int, device: DeviceCreate):
         if cur.rowcount==0:
             raise HTTPException(404,"Device not found")
     return {"status":"updated","id":device_id}
+
+
+class DeviceMaintenanceCustomer(BaseModel):
+    maintenance_customer: bool
+
+
+@app.put("/api/v1/devices/{device_id}/maintenance-customer")
+def update_device_maintenance_customer(device_id: int, item: DeviceMaintenanceCustomer):
+    with db() as con:
+        cur=con.execute("""UPDATE devices SET maintenance_customer=?,updated_at=? WHERE id=?""",
+            (1 if item.maintenance_customer else 0,datetime.now(timezone.utc).isoformat(),device_id))
+        if cur.rowcount==0:
+            raise HTTPException(404,"Device not found")
+        row=con.execute("SELECT maintenance_customer FROM devices WHERE id=?",(device_id,)).fetchone()
+    return {"status":"updated","id":device_id,"maintenance_customer":bool(row["maintenance_customer"])}
 
 
 class DeviceLinks(BaseModel):
