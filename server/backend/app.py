@@ -17,12 +17,15 @@ import urllib.error
 import uuid
 import shutil
 import os
+import hashlib
+import hmac
+import secrets
 import paho.mqtt.client as mqtt
 
 from pywebpush import webpush, WebPushException
 from cryptography.fernet import Fernet, InvalidToken
 
-from fastapi import FastAPI, HTTPException, Header, Depends, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, Header, Depends, UploadFile, File, Form, Cookie, Response
 from pydantic import BaseModel, Field
 from fastapi.responses import FileResponse
 from mcp.server.fastmcp import FastMCP
@@ -151,6 +154,8 @@ def mqtt_live_worker():
         except Exception as exc:
             print("MQTT bus connection error:",repr(exc));time.sleep(5)
 
+
+CUSTOMER_PORTAL_DIR = Path("/app/customer-portal")
 
 app = FastAPI(
     title="INS-EI API",
@@ -1058,6 +1063,71 @@ def init_db():
                 "ADD COLUMN recurrence_timezone TEXT "
                 "NOT NULL DEFAULT 'Europe/Vienna'"
             )
+
+
+
+def init_portal_db():
+    with db() as con:
+        con.executescript("""
+        CREATE TABLE IF NOT EXISTS portal_users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL UNIQUE,
+            display_name TEXT NOT NULL,
+            password_salt TEXT NOT NULL,
+            password_hash TEXT NOT NULL,
+            is_admin INTEGER NOT NULL DEFAULT 0,
+            active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS portal_dashboards (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT,
+            module TEXT NOT NULL,
+            config_json TEXT NOT NULL DEFAULT '{}',
+            sort_order INTEGER NOT NULL DEFAULT 100
+        );
+        CREATE TABLE IF NOT EXISTS portal_user_dashboards (
+            user_id INTEGER NOT NULL,
+            dashboard_id TEXT NOT NULL,
+            PRIMARY KEY(user_id,dashboard_id),
+            FOREIGN KEY(user_id) REFERENCES portal_users(id),
+            FOREIGN KEY(dashboard_id) REFERENCES portal_dashboards(id)
+        );
+        CREATE TABLE IF NOT EXISTS portal_sessions (
+            token TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            expires_at TEXT NOT NULL,
+            FOREIGN KEY(user_id) REFERENCES portal_users(id)
+        );
+        """)
+        con.execute("""INSERT OR IGNORE INTO portal_dashboards
+            (id,name,description,module,config_json,sort_order) VALUES(?,?,?,?,?,?)""",
+            ("oschmalz-heating","Temporäre Heizung",
+             "Wohnzimmer, Küche, Schlafzimmer und Bad","heating",
+             json.dumps({"rooms":["Wohnzimmer","Küche","Schlafzimmer","Bad"]}),10))
+
+
+def _ensure_portal_admin():
+    """Bootstrap only the first administrator from a server secret."""
+    admin_password = Path("/run/secrets/portal_admin_password")
+    if not admin_password.exists() or not admin_password.read_text().strip():
+        return
+    with db() as con:
+        existing = con.execute("SELECT id FROM portal_users WHERE username='niki'").fetchone()
+        if existing:
+            user_id = existing["id"]
+        else:
+            salt = secrets.token_hex(16)
+            password_hash = _portal_hash(admin_password.read_text().strip(), salt)
+            cur = con.execute("""INSERT INTO portal_users
+                (username,display_name,password_salt,password_hash,is_admin,created_at)
+                VALUES(?,?,?,?,1,?)""",
+                ("niki","Niki",salt,password_hash,datetime.now(timezone.utc).isoformat()))
+            user_id = cur.lastrowid
+        for dashboard in con.execute("SELECT id FROM portal_dashboards"):
+            con.execute("INSERT OR IGNORE INTO portal_user_dashboards(user_id,dashboard_id) VALUES(?,?)",(user_id,dashboard["id"]))
+
 
 
 def credential_cipher() -> Fernet:
@@ -3635,6 +3705,8 @@ def oekofen_worker():
 async def lifespan(app: FastAPI):
     init_db()
     init_customer_db()
+    init_portal_db()
+    _ensure_portal_admin()
     init_oekofen_db()
 
     mqtt_thread = threading.Thread(
@@ -5510,3 +5582,180 @@ def reschedule_reminder(reminder_id: int, request: ReminderReschedule, _: None =
 
 # MCP endpoint
 app.mount("/mcp", mcp_http_app)
+
+
+class PortalLogin(BaseModel):
+    username: str
+    password: str
+
+
+class PortalUserCreate(BaseModel):
+    username: str
+    display_name: str
+    password: str
+    is_admin: bool = False
+    dashboard_ids: list[str] = []
+
+
+class PortalUserUpdate(BaseModel):
+    display_name: str
+    active: bool = True
+    is_admin: bool = False
+    password: str | None = None
+    dashboard_ids: list[str] = []
+
+
+def _portal_hash(password: str, salt: str) -> str:
+    return hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(salt), 200_000).hex()
+
+
+def _portal_session(token: str | None) -> dict[str, Any]:
+    if not token:
+        raise HTTPException(401, "PORTAL_LOGIN_REQUIRED")
+    with db() as con:
+        row = con.execute("""SELECT s.token,u.id,u.username,u.display_name,u.is_admin
+            FROM portal_sessions s JOIN portal_users u ON u.id=s.user_id
+            WHERE s.token=? AND s.expires_at>?""", (token, datetime.now(timezone.utc).isoformat())).fetchone()
+    if row is None:
+        raise HTTPException(401, "PORTAL_SESSION_INVALID")
+    return dict(row)
+
+
+def _portal_bootstrap(user: dict[str, Any]) -> dict[str, Any]:
+    with db() as con:
+        rows = con.execute("""SELECT d.id,d.name,d.description,d.module,d.config_json
+            FROM portal_dashboards d JOIN portal_user_dashboards ud ON ud.dashboard_id=d.id
+            WHERE ud.user_id=? ORDER BY d.sort_order,d.name""", (user["id"],)).fetchall()
+    dashboards = [{**dict(r), "config": json.loads(r["config_json"] or "{}")} for r in rows]
+    for d in dashboards:
+        d.pop("config_json", None)
+    return {
+        "display_name": user["display_name"],
+        "is_admin": bool(user["is_admin"]),
+        "status": "Pilot" if not user["is_admin"] else "Administrator",
+        "message": "Kundenportal aktiv.",
+        "dashboards": dashboards,
+        "systems": [
+            {"id": d["id"], "name": d["name"], "description": d["description"], "status": "Bereit"}
+            for d in dashboards
+        ],
+    }
+
+
+def _portal_admin(ins_portal_session: str | None = Cookie(default=None)) -> dict[str, Any]:
+    user = _portal_session(ins_portal_session)
+    if not user["is_admin"]:
+        raise HTTPException(403, "PORTAL_ADMIN_REQUIRED")
+    return user
+
+
+@app.get("/portal/api/admin/users")
+def portal_admin_users(ins_portal_session: str | None = Cookie(default=None)):
+    _portal_admin(ins_portal_session)
+    with db() as con:
+        dashboards = [dict(x) for x in con.execute("SELECT id,name,description FROM portal_dashboards ORDER BY sort_order,name")]
+        users = []
+        for row in con.execute("SELECT id,username,display_name,is_admin,active,created_at FROM portal_users ORDER BY display_name"):
+            item = dict(row)
+            item["dashboard_ids"] = [x["dashboard_id"] for x in con.execute("SELECT dashboard_id FROM portal_user_dashboards WHERE user_id=?",(row["id"],))]
+            users.append(item)
+    return {"users": users, "dashboards": dashboards}
+
+
+@app.post("/portal/api/admin/users")
+def portal_admin_create_user(request: PortalUserCreate, ins_portal_session: str | None = Cookie(default=None)):
+    _portal_admin(ins_portal_session)
+    username = request.username.strip().lower()
+    if not username or len(request.password) < 8:
+        raise HTTPException(400, "PORTAL_USER_INVALID")
+    salt = secrets.token_hex(16)
+    try:
+        with db() as con:
+            cur = con.execute("""INSERT INTO portal_users(username,display_name,password_salt,password_hash,is_admin,active,created_at)
+                VALUES(?,?,?,?,?,1,?)""",(username,request.display_name.strip(),salt,_portal_hash(request.password,salt),int(request.is_admin),datetime.now(timezone.utc).isoformat()))
+            uid = cur.lastrowid
+            allowed={x["id"] for x in con.execute("SELECT id FROM portal_dashboards")}
+            ids = allowed if request.is_admin else set(request.dashboard_ids) & allowed
+            for did in ids:
+                con.execute("INSERT INTO portal_user_dashboards(user_id,dashboard_id) VALUES(?,?)",(uid,did))
+    except sqlite3.IntegrityError:
+        raise HTTPException(409, "PORTAL_USERNAME_EXISTS")
+    return {"created": True, "id": uid}
+
+
+@app.put("/portal/api/admin/users/{user_id}")
+def portal_admin_update_user(user_id: int, request: PortalUserUpdate, ins_portal_session: str | None = Cookie(default=None)):
+    admin = _portal_admin(ins_portal_session)
+    with db() as con:
+        row=con.execute("SELECT * FROM portal_users WHERE id=?",(user_id,)).fetchone()
+        if row is None: raise HTTPException(404, "PORTAL_USER_NOT_FOUND")
+        if user_id == admin["id"] and not request.active:
+            raise HTTPException(400, "PORTAL_CANNOT_DISABLE_SELF")
+        con.execute("UPDATE portal_users SET display_name=?,active=?,is_admin=? WHERE id=?",(request.display_name.strip(),int(request.active),int(request.is_admin),user_id))
+        if request.password:
+            if len(request.password) < 8: raise HTTPException(400, "PORTAL_PASSWORD_TOO_SHORT")
+            salt=secrets.token_hex(16)
+            con.execute("UPDATE portal_users SET password_salt=?,password_hash=? WHERE id=?",(salt,_portal_hash(request.password,salt),user_id))
+            con.execute("DELETE FROM portal_sessions WHERE user_id=?",(user_id,))
+        con.execute("DELETE FROM portal_user_dashboards WHERE user_id=?",(user_id,))
+        allowed={x["id"] for x in con.execute("SELECT id FROM portal_dashboards")}
+        ids = allowed if request.is_admin else set(request.dashboard_ids) & allowed
+        for did in ids: con.execute("INSERT INTO portal_user_dashboards(user_id,dashboard_id) VALUES(?,?)",(user_id,did))
+    return {"updated": True}
+
+
+@app.delete("/portal/api/admin/users/{user_id}")
+def portal_admin_delete_user(user_id: int, ins_portal_session: str | None = Cookie(default=None)):
+    admin = _portal_admin(ins_portal_session)
+    if user_id == admin["id"]: raise HTTPException(400, "PORTAL_CANNOT_DELETE_SELF")
+    with db() as con:
+        con.execute("DELETE FROM portal_sessions WHERE user_id=?",(user_id,))
+        con.execute("DELETE FROM portal_user_dashboards WHERE user_id=?",(user_id,))
+        cur=con.execute("DELETE FROM portal_users WHERE id=?",(user_id,))
+        if not cur.rowcount: raise HTTPException(404, "PORTAL_USER_NOT_FOUND")
+    return {"deleted": True}
+
+
+@app.post("/portal/api/login")
+def customer_portal_login(request: PortalLogin, response: Response):
+    with db() as con:
+        row = con.execute("SELECT * FROM portal_users WHERE lower(username)=lower(?) AND active=1", (request.username.strip(),)).fetchone()
+        if row is None or not hmac.compare_digest(_portal_hash(request.password, row["password_salt"]), row["password_hash"]):
+            raise HTTPException(401, "PORTAL_LOGIN_FAILED")
+        token = secrets.token_urlsafe(32)
+        expires = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+        con.execute("INSERT INTO portal_sessions(token,user_id,expires_at) VALUES(?,?,?)", (token,row["id"],expires))
+    response.set_cookie("ins_portal_session", token, max_age=30*86400, httponly=True, secure=True, samesite="lax")
+    return {"logged_in": True, "display_name": row["display_name"]}
+
+
+@app.post("/portal/api/logout")
+def customer_portal_logout(response: Response, ins_portal_session: str | None = Cookie(default=None)):
+    if ins_portal_session:
+        with db() as con:
+            con.execute("DELETE FROM portal_sessions WHERE token=?", (ins_portal_session,))
+    response.delete_cookie("ins_portal_session")
+    return {"logged_in": False}
+
+
+@app.get("/portal/api/me")
+def customer_portal_me(ins_portal_session: str | None = Cookie(default=None)):
+    return _portal_bootstrap(_portal_session(ins_portal_session))
+
+
+@app.get("/portal")
+def customer_portal_index():
+    path = CUSTOMER_PORTAL_DIR / "index.html"
+    if not path.exists():
+        raise HTTPException(404, "CUSTOMER_PORTAL_NOT_DEPLOYED")
+    return FileResponse(path)
+
+
+@app.get("/portal/{asset_name}")
+def customer_portal_asset(asset_name: str):
+    if asset_name not in {"portal.css", "portal.js"}:
+        raise HTTPException(404, "PORTAL_ASSET_NOT_FOUND")
+    path = CUSTOMER_PORTAL_DIR / asset_name
+    if not path.exists():
+        raise HTTPException(404, "CUSTOMER_PORTAL_NOT_DEPLOYED")
+    return FileResponse(path)

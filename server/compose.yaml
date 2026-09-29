@@ -1,6 +1,8 @@
 services:
   ins-ei-api:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     container_name: ins-ei-api
     restart: unless-stopped
     ports:
@@ -20,6 +22,7 @@ services:
       - ./secrets/sevdesk_api_token:/run/secrets/sevdesk_api_token:ro
       - ./secrets/finance_tax_reserve_eur:/run/secrets/finance_tax_reserve_eur:ro
       - ./secrets/finance_operating_buffer_eur:/run/secrets/finance_operating_buffer_eur:ro
+      - ./secrets/portal_admin_password:/run/secrets/portal_admin_password:ro
     networks:
       - ins-platform
 

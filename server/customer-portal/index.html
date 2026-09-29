@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>INS Kundenportal</title><link rel="stylesheet" href="portal.css"></head>
+<body><div id="loginView" class="login-view"><form id="loginForm" class="login-card"><div class="brand">INS <span>Kundenportal</span></div><h1>Anmelden</h1><input id="loginUser" autocomplete="username" placeholder="Benutzername" required><input id="loginPassword" type="password" autocomplete="current-password" placeholder="Passwort" required><button type="submit">Anmelden</button><p id="loginError" class="error"></p></form></div><div id="portalView" class="hidden"><header><div class="brand">INS <span>Kundenportal</span></div><div id="user">Pilot</div></header>
+<div class="layout"><nav>
+<button class="active" data-page="home">Übersicht</button>
+<button data-page="systems">Meine Anlage</button>
+
+
+<button data-page="service">Service</button>\n<button id="adminNav" class="hidden" data-page="admin">Benutzer</button>
+</nav><main>
+<section id="home" class="page active"><h1>Übersicht</h1><p class="lead">Ihre Anlage auf einen Blick.</p><div id="summary" class="grid"></div><div class="card"><h2>Aktueller Zustand</h2><div id="status">Lade …</div></div></section>
+<section id="systems" class="page"><h1>Meine Anlage</h1><p class="lead">Hier entsteht Ihr persönliches Dashboard.</p><div class="card empty">Dashboard noch leer.</div></section>
+
+
+<section id="service" class="page"><h1>Service</h1><p class="lead">Anlage, Kontakt und spätere Servicefunktionen.</p><div class="card"><h2>INS-Energietechnik</h2><p>Hier entsteht der direkte Servicebereich für Ihre Anlage.</p></div></section>
+<section id="admin" class="page"><h1>Benutzer</h1><p class="lead">Zugänge und Dashboard-Freigaben verwalten.</p><div class="card"><h2>Benutzer anlegen</h2><form id="userCreate"><input id="newUsername" placeholder="Benutzername" required><input id="newDisplayName" placeholder="Name" required><input id="newPassword" type="password" placeholder="Passwort (mind. 8 Zeichen)" required><label><input id="newAdmin" type="checkbox"> Administrator</label><div id="newDashboards"></div><button type="submit">Benutzer anlegen</button><span id="userCreateResult"></span></form></div><div class="card" style="margin-top:14px"><h2>Benutzer</h2><div id="userList">Lade …</div></div></section></main></div></div><script src="portal.js"></script></body></html>
