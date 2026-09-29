@@ -1,6 +1,8 @@
 services:
   ins-ei-api:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     container_name: ins-ei-api
     restart: unless-stopped
     ports:
