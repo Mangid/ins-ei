@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>INS Kundenportal</title><link rel="stylesheet" href="portal.css"></head>
-<body><header><div class="brand">INS <span>Kundenportal</span></div><div id="user">Pilot</div></header>
+<body><div id="loginView" class="login-view"><form id="loginForm" class="login-card"><div class="brand">INS <span>Kundenportal</span></div><h1>Anmelden</h1><input id="loginUser" autocomplete="username" placeholder="Benutzername" required><input id="loginPassword" type="password" autocomplete="current-password" placeholder="Passwort" required><button type="submit">Anmelden</button><p id="loginError" class="error"></p></form></div><div id="portalView" class="hidden"><header><div class="brand">INS <span>Kundenportal</span></div><div id="user">Pilot</div></header>
 <div class="layout"><nav>
 <button class="active" data-page="home">Übersicht</button>
 <button data-page="systems">Meine Anlage</button>
@@ -14,4 +14,4 @@
 <section id="energy" class="page"><h1>Energie</h1><p class="lead">Erzeugung, Verbrauch und Speicher.</p><div class="card empty">Energiedaten werden über ein Portal-Modul angebunden.</div></section>
 <section id="heat" class="page"><h1>Wärme</h1><p class="lead">Raumwärme und Warmwasser.</p><div class="card empty">Wärmedaten werden über ein Portal-Modul angebunden.</div></section>
 <section id="service" class="page"><h1>Service</h1><p class="lead">Anlage, Kontakt und spätere Servicefunktionen.</p><div class="card"><h2>INS-Energietechnik</h2><p>Hier entsteht der direkte Servicebereich für Ihre Anlage.</p></div></section>
-</main></div><script src="portal.js"></script></body></html>
+</main></div></div><script src="portal.js"></script></body></html>
