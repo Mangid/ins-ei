@@ -5598,6 +5598,22 @@ class PortalLogin(BaseModel):
     password: str
 
 
+class PortalUserCreate(BaseModel):
+    username: str
+    display_name: str
+    password: str
+    is_admin: bool = False
+    dashboard_ids: list[str] = []
+
+
+class PortalUserUpdate(BaseModel):
+    display_name: str
+    active: bool = True
+    is_admin: bool = False
+    password: str | None = None
+    dashboard_ids: list[str] = []
+
+
 def _portal_hash(password: str, salt: str) -> str:
     return hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(salt), 200_000).hex()
 
@@ -5633,6 +5649,80 @@ def _portal_bootstrap(user: dict[str, Any]) -> dict[str, Any]:
             for d in dashboards
         ],
     }
+
+
+def _portal_admin(ins_portal_session: str | None = Cookie(default=None)) -> dict[str, Any]:
+    user = _portal_session(ins_portal_session)
+    if not user["is_admin"]:
+        raise HTTPException(403, "PORTAL_ADMIN_REQUIRED")
+    return user
+
+
+@app.get("/portal/api/admin/users")
+def portal_admin_users(ins_portal_session: str | None = Cookie(default=None)):
+    _portal_admin(ins_portal_session)
+    with db() as con:
+        dashboards = [dict(x) for x in con.execute("SELECT id,name,description FROM portal_dashboards ORDER BY sort_order,name")]
+        users = []
+        for row in con.execute("SELECT id,username,display_name,is_admin,active,created_at FROM portal_users ORDER BY display_name"):
+            item = dict(row)
+            item["dashboard_ids"] = [x["dashboard_id"] for x in con.execute("SELECT dashboard_id FROM portal_user_dashboards WHERE user_id=?",(row["id"],))]
+            users.append(item)
+    return {"users": users, "dashboards": dashboards}
+
+
+@app.post("/portal/api/admin/users")
+def portal_admin_create_user(request: PortalUserCreate, ins_portal_session: str | None = Cookie(default=None)):
+    _portal_admin(ins_portal_session)
+    username = request.username.strip().lower()
+    if not username or len(request.password) < 8:
+        raise HTTPException(400, "PORTAL_USER_INVALID")
+    salt = secrets.token_hex(16)
+    try:
+        with db() as con:
+            cur = con.execute("""INSERT INTO portal_users(username,display_name,password_salt,password_hash,is_admin,active,created_at)
+                VALUES(?,?,?,?,?,1,?)""",(username,request.display_name.strip(),salt,_portal_hash(request.password,salt),int(request.is_admin),datetime.now(timezone.utc).isoformat()))
+            uid = cur.lastrowid
+            allowed={x["id"] for x in con.execute("SELECT id FROM portal_dashboards")}
+            ids = allowed if request.is_admin else set(request.dashboard_ids) & allowed
+            for did in ids:
+                con.execute("INSERT INTO portal_user_dashboards(user_id,dashboard_id) VALUES(?,?)",(uid,did))
+    except sqlite3.IntegrityError:
+        raise HTTPException(409, "PORTAL_USERNAME_EXISTS")
+    return {"created": True, "id": uid}
+
+
+@app.put("/portal/api/admin/users/{user_id}")
+def portal_admin_update_user(user_id: int, request: PortalUserUpdate, ins_portal_session: str | None = Cookie(default=None)):
+    admin = _portal_admin(ins_portal_session)
+    with db() as con:
+        row=con.execute("SELECT * FROM portal_users WHERE id=?",(user_id,)).fetchone()
+        if row is None: raise HTTPException(404, "PORTAL_USER_NOT_FOUND")
+        if user_id == admin["id"] and not request.active:
+            raise HTTPException(400, "PORTAL_CANNOT_DISABLE_SELF")
+        con.execute("UPDATE portal_users SET display_name=?,active=?,is_admin=? WHERE id=?",(request.display_name.strip(),int(request.active),int(request.is_admin),user_id))
+        if request.password:
+            if len(request.password) < 8: raise HTTPException(400, "PORTAL_PASSWORD_TOO_SHORT")
+            salt=secrets.token_hex(16)
+            con.execute("UPDATE portal_users SET password_salt=?,password_hash=? WHERE id=?",(salt,_portal_hash(request.password,salt),user_id))
+            con.execute("DELETE FROM portal_sessions WHERE user_id=?",(user_id,))
+        con.execute("DELETE FROM portal_user_dashboards WHERE user_id=?",(user_id,))
+        allowed={x["id"] for x in con.execute("SELECT id FROM portal_dashboards")}
+        ids = allowed if request.is_admin else set(request.dashboard_ids) & allowed
+        for did in ids: con.execute("INSERT INTO portal_user_dashboards(user_id,dashboard_id) VALUES(?,?)",(user_id,did))
+    return {"updated": True}
+
+
+@app.delete("/portal/api/admin/users/{user_id}")
+def portal_admin_delete_user(user_id: int, ins_portal_session: str | None = Cookie(default=None)):
+    admin = _portal_admin(ins_portal_session)
+    if user_id == admin["id"]: raise HTTPException(400, "PORTAL_CANNOT_DELETE_SELF")
+    with db() as con:
+        con.execute("DELETE FROM portal_sessions WHERE user_id=?",(user_id,))
+        con.execute("DELETE FROM portal_user_dashboards WHERE user_id=?",(user_id,))
+        cur=con.execute("DELETE FROM portal_users WHERE id=?",(user_id,))
+        if not cur.rowcount: raise HTTPException(404, "PORTAL_USER_NOT_FOUND")
+    return {"deleted": True}
 
 
 @app.post("/portal/api/login")
