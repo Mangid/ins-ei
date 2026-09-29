@@ -1544,6 +1544,33 @@ def init_customer_db():
 
 
         con.execute("""
+            CREATE TABLE IF NOT EXISTS bus_site_snapshots (
+                site_id TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                api_version TEXT NOT NULL,
+                generated_at TEXT NOT NULL,
+                received_at TEXT NOT NULL,
+                sequence INTEGER,
+                core_version TEXT,
+                payload_json TEXT NOT NULL,
+                PRIMARY KEY (site_id, kind)
+            )
+        """)
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS bus_site_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                site_id TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                generated_at TEXT NOT NULL,
+                received_at TEXT NOT NULL,
+                correlation_id TEXT,
+                payload_json TEXT NOT NULL
+            )
+        """)
+        con.execute("""CREATE INDEX IF NOT EXISTS idx_bus_site_events_site_time
+            ON bus_site_events(site_id, generated_at)""")
+
+        con.execute("""
             CREATE TABLE IF NOT EXISTS fleet_update_agents (
                 installation_id TEXT PRIMARY KEY,
                 agent_version TEXT,
