@@ -28,7 +28,7 @@ from fastapi.responses import FileResponse
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
-VERSION = "1.7.0"
+VERSION = "1.7.1"
 DB_PATH = Path("/data/ins_ei.db")
 PUSHSAFER_KEY = Path("/run/secrets/pushsafer_private_key")
 MANAGEMENT_KEY = Path("/run/secrets/management_api_key")
@@ -151,8 +151,6 @@ def mqtt_live_worker():
         except Exception as exc:
             print("MQTT bus connection error:",repr(exc));time.sleep(5)
 
-
-threading.Thread(target=mqtt_live_worker,name="mqtt-live",daemon=True).start()
 
 app = FastAPI(
     title="INS-EI API",
@@ -3631,6 +3629,13 @@ async def lifespan(app: FastAPI):
     init_db()
     init_customer_db()
     init_oekofen_db()
+
+    mqtt_thread = threading.Thread(
+        target=mqtt_live_worker,
+        daemon=True,
+        name="mqtt-bus-v1",
+    )
+    mqtt_thread.start()
 
     thread = threading.Thread(
         target=reminder_worker,
