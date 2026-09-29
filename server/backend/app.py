@@ -28,7 +28,7 @@ from fastapi.responses import FileResponse
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
-VERSION = "1.7.1"
+VERSION = "1.7.2"
 DB_PATH = Path("/data/ins_ei.db")
 PUSHSAFER_KEY = Path("/run/secrets/pushsafer_private_key")
 MANAGEMENT_KEY = Path("/run/secrets/management_api_key")
@@ -1620,6 +1620,8 @@ def init_customer_db():
             con.execute("ALTER TABLE telemetry_installations ADD COLUMN fleet_status_since TEXT")
         if not column_exists(con, "telemetry_installations", "fleet_notified_status"):
             con.execute("ALTER TABLE telemetry_installations ADD COLUMN fleet_notified_status TEXT")
+        if not column_exists(con, "telemetry_installations", "fleet_push_enabled"):
+            con.execute("ALTER TABLE telemetry_installations ADD COLUMN fleet_push_enabled INTEGER NOT NULL DEFAULT 1")
         if not column_exists(con, "telemetry_installations", "previous_addon_version"):
             con.execute("ALTER TABLE telemetry_installations ADD COLUMN previous_addon_version TEXT")
         if not column_exists(con, "telemetry_installations", "version_changed_at"):
@@ -3278,6 +3280,7 @@ def fleet_transition(installation_id: str, new_status: str, issues: list[str], a
         row=con.execute("SELECT * FROM telemetry_installations WHERE installation_id=?",(installation_id,)).fetchone()
         if row is None:return
         old=row["fleet_status"] or "UNKNOWN";since=row["fleet_status_since"]
+        push_enabled=bool(row["fleet_push_enabled"]) if "fleet_push_enabled" in row.keys() else True
         old_version=row["addon_version"]
         if addon_version and old_version and addon_version!=old_version:
             con.execute("UPDATE telemetry_installations SET previous_addon_version=?,version_changed_at=? WHERE installation_id=?",(old_version,now_iso,installation_id))
@@ -3285,16 +3288,16 @@ def fleet_transition(installation_id: str, new_status: str, issues: list[str], a
             con.execute("UPDATE telemetry_installations SET fleet_status=?,fleet_status_since=? WHERE installation_id=?",(new_status,now_iso,installation_id))
             # CRITICAL is immediate; WARNING is shown in GUI first and pushed only
             # if it persists on a later health cycle. Recovery is pushed once.
-            if new_status=="CRITICAL":
+            if new_status=="CRITICAL" and push_enabled:
                 send_native_push_all(f"INS-EI · {installation_id} · CRITICAL"," · ".join(issues) or "Instanz kritisch","/#instances")
                 con.execute("UPDATE telemetry_installations SET fleet_notified_status=? WHERE installation_id=?",(new_status,installation_id))
-            elif new_status=="HEALTHY" and old in ("WARNING","CRITICAL"):
+            elif new_status=="HEALTHY" and old in ("WARNING","CRITICAL") and push_enabled:
                 send_native_push_all(f"INS-EI · {installation_id} · HEALTHY","Instanz wieder gesund.","/#instances")
                 con.execute("UPDATE telemetry_installations SET fleet_notified_status=? WHERE installation_id=?",(new_status,installation_id))
         elif new_status=="WARNING" and since:
             try: persistent=(now-datetime.fromisoformat(since)).total_seconds()>=300
             except ValueError:persistent=False
-            if persistent and row["fleet_notified_status"]!="WARNING":
+            if persistent and row["fleet_notified_status"]!="WARNING" and push_enabled:
                 send_native_push_all(f"INS-EI · {installation_id} · WARNING"," · ".join(issues) or "Warnung besteht seit mindestens 5 Minuten","/#instances")
                 con.execute("UPDATE telemetry_installations SET fleet_notified_status='WARNING' WHERE installation_id=?",(installation_id,))
 
@@ -4012,6 +4015,16 @@ def get_telemetry_health_history(installation_id: str, period: str = "24h"):
             GROUP BY point,quality ORDER BY count DESC,point""",(installation_id,since)).fetchall()
     return {"installation_id":installation_id,"period":period,"totals":totals,"samples":samples,
             "issues":[dict(r) for r in issue_rows]}
+
+
+@app.post("/api/v1/telemetry/{installation_id}/fleet-push")
+def set_legacy_fleet_push(installation_id: str, enabled: bool, _: bool = Depends(require_management_api_key)):
+    with db() as con:
+        cur=con.execute("UPDATE telemetry_installations SET fleet_push_enabled=? WHERE installation_id=?",
+                        (1 if enabled else 0,installation_id))
+        if cur.rowcount==0:
+            raise HTTPException(404,"Telemetry installation not found")
+    return {"installation_id":installation_id,"fleet_push_enabled":enabled}
 
 
 @app.get("/api/v1/telemetry/status")
