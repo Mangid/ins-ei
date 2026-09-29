@@ -56,36 +56,101 @@ MQTT_LIVE_LOCK = threading.Lock()
 OEKOFEN_TOKEN_URL = "https://my.oekofen.info/api/pwa/v1/oauth2/token"
 OEKOFEN_PLANTS_URL = "https://my.oekofen.info/api/pwa/v3/plants"
 
+def _store_bus_snapshot(site_id: str, kind: str, envelope: dict[str, Any]) -> None:
+    if envelope.get("api_version") != "ins-ei.bus/v1":
+        raise ValueError("BUS_API_VERSION_UNSUPPORTED")
+    if envelope.get("site_id") != site_id:
+        raise ValueError("BUS_SITE_ID_MISMATCH")
+    generated_at = str(envelope.get("generated_at") or "")
+    if not generated_at:
+        raise ValueError("BUS_GENERATED_AT_MISSING")
+    received_at = datetime.now(timezone.utc).isoformat()
+    with db() as con:
+        con.execute("""
+            INSERT INTO bus_site_snapshots
+            (site_id,kind,api_version,generated_at,received_at,sequence,core_version,payload_json)
+            VALUES (?,?,?,?,?,?,?,?)
+            ON CONFLICT(site_id,kind) DO UPDATE SET
+                api_version=excluded.api_version,
+                generated_at=excluded.generated_at,
+                received_at=excluded.received_at,
+                sequence=excluded.sequence,
+                core_version=excluded.core_version,
+                payload_json=excluded.payload_json
+        """, (
+            site_id, kind, envelope["api_version"], generated_at, received_at,
+            envelope.get("sequence"), envelope.get("core_version"),
+            json.dumps(envelope.get("payload") or {}, ensure_ascii=False, default=str),
+        ))
+
+
 def mqtt_live_worker():
     if not MQTT_USERNAME.exists() or not MQTT_PASSWORD.exists():
         print("MQTT live disabled: credentials missing");return
     username=MQTT_USERNAME.read_text().strip();password=MQTT_PASSWORD.read_text().strip()
-    client=mqtt.Client(mqtt.CallbackAPIVersion.VERSION2,client_id="ins-ei-service-live")
+    client=mqtt.Client(mqtt.CallbackAPIVersion.VERSION2,client_id="ins-ei-service-bus-v1")
     client.username_pw_set(username,password);client.tls_set()
     def on_connect(client,userdata,flags,reason_code,properties):
-        print("MQTT live connected:",reason_code)
-        if reason_code==0: client.subscribe("ins-ei/+/state",qos=0);client.subscribe("ins-ei/+/status",qos=1)
+        print("MQTT bus connected:",reason_code)
+        if reason_code==0:
+            for topic,qos in (
+                ("ins-ei/+/status",1),("ins-ei/+/health",1),("ins-ei/+/learning",1),
+                ("ins-ei/+/state",0),("ins-ei/+/event",1),("ins-ei/+/decision",1),
+                ("ins-ei/+/command/result",1),("ins-ei/+/update/status",1),
+            ):
+                client.subscribe(topic,qos=qos)
     def on_message(client,userdata,msg):
         try:
             parts=msg.topic.split("/")
-            if len(parts)!=3:return
-            installation_id,kind=parts[1],parts[2]
+            if len(parts)<3:return
+            site_id=parts[1];kind="/".join(parts[2:])
             payload=json.loads(msg.payload.decode("utf-8"))
             now=datetime.now(timezone.utc).isoformat()
-            with MQTT_LIVE_LOCK:
-                item=MQTT_LIVE.setdefault(installation_id,{"values":{},"online":False})
-                if kind=="state":
-                    item["values"]=payload.get("values") or {}
-                    item["source_timestamp"]=payload.get("ts");item["received_at"]=now
-                elif kind=="status":
-                    item["online"]=payload.get("status")=="online";item["version"]=payload.get("version");item["status_received_at"]=now
-        except Exception as exc: print("MQTT live message error:",repr(exc))
+
+            # New canonical Bus v1 envelope.
+            if payload.get("api_version")=="ins-ei.bus/v1":
+                if kind in {"status","health","learning","state","update/status"}:
+                    _store_bus_snapshot(site_id,kind,payload)
+                else:
+                    with db() as con:
+                        con.execute("""INSERT INTO bus_site_events
+                            (site_id,kind,generated_at,received_at,correlation_id,payload_json)
+                            VALUES (?,?,?,?,?,?)""",(
+                            site_id,kind,str(payload.get("generated_at") or now),now,
+                            payload.get("correlation_id"),
+                            json.dumps(payload.get("payload") or {},ensure_ascii=False,default=str),
+                        ))
+                # Keep the existing live endpoint useful during migration.
+                with MQTT_LIVE_LOCK:
+                    item=MQTT_LIVE.setdefault(site_id,{"values":{},"online":False})
+                    if kind=="status":
+                        body=payload.get("payload") or {}
+                        item["online"]=bool(body.get("online"))
+                        item["version"]=payload.get("core_version")
+                        item["status_received_at"]=now
+                    elif kind=="state":
+                        item["values"]=(payload.get("payload") or {}).get("values") or {}
+                        item["source_timestamp"]=payload.get("generated_at");item["received_at"]=now
+                return
+
+            # Legacy pilot payload compatibility; no new development targets this format.
+            if len(parts)==3:
+                installation_id,legacy_kind=parts[1],parts[2]
+                with MQTT_LIVE_LOCK:
+                    item=MQTT_LIVE.setdefault(installation_id,{"values":{},"online":False})
+                    if legacy_kind=="state":
+                        item["values"]=payload.get("values") or {}
+                        item["source_timestamp"]=payload.get("ts");item["received_at"]=now
+                    elif legacy_kind=="status":
+                        item["online"]=payload.get("status")=="online";item["version"]=payload.get("version");item["status_received_at"]=now
+        except Exception as exc: print("MQTT bus message error:",repr(exc))
     client.on_connect=on_connect;client.on_message=on_message
     while True:
         try:
             client.connect(MQTT_HOST,MQTT_PORT,keepalive=30);client.loop_forever(retry_first_connection=True)
         except Exception as exc:
-            print("MQTT live connection error:",repr(exc));time.sleep(5)
+            print("MQTT bus connection error:",repr(exc));time.sleep(5)
+
 
 threading.Thread(target=mqtt_live_worker,name="mqtt-live",daemon=True).start()
 
