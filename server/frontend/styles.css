@@ -181,3 +181,20 @@
 .credential-row>span{font-size:.82rem;opacity:.65}.credential-row code,.credential-row a{overflow-wrap:anywhere;white-space:normal}
 .credential-notes{margin-top:10px;padding-top:10px;border-top:1px solid rgba(120,130,140,.14);white-space:pre-wrap}
 @media(max-width:700px){.credential-main{display:block}.credential-actions{margin-top:10px}.credential-row{grid-template-columns:72px minmax(0,1fr)}.credential-row button{grid-column:2}}
+
+/* Credential vault v2 — native dark service-center layout */
+.credential-tools{display:grid;grid-template-columns:minmax(0,1fr) 210px;gap:14px;margin:18px 0}
+.credential-tools input,.credential-tools select{width:100%;box-sizing:border-box}
+.credential-list{display:block;border:1px solid #243d50;border-radius:16px;overflow:hidden;background:#0d2030}
+.credential-card{position:relative;display:grid;grid-template-columns:62px minmax(0,1fr) auto;gap:16px;align-items:center;padding:16px 18px;border:0;border-bottom:1px solid #284052;border-radius:0;background:#0d2030;color:#e8f1f7}
+.credential-card:last-child{border-bottom:0}.credential-card:hover{background:#102638}
+.credential-icon{width:54px;height:54px;border-radius:13px;display:grid;place-items:center;font-size:26px;background:#183149;color:#75b9ef}
+.credential-content{min-width:0}.credential-content strong{display:block;margin:5px 0 7px;font-size:1rem;color:#fff}
+.credential-type{display:inline-flex;font-size:.74rem;font-weight:700;padding:3px 9px;border-radius:999px;background:#173c5f;color:#68b9ff}
+.credential-meta{display:flex;gap:10px;align-items:center;flex-wrap:wrap;color:#9eb4c6;font-size:.88rem}
+.credential-meta i{font-style:normal;color:#526d82}.credential-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.credential-actions button{white-space:nowrap}.credential-actions .danger{border-color:#7d2930;color:#ff626b;background:transparent}
+.credential-actions .danger:hover{background:#36171d}.credential-secret{position:absolute;left:96px;bottom:5px;background:#07131d;padding:3px 8px;border-radius:6px;color:#d9f2ff;z-index:2}
+.credential-count{padding:12px 2px 0}.credential-card.hidden,.credential-secret.hidden{display:none!important}
+@media(max-width:900px){.credential-card{grid-template-columns:52px minmax(0,1fr)}.credential-icon{width:46px;height:46px}.credential-actions{grid-column:1/-1;justify-content:flex-start;padding-left:68px}.credential-secret{left:86px}.credential-tools{grid-template-columns:1fr}}
+@media(max-width:560px){.credential-card{padding:14px 12px;gap:10px}.credential-actions{padding-left:0}.credential-actions button{flex:1 1 auto}.credential-meta{display:grid;gap:4px}.credential-meta i{display:none}}
