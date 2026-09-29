@@ -152,6 +152,8 @@ def mqtt_live_worker():
             print("MQTT bus connection error:",repr(exc));time.sleep(5)
 
 
+CUSTOMER_PORTAL_DIR = Path("/app/customer-portal")
+
 app = FastAPI(
     title="INS-EI API",
     description="Backend API for INS Energy Intelligence",
@@ -5510,3 +5512,39 @@ def reschedule_reminder(reminder_id: int, request: ReminderReschedule, _: None =
 
 # MCP endpoint
 app.mount("/mcp", mcp_http_app)
+
+
+@app.get("/portal/api/me")
+def customer_portal_me():
+    """Generic portal bootstrap. Authentication/tenant resolution replaces the pilot identity next."""
+    return {
+        "display_name": "Gertrude Oschmalz",
+        "status": "Pilot",
+        "message": "Kundenportal-Hülle aktiv. Geräteanbindung folgt über generische Portal-Module.",
+        "systems": [
+            {
+                "id": "heating",
+                "name": "Temporäre Heizung",
+                "description": "Wohnzimmer, Küche, Schlafzimmer und Bad",
+                "status": "Bereit zur Anbindung",
+            }
+        ],
+    }
+
+
+@app.get("/portal")
+def customer_portal_index():
+    path = CUSTOMER_PORTAL_DIR / "index.html"
+    if not path.exists():
+        raise HTTPException(404, "CUSTOMER_PORTAL_NOT_DEPLOYED")
+    return FileResponse(path)
+
+
+@app.get("/portal/{asset_name}")
+def customer_portal_asset(asset_name: str):
+    if asset_name not in {"portal.css", "portal.js"}:
+        raise HTTPException(404, "PORTAL_ASSET_NOT_FOUND")
+    path = CUSTOMER_PORTAL_DIR / asset_name
+    if not path.exists():
+        raise HTTPException(404, "CUSTOMER_PORTAL_NOT_DEPLOYED")
+    return FileResponse(path)
