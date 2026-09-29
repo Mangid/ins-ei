@@ -28,7 +28,7 @@ from fastapi.responses import FileResponse
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
-VERSION = "1.6.3"
+VERSION = "1.7.0"
 DB_PATH = Path("/data/ins_ei.db")
 PUSHSAFER_KEY = Path("/run/secrets/pushsafer_private_key")
 MANAGEMENT_KEY = Path("/run/secrets/management_api_key")
@@ -916,6 +916,26 @@ def ins_ei_task_update(
           (values["description"],values["status"],values["priority"],values["due_at"],
            values["category"],values["project_name"],now,completed,task_id))
     return {"status": "updated", "id": task_id}
+
+
+def bus_snapshot(site_id: str, kind: str) -> dict[str, Any]:
+    with db() as con:
+        row=con.execute("""SELECT * FROM bus_site_snapshots
+            WHERE site_id=? AND kind=?""",(site_id,kind)).fetchone()
+    if row is None:
+        raise ValueError(f"BUS_SNAPSHOT_NOT_FOUND:{site_id}:{kind}")
+    return {
+        "site_id":row["site_id"],"kind":row["kind"],"api_version":row["api_version"],
+        "generated_at":row["generated_at"],"received_at":row["received_at"],
+        "sequence":row["sequence"],"core_version":row["core_version"],
+        "payload":json.loads(row["payload_json"] or "{}"),
+    }
+
+
+@mcp.tool()
+def ins_ei_learning_summary(site_id: str) -> dict[str, Any]:
+    """Return the latest Learning Summary received from one INS-EI Core site via MQTT."""
+    return bus_snapshot(site_id,"learning")
 
 
 @mcp.tool()
@@ -3924,6 +3944,23 @@ def fleet_command_result(installation_id: str, command_id: int, body: dict[str,A
                              body.get("error") or f"Update auf {row['target_version']} fehlgeschlagen.",
                              "/#instances")
     return {"status":status,"target_version":row["target_version"]}
+
+
+
+@app.get("/api/v1/bus/{site_id}/learning")
+def get_bus_learning(site_id: str, _: bool = Depends(require_management_api_key)):
+    try:
+        return bus_snapshot(site_id,"learning")
+    except ValueError as exc:
+        raise HTTPException(404,str(exc)) from exc
+
+
+@app.get("/api/v1/bus/{site_id}/health")
+def get_bus_health(site_id: str, _: bool = Depends(require_management_api_key)):
+    try:
+        return bus_snapshot(site_id,"health")
+    except ValueError as exc:
+        raise HTTPException(404,str(exc)) from exc
 
 
 @app.get("/api/v1/live/{installation_id}")
