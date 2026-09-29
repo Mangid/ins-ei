@@ -1065,6 +1065,80 @@ def init_db():
             )
 
 
+
+def init_portal_db():
+    with db() as con:
+        con.executescript("""
+        CREATE TABLE IF NOT EXISTS portal_users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL UNIQUE,
+            display_name TEXT NOT NULL,
+            password_salt TEXT NOT NULL,
+            password_hash TEXT NOT NULL,
+            is_admin INTEGER NOT NULL DEFAULT 0,
+            active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS portal_dashboards (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT,
+            module TEXT NOT NULL,
+            config_json TEXT NOT NULL DEFAULT '{}',
+            sort_order INTEGER NOT NULL DEFAULT 100
+        );
+        CREATE TABLE IF NOT EXISTS portal_user_dashboards (
+            user_id INTEGER NOT NULL,
+            dashboard_id TEXT NOT NULL,
+            PRIMARY KEY(user_id,dashboard_id),
+            FOREIGN KEY(user_id) REFERENCES portal_users(id),
+            FOREIGN KEY(dashboard_id) REFERENCES portal_dashboards(id)
+        );
+        CREATE TABLE IF NOT EXISTS portal_sessions (
+            token TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            expires_at TEXT NOT NULL,
+            FOREIGN KEY(user_id) REFERENCES portal_users(id)
+        );
+        """)
+        con.execute("""INSERT OR IGNORE INTO portal_dashboards
+            (id,name,description,module,config_json,sort_order) VALUES(?,?,?,?,?,?)""",
+            ("oschmalz-heating","Temporäre Heizung",
+             "Wohnzimmer, Küche, Schlafzimmer und Bad","heating",
+             json.dumps({"rooms":["Wohnzimmer","Küche","Schlafzimmer","Bad"]}),10))
+
+
+def _ensure_portal_pilot():
+    """Create pilot identities only when passwords are explicitly supplied as secrets."""
+    pilot_password = Path("/run/secrets/portal_oschmalz_password")
+    admin_password = Path("/run/secrets/portal_admin_password")
+    with db() as con:
+        for username, display_name, password_path, is_admin in (
+            ("oschmalz", "Gertrude Oschmalz", pilot_password, 0),
+            ("niki", "Niki", admin_password, 1),
+        ):
+            if not password_path.exists() or not password_path.read_text().strip():
+                continue
+            existing = con.execute("SELECT id FROM portal_users WHERE username=?", (username,)).fetchone()
+            if existing:
+                user_id = existing["id"]
+            else:
+                salt = secrets.token_hex(16)
+                password_hash = _portal_hash(password_path.read_text().strip(), salt)
+                cur = con.execute("""INSERT INTO portal_users
+                    (username,display_name,password_salt,password_hash,is_admin,created_at)
+                    VALUES(?,?,?,?,?,?)""",
+                    (username,display_name,salt,password_hash,is_admin,datetime.now(timezone.utc).isoformat()))
+                user_id = cur.lastrowid
+            if is_admin:
+                dashboards = con.execute("SELECT id FROM portal_dashboards").fetchall()
+                for dashboard in dashboards:
+                    con.execute("INSERT OR IGNORE INTO portal_user_dashboards(user_id,dashboard_id) VALUES(?,?)",(user_id,dashboard["id"]))
+            else:
+                con.execute("INSERT OR IGNORE INTO portal_user_dashboards(user_id,dashboard_id) VALUES(?,?)",(user_id,"oschmalz-heating"))
+
+
+
 def credential_cipher() -> Fernet:
     if not CREDENTIAL_VAULT_KEY.exists():
         CREDENTIAL_VAULT_KEY.write_bytes(Fernet.generate_key())
@@ -3640,6 +3714,8 @@ def oekofen_worker():
 async def lifespan(app: FastAPI):
     init_db()
     init_customer_db()
+    init_portal_db()
+    _ensure_portal_pilot()
     init_oekofen_db()
 
     mqtt_thread = threading.Thread(
