@@ -142,7 +142,7 @@ def mqtt_live_worker():
                 with MQTT_LIVE_LOCK:
                     item=MQTT_LIVE.setdefault(installation_id,{"values":{},"online":False})
                     if legacy_kind=="state":
-                        item["values"]=payload.get("values") or {}
+                        item["values"]=payload.get("values") if isinstance(payload.get("values"), dict) else payload
                         item["source_timestamp"]=payload.get("ts");item["received_at"]=now
                     elif legacy_kind=="status":
                         item["online"]=payload.get("status")=="online";item["version"]=payload.get("version");item["status_received_at"]=now
