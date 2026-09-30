@@ -7,3 +7,10 @@ userCreate.onsubmit=async e=>{e.preventDefault();const dashboard_ids=[...newDash
 async function editUser(id){const r=await fetch("/portal/api/admin/users",{cache:"no-store"}),d=await r.json(),u=d.users.find(x=>x.id===id);if(!u)return;const name=prompt("Name",u.display_name);if(name===null)return;const password=prompt("Neues Passwort (leer = unverändert)","");if(password===null)return;const active=confirm("Benutzer aktiv lassen? OK = aktiv, Abbrechen = deaktivieren");const body={display_name:name,active,is_admin:!!u.is_admin,password:password||null,dashboard_ids:u.dashboard_ids};const x=await fetch("/portal/api/admin/users/"+id,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify(body)});if(!x.ok)alert("Änderung fehlgeschlagen");loadUsers()}
 
 document.querySelectorAll(".mode-switch").forEach(group=>group.querySelectorAll("button").forEach(button=>button.onclick=()=>{group.querySelectorAll("button").forEach(x=>x.classList.remove("active"));button.classList.add("active");if(group.dataset.zone==="living")ecoSetting.classList.toggle("hidden",button.dataset.mode!=="eco")}));
+
+const mobileMenu=document.getElementById("mobileMenu"),portalNav=document.getElementById("portalNav"),navBackdrop=document.getElementById("navBackdrop");
+function closeMobileNav(){document.body.classList.remove("nav-open")}
+mobileMenu?.addEventListener("click",()=>document.body.classList.toggle("nav-open"));
+navBackdrop?.addEventListener("click",closeMobileNav);
+portalNav?.querySelectorAll("button").forEach(button=>button.addEventListener("click",()=>{if(window.innerWidth<=720)closeMobileNav()}));
+window.addEventListener("resize",()=>{if(window.innerWidth>720)closeMobileNav()});
