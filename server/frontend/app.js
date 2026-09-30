@@ -238,9 +238,9 @@ async function loadVisitBoard(status=""){
     });
   });
 }
-document.querySelectorAll(".visit-filters button").forEach(button=>{
+document.querySelectorAll("#visits .visit-filters button").forEach(button=>{
   button.onclick=()=>{
-    document.querySelectorAll(".visit-filters button").forEach(x=>x.classList.toggle("selected",x===button));
+    document.querySelectorAll("#visits .visit-filters button").forEach(x=>x.classList.toggle("selected",x===button));
     loadVisitBoard(button.dataset.status);
   };
 });
