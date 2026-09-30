@@ -14,3 +14,21 @@ mobileMenu?.addEventListener("click",()=>document.body.classList.toggle("nav-ope
 navBackdrop?.addEventListener("click",closeMobileNav);
 portalNav?.querySelectorAll("button").forEach(button=>button.addEventListener("click",()=>{if(window.innerWidth<=720)closeMobileNav()}));
 window.addEventListener("resize",()=>{if(window.innerWidth>720)closeMobileNav()});
+
+function fmt1(v,u=""){return v===null||v===undefined?"–":(Math.round(Number(v)*10)/10)+u}
+async function loadOschmalzHeating(){
+  if(!document.getElementById("livingTemp"))return;
+  try{
+    const r=await fetch("/portal/api/oschmalz/heating?t="+Date.now(),{cache:"no-store"});
+    if(!r.ok)return;
+    const d=await r.json(),v=d.values||{};
+    livingTemp.textContent=fmt1(v.temperature," °C");
+    livingState.textContent=d.online?(v.mode||"–"):"Keine Verbindung";
+    livingState.classList.toggle("ok",!!d.online);
+    if(document.activeElement!==livingSetpoint&&v.comfort_temperature!=null)livingSetpoint.value=v.comfort_temperature;
+    if(document.activeElement!==livingEcoSetpoint&&v.eco_temperature!=null)livingEcoSetpoint.value=v.eco_temperature;
+    document.querySelectorAll('.mode-switch[data-zone="living"] button').forEach(b=>b.classList.toggle("active",b.dataset.mode===(v.mode==="HEIZEN"?"on":String(v.mode||"").toLowerCase())));
+    ecoSetting.classList.toggle("hidden",v.mode!=="ECO");
+  }catch(e){livingState.textContent="Keine Verbindung"}
+}
+loadOschmalzHeating();setInterval(loadOschmalzHeating,5000);

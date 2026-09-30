@@ -5738,6 +5738,27 @@ def customer_portal_logout(response: Response, ins_portal_session: str | None = 
     return {"logged_in": False}
 
 
+@app.get("/portal/api/oschmalz/heating")
+def customer_portal_oschmalz_heating(ins_portal_session: str | None = Cookie(default=None)):
+    user = _portal_session(ins_portal_session)
+    with db() as con:
+        allowed = con.execute("""SELECT 1 FROM portal_user_dashboards
+            WHERE user_id=? AND dashboard_id='oschmalz-heating'""",(user["id"],)).fetchone()
+    if allowed is None and not user["is_admin"]:
+        raise HTTPException(403, "PORTAL_DASHBOARD_FORBIDDEN")
+    with MQTT_LIVE_LOCK:
+        item = dict(MQTT_LIVE.get("oschmalz") or {})
+        values = dict(item.get("values") or {})
+    received = item.get("received_at")
+    age = None
+    if received:
+        try:
+            age = max(0, int((datetime.now(timezone.utc)-datetime.fromisoformat(received)).total_seconds()))
+        except ValueError:
+            pass
+    return {"online": age is not None and age < 600, "age_seconds": age, "values": values}
+
+
 @app.get("/portal/api/me")
 def customer_portal_me(ins_portal_session: str | None = Cookie(default=None)):
     return _portal_bootstrap(_portal_session(ins_portal_session))
