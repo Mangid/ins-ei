@@ -29,6 +29,8 @@ async function loadOschmalzHeating(){
     if(document.activeElement!==livingEcoSetpoint&&v.eco_temperature!=null)livingEcoSetpoint.value=v.eco_temperature;
     document.querySelectorAll('.mode-switch[data-zone="living"] button').forEach(b=>b.classList.toggle("active",b.dataset.mode===(v.mode==="HEIZEN"?"on":String(v.mode||"").toLowerCase())));
     ecoSetting.classList.toggle("hidden",v.mode!=="ECO");
+    const states={bedroom:v.bedroom?.state,bathroom:v.bathroom?.state};
+    Object.entries(states).forEach(([zone,state])=>document.querySelectorAll(`.mode-switch[data-zone="${zone}"] button`).forEach(b=>b.classList.toggle("active",b.dataset.mode===state)));
   }catch(e){livingState.textContent="Keine Verbindung"}
 }
 loadOschmalzHeating();setInterval(loadOschmalzHeating,5000);
