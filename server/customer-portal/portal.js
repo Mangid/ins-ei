@@ -30,7 +30,7 @@ async function loadOschmalzHeating(){
     livingState.classList.toggle("ok",!!d.online);
     if(document.activeElement!==livingSetpoint&&v.comfort_temperature!=null)livingSetpoint.value=v.comfort_temperature;
     if(document.activeElement!==livingEcoSetpoint&&v.eco_temperature!=null)livingEcoSetpoint.value=v.eco_temperature;
-    document.querySelectorAll('.mode-switch[data-zone="living"] button').forEach(b=>b.classList.toggle("active",b.dataset.mode===(v.mode==="HEIZEN"?"on":String(v.mode||"").toLowerCase())));
+    document.querySelectorAll('.mode-switch[data-zone="living"] button').forEach(b=>b.classList.toggle("active",b.dataset.mode===(v.mode==="HEIZEN"?"on":v.mode==="AUS"?"off":String(v.mode||"").toLowerCase())));
     ecoSetting.classList.toggle("hidden",v.mode!=="ECO");
     const states={bedroom:v.bedroom?.state,bathroom:v.bathroom?.state};
     Object.entries(states).forEach(([zone,state])=>document.querySelectorAll(`.mode-switch[data-zone="${zone}"] button`).forEach(b=>b.classList.toggle("active",b.dataset.mode===state)));
