@@ -55,6 +55,8 @@ MQTT_HOST = "mqtt.ins-enertech.net"
 MQTT_PORT = 8883
 MQTT_LIVE = {}
 MQTT_LIVE_LOCK = threading.Lock()
+MQTT_SERVICE_CLIENT = None
+MQTT_SERVICE_LOCK = threading.Lock()
 
 OEKOFEN_TOKEN_URL = "https://my.oekofen.info/api/pwa/v1/oauth2/token"
 OEKOFEN_PLANTS_URL = "https://my.oekofen.info/api/pwa/v3/plants"
@@ -94,6 +96,9 @@ def mqtt_live_worker():
     client=mqtt.Client(mqtt.CallbackAPIVersion.VERSION2,client_id="ins-ei-service-bus-v1")
     client.username_pw_set(username,password);client.tls_set()
     def on_connect(client,userdata,flags,reason_code,properties):
+        global MQTT_SERVICE_CLIENT
+        with MQTT_SERVICE_LOCK:
+            MQTT_SERVICE_CLIENT = client
         print("MQTT bus connected:",reason_code)
         if reason_code==0:
             for topic,qos in (
@@ -5736,6 +5741,46 @@ def customer_portal_logout(response: Response, ins_portal_session: str | None = 
             con.execute("DELETE FROM portal_sessions WHERE token=?", (ins_portal_session,))
     response.delete_cookie("ins_portal_session")
     return {"logged_in": False}
+
+
+class OschmalzHeatingCommand(BaseModel):
+    mode: str | None = None
+    comfort_temperature: float | None = None
+    eco_temperature: float | None = None
+    bedroom: bool | None = None
+    bathroom: bool | None = None
+
+
+@app.post("/portal/api/oschmalz/heating/command")
+def customer_portal_oschmalz_command(request: OschmalzHeatingCommand, ins_portal_session: str | None = Cookie(default=None)):
+    user = _portal_session(ins_portal_session)
+    with db() as con:
+        allowed = con.execute("""SELECT 1 FROM portal_user_dashboards
+            WHERE user_id=? AND dashboard_id='oschmalz-heating'""",(user["id"],)).fetchone()
+    if allowed is None and not user["is_admin"]:
+        raise HTTPException(403, "PORTAL_DASHBOARD_FORBIDDEN")
+    payload = {}
+    if request.mode is not None:
+        if request.mode not in {"AUS","HEIZEN","ECO"}: raise HTTPException(400,"PORTAL_MODE_INVALID")
+        payload["mode"] = request.mode
+    if request.comfort_temperature is not None:
+        if not 15 <= request.comfort_temperature <= 25: raise HTTPException(400,"PORTAL_COMFORT_INVALID")
+        payload["comfort_temperature"] = request.comfort_temperature
+    if request.eco_temperature is not None:
+        if not 10 <= request.eco_temperature <= 22: raise HTTPException(400,"PORTAL_ECO_INVALID")
+        payload["eco_temperature"] = request.eco_temperature
+    if request.bedroom is not None: payload["bedroom"] = request.bedroom
+    if request.bathroom is not None: payload["bathroom"] = request.bathroom
+    if not payload: raise HTTPException(400,"PORTAL_COMMAND_EMPTY")
+    payload["requested_at"] = datetime.now(timezone.utc).isoformat()
+    payload["requested_by"] = user["username"]
+    with MQTT_SERVICE_LOCK:
+        client = MQTT_SERVICE_CLIENT
+    if client is None or not client.is_connected():
+        raise HTTPException(503,"MQTT_NOT_CONNECTED")
+    info=client.publish("ins-ei/oschmalz/command",json.dumps(payload,ensure_ascii=False),qos=1,retain=False)
+    if info.rc != mqtt.MQTT_ERR_SUCCESS: raise HTTPException(503,"MQTT_PUBLISH_FAILED")
+    return {"accepted":True,"command":payload}
 
 
 @app.get("/portal/api/oschmalz/heating")
