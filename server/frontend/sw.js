@@ -1,4 +1,4 @@
-const CACHE_NAME = "ins-ei-shell-v23";
+const CACHE_NAME = "ins-ei-shell-v24";
 const PHOTO_CACHE = "ins-ei-photos-v1";
 
 const APP_SHELL = [
@@ -6,6 +6,7 @@ const APP_SHELL = [
   "/index.html",
   "/styles.css",
   "/app.js",
+  "/auth.js",
   "/manifest.webmanifest"
 ];
 
