@@ -115,8 +115,8 @@ function renderCustomers(q=""){
   if(maintenanceFilter==="maintenance")rows=rows.filter(c=>Boolean(c.maintenance_customer));
   if(maintenanceFilter==="due")rows=rows.filter(c=>Boolean(c.maintenance_due));
   customerCount.textContent=rows.length+" Kunden"+(customersOffline?" · Offline":"");
-  customerRows.innerHTML=rows.map(c=>`<tr class="customer-row" data-customer="${c.id}"><td><strong>${c.name}</strong></td><td>${c.address||"–"}</td><td>${[c.postal_code,c.city].filter(Boolean).join(" ")||"–"}</td><td>${c.phone||"–"}</td><td>${c.email||"–"}</td><td class="open">Details →</td></tr>`).join("")||'<tr><td colspan="6" class="loading">Keine passenden Kunden.</td></tr>';
-  document.querySelectorAll(".customer-row").forEach(x=>x.onclick=()=>openCustomer(x.dataset.customer));
+  customerRows.innerHTML=rows.map(c=>`<tr class="customer-row" data-customer="${c.id}"><td class="customer-name"><strong>${esc(c.name)}</strong></td><td class="customer-address">${esc(c.address||"")}</td><td class="customer-city">${esc([c.postal_code,c.city].filter(Boolean).join(" "))}</td><td class="customer-phone">${esc(c.phone||"")}</td><td class="customer-email">${esc(c.email||"")}</td><td class="open">Details →</td><td class="customer-mobile-route">${c.address?`<a class="customer-route" href="https://maps.apple.com/?daddr=${encodeURIComponent([c.address,c.postal_code,c.city,c.country||"Austria"].filter(Boolean).join(", "))}&dirflg=d" target="_blank" rel="noopener">↗ Route</a>`:""}</td></tr>`).join("")||'<tr><td colspan="7" class="loading">Keine passenden Kunden.</td></tr>';
+  document.querySelectorAll(".customer-row").forEach(x=>x.onclick=e=>{if(e.target.closest(".customer-route"))return;openCustomer(x.dataset.customer)});
 }
 async function loadCustomers(q=""){
   customerRows.innerHTML='<tr><td colspan="6" class="loading">Lade Kunden …</td></tr>';
