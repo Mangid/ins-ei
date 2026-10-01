@@ -252,12 +252,20 @@ def _take_challenge(token: str, kind: str) -> bytes:
         raise HTTPException(400,"AUTH_CHALLENGE_INVALID")
     return bytes(row["challenge"])
 
-SERVICE_AUTH_PUBLIC_PREFIXES=(
-    "/api/v1/auth/",
-    "/api/v1/telemetry",
-    "/api/v1/fleet/",
-)
 SERVICE_AUTH_PUBLIC_EXACT={"/health"}
+
+def _service_machine_endpoint(method: str, path: str) -> bool:
+    if path.startswith("/api/v1/auth/"):
+        return True
+    if method=="POST" and path=="/api/v1/telemetry":
+        return True
+    if path.startswith("/api/v1/fleet/"):
+        tail=path.split("/api/v1/fleet/",1)[1].split("/")
+        # Agent-only endpoints: heartbeat, polling for commands, and command result callback.
+        if len(tail)>=3 and tail[1:3]==["update-agent","heartbeat"] and method=="POST": return True
+        if len(tail)>=3 and tail[1:3]==["update-agent","command"] and method=="GET": return True
+        if len(tail)>=4 and tail[1]=="command" and tail[3]=="result" and method=="POST": return True
+    return False
 
 @app.middleware("http")
 async def service_auth_guard(request: Request, call_next):
@@ -266,7 +274,7 @@ async def service_auth_guard(request: Request, call_next):
         return await call_next(request)
     if not path.startswith("/api/"):
         return await call_next(request)
-    if any(path.startswith(p) for p in SERVICE_AUTH_PUBLIC_PREFIXES):
+    if _service_machine_endpoint(request.method,path):
         return await call_next(request)
     # Existing management-key integrations remain independent from browser sessions.
     if request.headers.get("x-api-key") or request.headers.get("x-ins-ei-key"):
