@@ -4527,6 +4527,47 @@ def update_customer(customer_id: int, customer: CustomerUpdate):
     return {"status":"updated","id":customer_id}
 
 
+@app.delete("/api/v1/customers/{customer_id}")
+def delete_customer(customer_id: int):
+    """Delete a customer and customer-owned records/files.
+
+    Projects are preserved and detached from the customer. This avoids silently
+    deleting project history that may still be operationally relevant.
+    """
+    file_paths=[]
+    with db() as con:
+        customer=con.execute("SELECT id,name FROM customers WHERE id=?",(customer_id,)).fetchone()
+        if customer is None:
+            raise HTTPException(404,"Customer not found")
+        installations=[r["id"] for r in con.execute("SELECT id FROM installations WHERE customer_id=?",(customer_id,))]
+        devices=[]
+        if installations:
+            marks=",".join("?" for _ in installations)
+            devices=[r["id"] for r in con.execute(f"SELECT id FROM devices WHERE installation_id IN ({marks})",installations)]
+        file_rows=con.execute("SELECT stored_name FROM customer_files WHERE customer_id=?",(customer_id,)).fetchall()
+        file_paths=[FILES_PATH/r["stored_name"] for r in file_rows if r["stored_name"]]
+
+        # Preserve projects, but remove their link to the deleted customer.
+        con.execute("UPDATE projects SET customer_id=NULL WHERE customer_id=?",(customer_id,))
+        con.execute("DELETE FROM tasks WHERE customer_id=?",(customer_id,))
+        con.execute("DELETE FROM customer_credentials WHERE customer_id=?",(customer_id,))
+        con.execute("DELETE FROM customer_files WHERE customer_id=?",(customer_id,))
+        con.execute("DELETE FROM maintenance_jobs WHERE customer_id=?",(customer_id,))
+        con.execute("DELETE FROM service_visits WHERE customer_id=?",(customer_id,))
+        if devices:
+            marks=",".join("?" for _ in devices)
+            con.execute(f"DELETE FROM devices WHERE id IN ({marks})",devices)
+        con.execute("DELETE FROM installations WHERE customer_id=?",(customer_id,))
+        con.execute("DELETE FROM customers WHERE id=?",(customer_id,))
+
+    for path in file_paths:
+        try:
+            if path.exists(): path.unlink()
+        except OSError:
+            pass
+    return {"status":"deleted","id":customer_id,"name":customer["name"]}
+
+
 class CustomerImportRow(BaseModel):
     customer_number: str | None = None
     name: str
