@@ -25,7 +25,7 @@ import paho.mqtt.client as mqtt
 from pywebpush import webpush, WebPushException
 from cryptography.fernet import Fernet, InvalidToken
 
-from fastapi import FastAPI, HTTPException, Header, Depends, UploadFile, File, Form, Cookie, Response, Request
+from fastapi import FastAPI, HTTPException, Header, Depends, UploadFile, File, Form, Cookie, Response, Request as FastAPIRequest
 from fastapi.responses import FileResponse, JSONResponse
 from webauthn import (
     generate_registration_options, verify_registration_response,
@@ -268,7 +268,7 @@ def _service_machine_endpoint(method: str, path: str) -> bool:
     return False
 
 @app.middleware("http")
-async def service_auth_guard(request: Request, call_next):
+async def service_auth_guard(request: FastAPIRequest, call_next):
     path=request.url.path
     if path.startswith("/portal") or path.startswith("/mcp") or path in SERVICE_AUTH_PUBLIC_EXACT:
         return await call_next(request)
@@ -291,7 +291,7 @@ def service_auth_status(ins_service_session: str | None = Cookie(default=None)):
     return {"configured":configured,"authenticated":_service_session_valid(ins_service_session) if configured else False}
 
 @app.post("/api/v1/auth/register/options")
-def service_register_options(request: Request, ins_service_session: str | None = Cookie(default=None)):
+def service_register_options(request: FastAPIRequest, ins_service_session: str | None = Cookie(default=None)):
     if _service_auth_configured() and not _service_session_valid(ins_service_session):
         raise HTTPException(401,"SERVICE_LOGIN_REQUIRED")
     options=generate_registration_options(
@@ -309,7 +309,7 @@ def service_register_options(request: Request, ins_service_session: str | None =
     return {"token":token,"options":json.loads(options_to_json(options))}
 
 @app.post("/api/v1/auth/register/verify")
-async def service_register_verify(request: Request, response: Response):
+async def service_register_verify(request: FastAPIRequest, response: Response):
     body=await request.json();token=str(body.pop("token",""))
     challenge=_take_challenge(token,"register")
     try:
@@ -347,7 +347,7 @@ def service_login_options():
     return {"token":token,"options":json.loads(options_to_json(options))}
 
 @app.post("/api/v1/auth/login/verify")
-async def service_login_verify(request: Request, response: Response):
+async def service_login_verify(request: FastAPIRequest, response: Response):
     body=await request.json();token=str(body.pop("token",""))
     challenge=_take_challenge(token,"login")
     cid=str(body.get("id") or "")
