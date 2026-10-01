@@ -213,3 +213,13 @@
   .customer-table .customer-mobile-route{display:block;position:absolute;right:10px;top:50%;width:auto;transform:translateY(-50%)}
   .customer-route{display:inline-flex;align-items:center;justify-content:center;padding:7px 9px;border:1px solid #29445b;border-radius:8px;background:#101f2d;color:#c9d7e3;text-decoration:none;font-size:12px;font-weight:600;white-space:nowrap}
 }
+
+
+/* Service center passkey gate */
+.service-auth{position:fixed;inset:0;z-index:100;background:#07111b;display:grid;place-items:center;padding:22px}
+.service-auth.hidden{display:none!important}
+.service-auth-card{width:min(420px,100%);background:#0d1a27;border:1px solid #29445b;border-radius:18px;padding:30px;text-align:center;box-shadow:0 24px 80px #0008}
+.service-auth-mark{display:inline-block;font-size:12px;font-weight:800;letter-spacing:.12em;color:#65d8ff;background:#102f45;border-radius:99px;padding:6px 10px;margin-bottom:16px}
+.service-auth-card h1{margin:0 0 10px}.service-auth-card p{color:#9fb0c1;line-height:1.5;margin:0 0 20px}
+.service-auth-card button{width:100%;min-height:46px;font-size:15px}.service-auth-card small{display:block;color:#6f8598;margin-top:16px;line-height:1.4}
+body.service-locked>aside,body.service-locked>main,body.service-locked>.mobile-menu,body.service-locked>.nav-backdrop{visibility:hidden}
