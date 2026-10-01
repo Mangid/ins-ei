@@ -3,6 +3,7 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY index.html /usr/share/nginx/html/index.html
 COPY styles.css /usr/share/nginx/html/styles.css
 COPY app.js /usr/share/nginx/html/app.js
+COPY auth.js /usr/share/nginx/html/auth.js
 COPY offline.js /usr/share/nginx/html/offline.js
 COPY manifest.webmanifest /usr/share/nginx/html/manifest.webmanifest
 COPY icon-192.png /usr/share/nginx/html/icon-192.png
