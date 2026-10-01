@@ -206,7 +206,7 @@
   .customer-table .customer-row{position:relative;display:block;padding:12px 88px 12px 14px;margin-bottom:7px;border-radius:10px;min-height:62px}
   .customer-table .customer-row td{padding:0;border:0}
   .customer-table .customer-name{display:block;font-size:16px;line-height:1.25;margin-bottom:5px}
-  .customer-table .customer-address,.customer-table .customer-city{display:inline;color:#9fb0c1;font-size:13px;line-height:1.35}
+  .customer-table .customer-address,.customer-table .customer-city{display:inline;color:#8194a5;font-size:11px;line-height:1.35}
   .customer-table .customer-address:before,.customer-table .customer-city:before{content:none}
   .customer-table .customer-address:not(:empty)+.customer-city:not(:empty):before{content:" · ";color:#667b8e}
   .customer-table .customer-phone,.customer-table .customer-email,.customer-table .open{display:none}
