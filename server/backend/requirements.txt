@@ -5,3 +5,4 @@ pywebpush
 
 paho-mqtt>=2.1,<3
 cryptography>=43,<47
+webauthn>=2.7,<3
