@@ -4813,6 +4813,45 @@ def update_device(device_id: int, device: DeviceCreate):
     return {"status":"updated","id":device_id}
 
 
+@app.delete("/api/v1/devices/{device_id}")
+def delete_device(device_id: int):
+    """Delete one customer device and records/files belonging to that device."""
+    file_paths=[]
+    with db() as con:
+        device=con.execute("""SELECT d.*,i.customer_id FROM devices d
+            JOIN installations i ON i.id=d.installation_id WHERE d.id=?""",(device_id,)).fetchone()
+        if device is None:
+            raise HTTPException(404,"Device not found")
+        files=con.execute("SELECT stored_name FROM customer_files WHERE device_id=?",(device_id,)).fetchall()
+        file_paths=[FILES_PATH/r["stored_name"] for r in files if r["stored_name"]]
+
+        # Device-bound history is removed with the device. General customer history remains.
+        visit_ids=[r["id"] for r in con.execute("SELECT id FROM service_visits WHERE device_id=?",(device_id,))]
+        if visit_ids:
+            marks=",".join("?" for _ in visit_ids)
+            extra=con.execute(f"SELECT stored_name FROM customer_files WHERE visit_id IN ({marks})",visit_ids).fetchall()
+            file_paths.extend(FILES_PATH/r["stored_name"] for r in extra if r["stored_name"])
+            con.execute(f"DELETE FROM customer_files WHERE visit_id IN ({marks})",visit_ids)
+        con.execute("DELETE FROM customer_files WHERE device_id=?",(device_id,))
+        con.execute("DELETE FROM customer_credentials WHERE device_id=?",(device_id,))
+        con.execute("DELETE FROM tasks WHERE device_id=?",(device_id,))
+        con.execute("DELETE FROM maintenance_jobs WHERE device_id=?",(device_id,))
+        con.execute("DELETE FROM service_visits WHERE device_id=?",(device_id,))
+        con.execute("DELETE FROM devices WHERE id=?",(device_id,))
+
+        # Remove the automatically-created installation shell when it no longer contains devices.
+        remaining=con.execute("SELECT 1 FROM devices WHERE installation_id=? LIMIT 1",(device["installation_id"],)).fetchone()
+        if remaining is None:
+            con.execute("DELETE FROM installations WHERE id=?",(device["installation_id"],))
+
+    for path in set(file_paths):
+        try:
+            if path.exists(): path.unlink()
+        except OSError:
+            pass
+    return {"status":"deleted","id":device_id}
+
+
 class DeviceMaintenanceCustomer(BaseModel):
     maintenance_customer: bool
 
