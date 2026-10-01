@@ -198,3 +198,18 @@
 .credential-count{padding:12px 2px 0}.credential-card.hidden,.credential-secret.hidden{display:none!important}
 @media(max-width:900px){.credential-card{grid-template-columns:52px minmax(0,1fr)}.credential-icon{width:46px;height:46px}.credential-actions{grid-column:1/-1;justify-content:flex-start;padding-left:68px}.credential-secret{left:86px}.credential-tools{grid-template-columns:1fr}}
 @media(max-width:560px){.credential-card{padding:14px 12px;gap:10px}.credential-actions{padding-left:0}.credential-actions button{flex:1 1 auto}.credential-meta{display:grid;gap:4px}.credential-meta i{display:none}}
+
+
+/* Compact mobile customer list */
+.customer-mobile-route{display:none}
+@media(max-width:760px){
+  .customer-table .customer-row{position:relative;display:block;padding:12px 88px 12px 14px;margin-bottom:7px;border-radius:10px;min-height:62px}
+  .customer-table .customer-row td{padding:0;border:0}
+  .customer-table .customer-name{display:block;font-size:16px;line-height:1.25;margin-bottom:5px}
+  .customer-table .customer-address,.customer-table .customer-city{display:inline;color:#9fb0c1;font-size:13px;line-height:1.35}
+  .customer-table .customer-address:before,.customer-table .customer-city:before{content:none}
+  .customer-table .customer-address:not(:empty)+.customer-city:not(:empty):before{content:" · ";color:#667b8e}
+  .customer-table .customer-phone,.customer-table .customer-email,.customer-table .open{display:none}
+  .customer-table .customer-mobile-route{display:block;position:absolute;right:10px;top:50%;width:auto;transform:translateY(-50%)}
+  .customer-route{display:inline-flex;align-items:center;justify-content:center;padding:7px 9px;border:1px solid #29445b;border-radius:8px;background:#101f2d;color:#c9d7e3;text-decoration:none;font-size:12px;font-weight:600;white-space:nowrap}
+}
