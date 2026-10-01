@@ -25,9 +25,18 @@ import paho.mqtt.client as mqtt
 from pywebpush import webpush, WebPushException
 from cryptography.fernet import Fernet, InvalidToken
 
-from fastapi import FastAPI, HTTPException, Header, Depends, UploadFile, File, Form, Cookie, Response
+from fastapi import FastAPI, HTTPException, Header, Depends, UploadFile, File, Form, Cookie, Response, Request
+from fastapi.responses import FileResponse, JSONResponse
+from webauthn import (
+    generate_registration_options, verify_registration_response,
+    generate_authentication_options, verify_authentication_response,
+    options_to_json,
+)
+from webauthn.helpers.structs import (
+    AuthenticatorSelectionCriteria, ResidentKeyRequirement,
+    UserVerificationRequirement, PublicKeyCredentialDescriptor,
+)
 from pydantic import BaseModel, Field
-from fastapi.responses import FileResponse
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
@@ -167,6 +176,201 @@ app = FastAPI(
     description="Backend API for INS Energy Intelligence",
     version=VERSION,
 )
+
+
+SERVICE_AUTH_RP_ID = "ins-ei.ins-enertech.net"
+SERVICE_AUTH_ORIGIN = "https://ins-ei.ins-enertech.net"
+SERVICE_AUTH_COOKIE = "ins_service_session"
+SERVICE_AUTH_DAYS = 30
+
+def init_service_auth_db():
+    with db() as con:
+        con.executescript("""
+        CREATE TABLE IF NOT EXISTS service_passkeys (
+            credential_id TEXT PRIMARY KEY,
+            public_key BLOB NOT NULL,
+            sign_count INTEGER NOT NULL DEFAULT 0,
+            device_name TEXT,
+            created_at TEXT NOT NULL,
+            last_used_at TEXT
+        );
+        CREATE TABLE IF NOT EXISTS service_auth_challenges (
+            token TEXT PRIMARY KEY,
+            kind TEXT NOT NULL,
+            challenge BLOB NOT NULL,
+            expires_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS service_auth_sessions (
+            token TEXT PRIMARY KEY,
+            expires_at TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            last_seen_at TEXT NOT NULL
+        );
+        """)
+
+def _b64url(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+
+def _service_auth_configured() -> bool:
+    with db() as con:
+        return bool(con.execute("SELECT 1 FROM service_passkeys LIMIT 1").fetchone())
+
+def _service_session_valid(token: str | None) -> bool:
+    if not token:
+        return False
+    now = datetime.now(timezone.utc)
+    with db() as con:
+        row=con.execute("SELECT expires_at FROM service_auth_sessions WHERE token=?",(token,)).fetchone()
+        if row is None or row["expires_at"] <= now.isoformat():
+            if row is not None: con.execute("DELETE FROM service_auth_sessions WHERE token=?",(token,))
+            return False
+        con.execute("UPDATE service_auth_sessions SET last_seen_at=? WHERE token=?",(now.isoformat(),token))
+    return True
+
+def _new_service_session(response: Response) -> None:
+    token=secrets.token_urlsafe(32);now=datetime.now(timezone.utc)
+    expires=now+timedelta(days=SERVICE_AUTH_DAYS)
+    with db() as con:
+        con.execute("INSERT INTO service_auth_sessions(token,expires_at,created_at,last_seen_at) VALUES(?,?,?,?)",
+                    (token,expires.isoformat(),now.isoformat(),now.isoformat()))
+    response.set_cookie(SERVICE_AUTH_COOKIE,token,max_age=SERVICE_AUTH_DAYS*86400,
+                        httponly=True,secure=True,samesite="lax",path="/")
+
+def _challenge(kind: str, challenge: bytes) -> str:
+    token=secrets.token_urlsafe(24)
+    with db() as con:
+        con.execute("DELETE FROM service_auth_challenges WHERE expires_at<=?",(datetime.now(timezone.utc).isoformat(),))
+        con.execute("INSERT INTO service_auth_challenges(token,kind,challenge,expires_at) VALUES(?,?,?,?)",
+                    (token,kind,challenge,(datetime.now(timezone.utc)+timedelta(minutes=5)).isoformat()))
+    return token
+
+def _take_challenge(token: str, kind: str) -> bytes:
+    with db() as con:
+        row=con.execute("SELECT challenge,expires_at FROM service_auth_challenges WHERE token=? AND kind=?",(token,kind)).fetchone()
+        con.execute("DELETE FROM service_auth_challenges WHERE token=?",(token,))
+    if row is None or row["expires_at"] <= datetime.now(timezone.utc).isoformat():
+        raise HTTPException(400,"AUTH_CHALLENGE_INVALID")
+    return bytes(row["challenge"])
+
+SERVICE_AUTH_PUBLIC_PREFIXES=(
+    "/api/v1/auth/",
+    "/api/v1/telemetry",
+    "/api/v1/fleet/",
+)
+SERVICE_AUTH_PUBLIC_EXACT={"/health"}
+
+@app.middleware("http")
+async def service_auth_guard(request: Request, call_next):
+    path=request.url.path
+    if path.startswith("/portal") or path.startswith("/mcp") or path in SERVICE_AUTH_PUBLIC_EXACT:
+        return await call_next(request)
+    if not path.startswith("/api/"):
+        return await call_next(request)
+    if any(path.startswith(p) for p in SERVICE_AUTH_PUBLIC_PREFIXES):
+        return await call_next(request)
+    # Existing management-key integrations remain independent from browser sessions.
+    if request.headers.get("x-api-key") or request.headers.get("x-ins-ei-key"):
+        return await call_next(request)
+    if not _service_auth_configured():
+        return await call_next(request)
+    if not _service_session_valid(request.cookies.get(SERVICE_AUTH_COOKIE)):
+        return JSONResponse({"detail":"SERVICE_LOGIN_REQUIRED"},status_code=401)
+    return await call_next(request)
+
+@app.get("/api/v1/auth/status")
+def service_auth_status(ins_service_session: str | None = Cookie(default=None)):
+    configured=_service_auth_configured()
+    return {"configured":configured,"authenticated":_service_session_valid(ins_service_session) if configured else False}
+
+@app.post("/api/v1/auth/register/options")
+def service_register_options(request: Request, ins_service_session: str | None = Cookie(default=None)):
+    if _service_auth_configured() and not _service_session_valid(ins_service_session):
+        raise HTTPException(401,"SERVICE_LOGIN_REQUIRED")
+    options=generate_registration_options(
+        rp_id=SERVICE_AUTH_RP_ID,
+        rp_name="INS-EI Servicezentrale",
+        user_id=b"niki-admin",
+        user_name="niki",
+        user_display_name="Niki",
+        authenticator_selection=AuthenticatorSelectionCriteria(
+            resident_key=ResidentKeyRequirement.PREFERRED,
+            user_verification=UserVerificationRequirement.REQUIRED,
+        ),
+    )
+    token=_challenge("register",options.challenge)
+    return {"token":token,"options":json.loads(options_to_json(options))}
+
+@app.post("/api/v1/auth/register/verify")
+async def service_register_verify(request: Request, response: Response):
+    body=await request.json();token=str(body.pop("token",""))
+    challenge=_take_challenge(token,"register")
+    try:
+        verification=verify_registration_response(
+            credential=body,
+            expected_challenge=challenge,
+            expected_rp_id=SERVICE_AUTH_RP_ID,
+            expected_origin=SERVICE_AUTH_ORIGIN,
+            require_user_verification=True,
+        )
+    except Exception as exc:
+        raise HTTPException(400,f"PASSKEY_REGISTRATION_FAILED: {exc}")
+    cid=_b64url(verification.credential_id)
+    with db() as con:
+        con.execute("""INSERT OR REPLACE INTO service_passkeys
+            (credential_id,public_key,sign_count,device_name,created_at,last_used_at)
+            VALUES(?,?,?,?,?,?)""",(cid,verification.credential_public_key,verification.sign_count,
+                request.headers.get("user-agent","")[:160],datetime.now(timezone.utc).isoformat(),None))
+    _new_service_session(response)
+    return {"registered":True}
+
+@app.post("/api/v1/auth/login/options")
+def service_login_options():
+    if not _service_auth_configured():
+        raise HTTPException(409,"PASSKEY_NOT_CONFIGURED")
+    with db() as con:
+        rows=con.execute("SELECT credential_id FROM service_passkeys").fetchall()
+    descriptors=[PublicKeyCredentialDescriptor(id=base64.urlsafe_b64decode(r["credential_id"]+"="*((4-len(r["credential_id"])%4)%4))) for r in rows]
+    options=generate_authentication_options(
+        rp_id=SERVICE_AUTH_RP_ID,
+        allow_credentials=descriptors,
+        user_verification=UserVerificationRequirement.REQUIRED,
+    )
+    token=_challenge("login",options.challenge)
+    return {"token":token,"options":json.loads(options_to_json(options))}
+
+@app.post("/api/v1/auth/login/verify")
+async def service_login_verify(request: Request, response: Response):
+    body=await request.json();token=str(body.pop("token",""))
+    challenge=_take_challenge(token,"login")
+    cid=str(body.get("id") or "")
+    with db() as con:
+        row=con.execute("SELECT * FROM service_passkeys WHERE credential_id=?",(cid,)).fetchone()
+    if row is None: raise HTTPException(401,"PASSKEY_UNKNOWN")
+    try:
+        verification=verify_authentication_response(
+            credential=body,
+            expected_challenge=challenge,
+            expected_rp_id=SERVICE_AUTH_RP_ID,
+            expected_origin=SERVICE_AUTH_ORIGIN,
+            credential_public_key=bytes(row["public_key"]),
+            credential_current_sign_count=int(row["sign_count"]),
+            require_user_verification=True,
+        )
+    except Exception as exc:
+        raise HTTPException(401,f"PASSKEY_LOGIN_FAILED: {exc}")
+    with db() as con:
+        con.execute("UPDATE service_passkeys SET sign_count=?,last_used_at=? WHERE credential_id=?",
+                    (verification.new_sign_count,datetime.now(timezone.utc).isoformat(),cid))
+    _new_service_session(response)
+    return {"authenticated":True}
+
+@app.post("/api/v1/auth/logout")
+def service_logout(response: Response, ins_service_session: str | None = Cookie(default=None)):
+    if ins_service_session:
+        with db() as con: con.execute("DELETE FROM service_auth_sessions WHERE token=?",(ins_service_session,))
+    response.delete_cookie(SERVICE_AUTH_COOKIE,path="/")
+    return {"logged_out":True}
+
 
 def require_management_api_key(x_api_key: str | None = Header(default=None)):
     expected=MANAGEMENT_KEY.read_text().strip() if MANAGEMENT_KEY.exists() else ""
@@ -3711,6 +3915,7 @@ async def lifespan(app: FastAPI):
     init_db()
     init_customer_db()
     init_portal_db()
+    init_service_auth_db()
     _ensure_portal_admin()
     init_oekofen_db()
 
