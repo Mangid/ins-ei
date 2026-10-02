@@ -46,14 +46,48 @@ function liveGroup(rows,title,match){const items=rows.filter(x=>match.test(x.lab
 function oekQuery(){return oekofenPlant?.plant_id?"&plant_id="+encodeURIComponent(oekofenPlant.plant_id):""}
 async function loadOekofenPortal(){
  try{
-  const me=await fetch("/dev-portal/api/me",{cache:"no-store"}).then(r=>r.json());
+  const meResponse=await fetch("/dev-portal/api/me",{cache:"no-store"});
+  if(!meResponse.ok)throw Error("HTTP "+meResponse.status);
+  const me=await meResponse.json();
   if(me.is_admin){
-   const pr=await fetch("/dev-portal/api/oekofen/plants",{cache:"no-store"});if(pr.ok){const pd=await pr.json(),picker=document.getElementById("oekofenAdminPicker"),sel=document.getElementById("oekofenPlantSelect");picker.classList.remove("hidden");sel.innerHTML='<option value="">Anlage auswählen …</option>'+pd.plants.map(p=>'<option value="'+escp(p.plant_id)+'">'+escp(p.plant_name||p.plant_id)+(p.customer_name?' · '+escp(p.customer_name):'')+(p.serial_number?' · '+escp(p.serial_number):'')+'</option>').join("");const saved=localStorage.getItem("ins-dev-oekofen-plant");if(saved&&pd.plants.some(p=>p.plant_id===saved))sel.value=saved;sel.onchange=async()=>{if(!sel.value)return;localStorage.setItem("ins-dev-oekofen-plant",sel.value);const p=pd.plants.find(x=>x.plant_id===sel.value);oekofenPlant={plant_id:p.plant_id,name:p.plant_name,serial_number:p.serial_number,customer_name:p.customer_name};oekofenNav?.classList.remove("hidden");oekofenTitle.textContent=p.plant_name||"Meine Heizung";oekofenMeta.textContent=[p.serial_number,p.customer_name,p.customer_city].filter(Boolean).join(" · ");await refreshOekofenLive();await loadOekofenHistory()};if(sel.value){sel.onchange();return}oekofenNav?.classList.remove("hidden");return}
-  }}
-  const r=await fetch("/dev-portal/api/oekofen",{cache:"no-store"});if(!r.ok){oekofenNav?.classList.add("hidden");return}
-  const d=await r.json();oekofenPlant=d.plant;oekofenNav?.classList.remove("hidden");oekofenTitle.textContent=d.plant.name||"Meine Heizung";oekofenMeta.textContent=[d.plant.serial_number,d.plant.customer_name].filter(Boolean).join(" · ");
-  await refreshOekofenLive();await loadOekofenHistory();
- }catch(e){oekofenNav?.classList.add("hidden")}
+   const pr=await fetch("/dev-portal/api/oekofen/plants",{cache:"no-store"});
+   if(pr.ok){
+    const pd=await pr.json();
+    const picker=document.getElementById("oekofenAdminPicker");
+    const sel=document.getElementById("oekofenPlantSelect");
+    picker.classList.remove("hidden");
+    sel.innerHTML='<option value="">Anlage auswählen …</option>'+pd.plants.map(p=>'<option value="'+escp(p.plant_id)+'">'+escp(p.plant_name||p.plant_id)+(p.customer_name?' · '+escp(p.customer_name):'')+(p.serial_number?' · '+escp(p.serial_number):'')+'</option>').join("");
+    const saved=localStorage.getItem("ins-dev-oekofen-plant");
+    if(saved&&pd.plants.some(p=>p.plant_id===saved))sel.value=saved;
+    sel.onchange=async()=>{
+     if(!sel.value)return;
+     localStorage.setItem("ins-dev-oekofen-plant",sel.value);
+     const p=pd.plants.find(x=>x.plant_id===sel.value);
+     oekofenPlant={plant_id:p.plant_id,name:p.plant_name,serial_number:p.serial_number,customer_name:p.customer_name};
+     oekofenNav?.classList.remove("hidden");
+     oekofenTitle.textContent=p.plant_name||"Meine Heizung";
+     oekofenMeta.textContent=[p.serial_number,p.customer_name,p.customer_city].filter(Boolean).join(" · ");
+     await refreshOekofenLive();
+     await loadOekofenHistory();
+    };
+    oekofenNav?.classList.remove("hidden");
+    if(sel.value)await sel.onchange();
+    return;
+   }
+  }
+  const r=await fetch("/dev-portal/api/oekofen",{cache:"no-store"});
+  if(!r.ok){oekofenNav?.classList.add("hidden");return}
+  const d=await r.json();
+  oekofenPlant=d.plant;
+  oekofenNav?.classList.remove("hidden");
+  oekofenTitle.textContent=d.plant.name||"Meine Heizung";
+  oekofenMeta.textContent=[d.plant.serial_number,d.plant.customer_name].filter(Boolean).join(" · ");
+  await refreshOekofenLive();
+  await loadOekofenHistory();
+ }catch(e){
+  console.error("OekoFEN DEV portal",e);
+  oekofenNav?.classList.add("hidden");
+ }
 }
 async function refreshOekofenLive(){
  if(!oekofenPlant)return;
