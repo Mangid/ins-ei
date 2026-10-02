@@ -307,7 +307,7 @@ def configure_inventory(db_path) -> None:
             needle=str(search or "").strip().casefold()
             for row in rows:
                 item=dict(row)
-                if needle and needle not in " ".join(str(item.get(k) or "") for k in ("article_number","name","manufacturer","category","supplier","sevdesk_article_number")).casefold():
+                if needle and needle not in " ".join(str(item.get(k) or "") for k in ("article_number","name","manufacturer","category","supplier","sevdesk_article_number","notes")).casefold():
                     continue
                 item["stocks"]=[dict(x) for x in con.execute("""SELECT l.id location_id,l.name,l.code,COALESCE(s.quantity,0) quantity
                     FROM inventory_locations l LEFT JOIN inventory_stock s ON s.location_id=l.id AND s.item_id=?
