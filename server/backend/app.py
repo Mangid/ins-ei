@@ -4027,7 +4027,7 @@ def oekofen_csv_worker():
         try:
             now=datetime.now(ZoneInfo("Europe/Vienna"))
             key=now.strftime("%Y-%m-%d-%H")
-            if now.hour>=3 and key!=last_attempt_hour:
+            if now.hour in (3,6,12,18) and key!=last_attempt_hour:
                 day=(now.date()-timedelta(days=1)).isoformat()
                 with db() as con:
                     pending=con.execute("""SELECT COUNT(*) AS n FROM oekofen_plants p
