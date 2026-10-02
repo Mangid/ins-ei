@@ -505,7 +505,7 @@ async function taskForm(task=null,projectContext=null){
 newTask.onclick=()=>taskForm();
 async function routeFromHash(){
   const hash=location.hash.slice(1),parts=hash.split("/");
-  const view=["customers","instances","visits","maintenances","tasks","projects","oekofen"].includes(parts[0])?parts[0]:"dashboard";
+  const view=["customers","instances","visits","maintenances","tasks","projects","oekofen","inventory"].includes(parts[0])?parts[0]:"dashboard";
   setView(view);
   if(parts[0]==="tasks"&&parts[1]==="task"&&parts[2]){
     try{const r=await fetch("/api/v1/tasks?t="+Date.now(),{cache:"no-store"});if(r.ok){const d=await r.json(),task=(d.tasks||[]).find(x=>String(x.id)===parts[2]);if(task)await taskForm(task)}}catch(e){}
