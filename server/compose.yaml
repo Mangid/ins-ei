@@ -9,6 +9,9 @@ services:
       - "127.0.0.1:8100:8100"
     volumes:
       - ins_ei_data:/data
+      - /proc:/host/proc:ro
+      - /:/host/root:ro
+      - influxdb2_data:/influx-data:ro
       - ./secrets/pushsafer_private_key:/run/secrets/pushsafer_private_key:ro
       - ./secrets/management_api_key:/run/secrets/management_api_key:ro
       - ./secrets/oekofen_username:/run/secrets/oekofen_username:ro
@@ -41,6 +44,9 @@ volumes:
   ins_ei_data:
     external: true
     name: ins-ei_ins_ei_data
+  influxdb2_data:
+    external: true
+    name: ins-ei_influxdb2_data
 
 networks:
   ins-platform:
