@@ -43,8 +43,13 @@ logoutButton?.addEventListener("click",async()=>{try{await fetch("/portal/api/lo
 let oekofenPlant=null,oekofenLiveTimer=null,oekofenPeriod="24h";
 const escp=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 function liveGroup(rows,title,match){const items=rows.filter(x=>match.test(x.label));if(!items.length)return"";return '<article class="card oek-live-card"><h2>'+title+'</h2>'+items.map(x=>'<div class="oek-live-row"><span>'+escp(x.label)+'</span><strong>'+escp(x.actual||"–")+(x.target?'<small>Soll '+escp(x.target)+'</small>':"")+'</strong></div>').join("")+'</article>'}
+function oekQuery(){return oekofenPlant?.plant_id?"&plant_id="+encodeURIComponent(oekofenPlant.plant_id):""}
 async function loadOekofenPortal(){
  try{
+  const me=await fetch("/portal/api/me",{cache:"no-store"}).then(r=>r.json());
+  if(me.is_admin){
+   const pr=await fetch("/portal/api/oekofen/plants",{cache:"no-store"});if(pr.ok){const pd=await pr.json(),picker=document.getElementById("oekofenAdminPicker"),sel=document.getElementById("oekofenPlantSelect");picker.classList.remove("hidden");sel.innerHTML='<option value="">Anlage auswählen …</option>'+pd.plants.map(p=>'<option value="'+escp(p.plant_id)+'">'+escp(p.plant_name||p.plant_id)+(p.customer_name?' · '+escp(p.customer_name):'')+(p.serial_number?' · '+escp(p.serial_number):'')+'</option>').join("");const saved=localStorage.getItem("ins-dev-oekofen-plant");if(saved&&pd.plants.some(p=>p.plant_id===saved))sel.value=saved;sel.onchange=async()=>{if(!sel.value)return;localStorage.setItem("ins-dev-oekofen-plant",sel.value);const p=pd.plants.find(x=>x.plant_id===sel.value);oekofenPlant={plant_id:p.plant_id,name:p.plant_name,serial_number:p.serial_number,customer_name:p.customer_name};oekofenNav?.classList.remove("hidden");oekofenTitle.textContent=p.plant_name||"Meine Heizung";oekofenMeta.textContent=[p.serial_number,p.customer_name,p.customer_city].filter(Boolean).join(" · ");await refreshOekofenLive();await loadOekofenHistory()};if(sel.value){sel.onchange();return}oekofenNav?.classList.remove("hidden");return}
+  }}
   const r=await fetch("/portal/api/oekofen",{cache:"no-store"});if(!r.ok){oekofenNav?.classList.add("hidden");return}
   const d=await r.json();oekofenPlant=d.plant;oekofenNav?.classList.remove("hidden");oekofenTitle.textContent=d.plant.name||"Meine Heizung";oekofenMeta.textContent=[d.plant.serial_number,d.plant.customer_name].filter(Boolean).join(" · ");
   await refreshOekofenLive();await loadOekofenHistory();
@@ -53,7 +58,7 @@ async function loadOekofenPortal(){
 async function refreshOekofenLive(){
  if(!oekofenPlant)return;
  try{
-  const r=await fetch("/portal/api/oekofen/live?t="+Date.now(),{cache:"no-store"});if(!r.ok)throw Error(r.status);const d=await r.json(),rows=d.rows||[];
+  const r=await fetch("/portal/api/oekofen/live?t="+Date.now()+oekQuery(),{cache:"no-store"});if(!r.ok)throw Error(r.status);const d=await r.json(),rows=d.rows||[];
   oekofenOnline.textContent="● Online";oekofenOnline.classList.add("ok");
   const groups=[
    liveGroup(rows,"Übersicht",/Außentemperatur|Akt\. Temperatur|Bedienteil/),
@@ -75,7 +80,7 @@ function svgChart(title,series){
 }
 async function loadOekofenHistory(){
  if(!oekofenPlant)return;oekofenCharts.innerHTML='<div class="card">Historie wird geladen …</div>';
- try{const r=await fetch("/portal/api/oekofen/history?period="+oekofenPeriod,{cache:"no-store"});if(!r.ok)throw Error(r.status);const d=await r.json(),s=d.series||{};
+ try{const r=await fetch("/portal/api/oekofen/history?period="+oekofenPeriod+oekQuery(),{cache:"no-store"});if(!r.ok)throw Error(r.status);const d=await r.json(),s=d.series||{};
  const pick=re=>Object.fromEntries(Object.entries(s).filter(([k])=>re.test(k)));
  const cards=[svgChart("Kessel & Außentemperatur",pick(/AT|Kessel|PE1 KT/)),svgChart("Puffer",pick(/PU1/)),svgChart("Warmwasser",pick(/WW1/)),svgChart("Heizkreis 1",pick(/HK1 VL/)),svgChart("Heizkreis 2",pick(/HK2 VL/))].filter(Boolean);
  oekofenCharts.innerHTML=cards.join("")||'<div class="card">Für diesen Zeitraum sind noch keine historischen Daten vorhanden.</div>'}catch(e){oekofenCharts.innerHTML='<div class="card">Historie konnte nicht geladen werden.</div>'}
