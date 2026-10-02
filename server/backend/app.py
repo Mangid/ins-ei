@@ -2478,14 +2478,15 @@ def oekofen_fetch_csv(
         return fetch(access_token)
 
     except urllib.error.HTTPError as exc:
-        if exc.code != 401:
-            raise
-
-        auth = oekofen_login()
-
-        return fetch(
-            auth["access_token"]
-        )
+        if exc.code == 401:
+            auth = oekofen_login()
+            try:
+                return fetch(auth["access_token"])
+            except urllib.error.HTTPError as retry_exc:
+                body=retry_exc.read().decode("utf-8","replace").strip()
+                raise RuntimeError(f"OEKOFEN_CSV_HTTP_{retry_exc.code}: {body[:700] or retry_exc.reason}") from retry_exc
+        body=exc.read().decode("utf-8","replace").strip()
+        raise RuntimeError(f"OEKOFEN_CSV_HTTP_{exc.code}: {body[:700] or exc.reason}") from exc
 
 
 
