@@ -40,6 +40,25 @@ def ins_ei_inventory_items(search: str | None = None) -> dict[str, Any]:
 
 
 @mcp.tool()
+def ins_ei_inventory_item_create(name: str, article_number: str | None = None,
+                                 manufacturer: str | None = None, category: str | None = None,
+                                 supplier: str | None = None, unit: str = "Stk.",
+                                 purchase_price_net: float | None = None, sales_price_net: float | None = None,
+                                 minimum_stock: float = 0, target_stock: float | None = None,
+                                 sevdesk_article_number: str | None = None, notes: str | None = None) -> dict[str, Any]:
+    """Create a new inventory article. Prices and sevdesk reference are optional."""
+    from inventory import InventoryItemCreate
+    payload=InventoryItemCreate(name=name,article_number=article_number,manufacturer=manufacturer,
+        category=category,supplier=supplier,unit=unit,purchase_price_net=purchase_price_net,
+        sales_price_net=sales_price_net,minimum_stock=minimum_stock,target_stock=target_stock,
+        sevdesk_article_number=sevdesk_article_number,notes=notes)
+    for route in inventory_router.routes:
+        if getattr(route,"path","")=="/api/inventory/items" and "POST" in getattr(route,"methods",set()):
+            return route.endpoint(payload)
+    raise RuntimeError("INVENTORY_ITEM_CREATE_ENDPOINT_MISSING")
+
+
+@mcp.tool()
 def ins_ei_inventory_locations() -> dict[str, Any]:
     """Return active inventory locations."""
     with _inventory_connect() as con:
