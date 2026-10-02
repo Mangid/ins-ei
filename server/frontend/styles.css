@@ -239,3 +239,19 @@ body.service-locked>aside,body.service-locked>main,body.service-locked>.mobile-m
 .inventory-table td small{display:block;color:#8194a5;margin-top:4px}.stock-chip{display:block;font-size:11px;color:#a8bac9;white-space:nowrap}.inventory-low{background:#2a2115}.reorder-badge{display:inline-flex;padding:4px 8px;border-radius:999px;background:#4b3318;color:#ffd48a;font-size:11px;font-weight:700}.stock-ok{color:#82e6aa;font-size:11px;font-weight:700}.inventory-modal{width:min(720px,calc(100vw - 24px));margin:auto;max-height:92vh;overflow:auto}@media(max-width:760px){.inventory-table th:nth-child(3),.inventory-table td:nth-child(3),.inventory-table th:nth-child(5),.inventory-table td:nth-child(5),.inventory-table th:nth-child(6),.inventory-table td:nth-child(6){display:none}.inventory-table{font-size:12px}}
 
 .inventory-actions{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}@media(max-width:760px){.inventory-actions{display:grid;grid-template-columns:1fr}.inventory-actions button{width:100%}}
+
+/* Inventory mobile cards */
+@media(max-width:760px){
+  .inventory-table,.inventory-table tbody{display:block;width:100%}.inventory-table thead{display:none}
+  .inventory-table tr{display:grid!important;grid-template-columns:1fr auto;gap:7px 12px;margin:0 0 10px;padding:14px;border:1px solid #20394d;border-radius:13px;background:#0d1a27}
+  .inventory-table tr.inventory-low{border-color:#72542c;background:#2a2115}
+  .inventory-table td{display:block!important;padding:0!important;border:0!important;min-width:0}
+  .inventory-table td:nth-child(1){grid-column:1;font-size:12px;color:#8fb0cc}
+  .inventory-table td:nth-child(2){grid-column:1/-1;font-size:16px}.inventory-table td:nth-child(2) small{font-size:11px}
+  .inventory-table td:nth-child(3){grid-column:1/-1;display:flex!important;gap:6px;flex-wrap:wrap}.stock-chip{padding:4px 7px;border-radius:7px;background:#152638}
+  .inventory-table td:nth-child(4){grid-column:1}.inventory-table td:nth-child(4):before{content:"Gesamt ";color:#8194a5;font-size:11px}
+  .inventory-table td:nth-child(5){display:none!important}.inventory-table td:nth-child(6){display:none!important}
+  .inventory-table td:nth-child(7){grid-column:2;grid-row:1;text-align:right}.inventory-table td:nth-child(7):before{content:"VK ";color:#8194a5;font-size:10px;display:block}
+  .inventory-table td:nth-child(8){grid-column:2;text-align:right}.inventory-table td:nth-child(9){grid-column:1/-1}
+  .inventory-actions{display:grid;grid-template-columns:1fr 1fr;gap:7px}.inventory-actions button{width:100%}
+}
