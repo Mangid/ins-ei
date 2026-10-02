@@ -6323,6 +6323,68 @@ def customer_portal_oschmalz_heating(ins_portal_session: str | None = Cookie(def
     return {"online": age is not None and age < 600, "age_seconds": age, "values": values}
 
 
+def _portal_oekofen_plant(user: dict[str,Any], plant_id: str | None=None):
+    with db() as con:
+        if user["is_admin"] and plant_id:
+            row=con.execute("""SELECT p.*,c.id customer_id,c.name customer_name FROM oekofen_plants p
+                LEFT JOIN devices d ON d.oekofen_plant_id=p.plant_id
+                LEFT JOIN installations i ON i.id=d.installation_id LEFT JOIN customers c ON c.id=i.customer_id
+                WHERE p.plant_id=?""",(plant_id,)).fetchone()
+        else:
+            row=con.execute("""SELECT p.*,c.id customer_id,c.name customer_name FROM oekofen_plants p
+                JOIN devices d ON d.oekofen_plant_id=p.plant_id JOIN installations i ON i.id=d.installation_id
+                JOIN customers c ON c.id=i.customer_id JOIN portal_users u ON lower(u.display_name)=lower(c.name)
+                WHERE u.id=? ORDER BY p.plant_name LIMIT 1""",(user["id"],)).fetchone()
+    if row is None: raise HTTPException(404,"PORTAL_OEKOFEN_NOT_FOUND")
+    return dict(row)
+
+def _oekofen_portal_live(plant_id: str) -> dict[str,Any]:
+    names=[]
+    for _,actual,target in OEKOFEN_MEASUREMENTS:
+        names.append(actual)
+        if target:names.append(target)
+    values=oekofen_fetch_variables(plant_id,list(dict.fromkeys(names)))
+    by_name={x.get("name"):x for x in values if isinstance(x,dict)}
+    rows=[]
+    for label,actual,target in OEKOFEN_MEASUREMENTS:
+        av=oekofen_format_variable(by_name.get(actual));tv=oekofen_format_variable(by_name.get(target)) if target else None
+        if av is not None or tv is not None:rows.append({"label":label,"actual":av,"target":tv})
+    return {"rows":rows,"updated_at":datetime.now(timezone.utc).isoformat()}
+
+@app.get("/portal/api/oekofen")
+def portal_oekofen(ins_portal_session: str | None = Cookie(default=None), plant_id: str | None=None):
+    user=_portal_session(ins_portal_session);plant=_portal_oekofen_plant(user,plant_id)
+    return {"plant":{"plant_id":plant["plant_id"],"name":plant["plant_name"],"serial_number":plant["serial_number"],"customer_name":plant["customer_name"]}}
+
+@app.get("/portal/api/oekofen/live")
+def portal_oekofen_live(ins_portal_session: str | None = Cookie(default=None), plant_id: str | None=None):
+    user=_portal_session(ins_portal_session);plant=_portal_oekofen_plant(user,plant_id)
+    try:return {"plant_id":plant["plant_id"],**_oekofen_portal_live(plant["plant_id"])}
+    except Exception as exc:raise HTTPException(502,str(exc))
+
+@app.get("/portal/api/oekofen/history")
+def portal_oekofen_history(period: str="24h", ins_portal_session: str | None = Cookie(default=None), plant_id: str | None=None):
+    user=_portal_session(ins_portal_session);plant=_portal_oekofen_plant(user,plant_id)
+    ranges={"24h":"-24h","7d":"-7d","30d":"-30d"};windows={"24h":"10m","7d":"1h","30d":"4h"}
+    if period not in ranges:raise HTTPException(400,"INVALID_PERIOD")
+    token=INFLUX_TOKEN.read_text().strip();safe=plant["plant_id"].replace('"','\\\"')
+    flux=f'''from(bucket: "{INFLUX_BUCKET}")
+ |> range(start: {ranges[period]})
+ |> filter(fn:(r)=>r._measurement=="oekofen_csv" and r.plant_id=="{safe}")
+ |> filter(fn:(r)=>r._field =~ /AT|Kessel|PE1 KT|PU1|WW1|HK1 VL|HK2 VL/)
+ |> aggregateWindow(every: {windows[period]}, fn: mean, createEmpty: false)
+ |> keep(columns:["_time","_field","_value"])'''
+    req=Request(INFLUX_URL+"/api/v2/query?org="+INFLUX_ORG,data=json.dumps({"query":flux,"type":"flux"}).encode(),method="POST",headers={"Authorization":f"Token {token}","Content-Type":"application/json","Accept":"application/csv"})
+    raw=urlopen(req,timeout=20).read().decode();series={}
+    for row in csv.DictReader(io.StringIO(raw)):
+        field=row.get("_field");ts=row.get("_time");val=row.get("_value")
+        if not field or not ts or val is None:continue
+        try:num=round(float(val),2)
+        except ValueError:continue
+        series.setdefault(field,[]).append({"time":ts,"value":num})
+    return {"plant_id":plant["plant_id"],"period":period,"series":series}
+
+
 @app.get("/portal/api/me")
 def customer_portal_me(ins_portal_session: str | None = Cookie(default=None)):
     return _portal_bootstrap(_portal_session(ins_portal_session))
