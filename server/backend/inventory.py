@@ -13,6 +13,13 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _inventory_prices(manufacturer: str | None, purchase_price_net: float | None, sales_price_net: float | None):
+    """OekoFEN purchase price is list price less the fixed 32% purchasing discount."""
+    if str(manufacturer or "").strip().casefold() in {"ökofen".casefold(), "oekofen"} and sales_price_net is not None:
+        return round(float(sales_price_net) * 0.68, 2), sales_price_net
+    return purchase_price_net, sales_price_net
+
+
 def init_inventory_db(db_path) -> None:
     """Create inventory tables without changing customer or portal schemas."""
     con = sqlite3.connect(db_path)
@@ -179,6 +186,7 @@ def configure_inventory(db_path) -> None:
     @router.post("/items")
     def inventory_item_create(payload: InventoryItemCreate):
         now=_now()
+        purchase_price_net,sales_price_net=_inventory_prices(payload.manufacturer,payload.purchase_price_net,payload.sales_price_net)
         with connect() as con:
             try:
                 cur=con.execute("""INSERT INTO inventory_items
@@ -188,7 +196,7 @@ def configure_inventory(db_path) -> None:
                     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (payload.article_number,payload.name,payload.manufacturer,payload.category,
                      payload.supplier,payload.unit,payload.sevdesk_object_id,payload.sevdesk_article_number,
-                     payload.purchase_price_net,payload.sales_price_net,payload.minimum_stock,
+                     purchase_price_net,sales_price_net,payload.minimum_stock,
                      payload.target_stock,payload.notes,now,now))
             except sqlite3.IntegrityError as exc:
                 raise HTTPException(409,f"INVENTORY_ITEM_CONFLICT: {exc}")
@@ -197,6 +205,7 @@ def configure_inventory(db_path) -> None:
     @router.put("/items/{item_id}")
     def inventory_item_update(item_id: int, payload: InventoryItemUpdate):
         now=_now()
+        purchase_price_net,sales_price_net=_inventory_prices(payload.manufacturer,payload.purchase_price_net,payload.sales_price_net)
         with connect() as con:
             exists=con.execute("SELECT id FROM inventory_items WHERE id=?",(item_id,)).fetchone()
             if exists is None:
@@ -209,7 +218,7 @@ def configure_inventory(db_path) -> None:
                     WHERE id=?""",
                     (payload.article_number,payload.name,payload.manufacturer,payload.category,
                      payload.supplier,payload.unit,payload.sevdesk_object_id,payload.sevdesk_article_number,
-                     payload.purchase_price_net,payload.sales_price_net,payload.minimum_stock,
+                     purchase_price_net,sales_price_net,payload.minimum_stock,
                      payload.target_stock,int(payload.active),payload.notes,now,item_id))
             except sqlite3.IntegrityError as exc:
                 raise HTTPException(409,f"INVENTORY_ITEM_CONFLICT: {exc}")
