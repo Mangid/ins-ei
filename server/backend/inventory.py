@@ -87,6 +87,11 @@ def init_inventory_db(db_path) -> None:
         con.close()
 
 
+class InventoryLocationCreate(BaseModel):
+    name: str = Field(min_length=1)
+    code: str | None = None
+
+
 class InventoryItemCreate(BaseModel):
     name: str = Field(min_length=1)
     article_number: str | None = None
@@ -127,6 +132,17 @@ def configure_inventory(db_path) -> None:
             return [dict(r) for r in con.execute(
                 "SELECT * FROM inventory_locations WHERE active=1 ORDER BY name"
             ).fetchall()]
+
+    @router.post("/locations")
+    def inventory_location_create(payload: InventoryLocationCreate):
+        now=_now()
+        with connect() as con:
+            try:
+                cur=con.execute("INSERT INTO inventory_locations(name,code,created_at) VALUES(?,?,?)",
+                                (payload.name.strip(),payload.code.strip() if payload.code else None,now))
+            except sqlite3.IntegrityError as exc:
+                raise HTTPException(409,f"INVENTORY_LOCATION_CONFLICT: {exc}")
+            return {"id":cur.lastrowid}
 
     @router.get("/items")
     def inventory_items():
