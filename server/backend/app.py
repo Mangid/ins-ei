@@ -6404,6 +6404,23 @@ def customer_portal_me(ins_portal_session: str | None = Cookie(default=None)):
     return _portal_bootstrap(_portal_session(ins_portal_session))
 
 
+# DEV portal API aliases. These are explicit FastAPI routes so Caddy only has
+# to proxy /dev-portal* without path rewriting.
+app.add_api_route("/dev-portal/api/login", customer_portal_login, methods=["POST"])
+app.add_api_route("/dev-portal/api/logout", customer_portal_logout, methods=["POST"])
+app.add_api_route("/dev-portal/api/me", customer_portal_me, methods=["GET"])
+app.add_api_route("/dev-portal/api/admin/users", portal_admin_users, methods=["GET"])
+app.add_api_route("/dev-portal/api/admin/users", portal_admin_create_user, methods=["POST"])
+app.add_api_route("/dev-portal/api/admin/users/{user_id}", portal_admin_update_user, methods=["PUT"])
+app.add_api_route("/dev-portal/api/admin/users/{user_id}", portal_admin_delete_user, methods=["DELETE"])
+app.add_api_route("/dev-portal/api/oschmalz/heating", customer_portal_oschmalz_heating, methods=["GET"])
+app.add_api_route("/dev-portal/api/oschmalz/heating/command", customer_portal_oschmalz_command, methods=["POST"])
+app.add_api_route("/dev-portal/api/oekofen/plants", portal_oekofen_plants, methods=["GET"])
+app.add_api_route("/dev-portal/api/oekofen", portal_oekofen, methods=["GET"])
+app.add_api_route("/dev-portal/api/oekofen/live", portal_oekofen_live, methods=["GET"])
+app.add_api_route("/dev-portal/api/oekofen/history", portal_oekofen_history, methods=["GET"])
+
+
 @app.get("/portal")
 def customer_portal_index():
     path = CUSTOMER_PORTAL_DIR / "index.html"
