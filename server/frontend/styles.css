@@ -234,3 +234,6 @@ body.service-locked>aside,body.service-locked>main,body.service-locked>.mobile-m
 .csv-unavailable{background:#26313b;color:#9fb0c1;border-color:#40505e}
 
 .csv-offline{background:#243548;color:#b8c8d7;border-color:#40566b}
+
+/* Inventory */
+.inventory-table td small{display:block;color:#8194a5;margin-top:4px}.stock-chip{display:block;font-size:11px;color:#a8bac9;white-space:nowrap}.inventory-low{background:#2a2115}.reorder-badge{display:inline-flex;padding:4px 8px;border-radius:999px;background:#4b3318;color:#ffd48a;font-size:11px;font-weight:700}.stock-ok{color:#82e6aa;font-size:11px;font-weight:700}.inventory-modal{width:min(720px,calc(100vw - 24px));margin:auto;max-height:92vh;overflow:auto}@media(max-width:760px){.inventory-table th:nth-child(3),.inventory-table td:nth-child(3),.inventory-table th:nth-child(5),.inventory-table td:nth-child(5),.inventory-table th:nth-child(6),.inventory-table td:nth-child(6){display:none}.inventory-table{font-size:12px}}
