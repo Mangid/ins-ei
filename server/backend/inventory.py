@@ -108,6 +108,10 @@ class InventoryItemCreate(BaseModel):
     notes: str | None = None
 
 
+class InventoryItemUpdate(InventoryItemCreate):
+    active: bool = True
+
+
 class InventoryMovementCreate(BaseModel):
     item_id: int
     movement_type: str
@@ -189,6 +193,27 @@ def configure_inventory(db_path) -> None:
             except sqlite3.IntegrityError as exc:
                 raise HTTPException(409,f"INVENTORY_ITEM_CONFLICT: {exc}")
             return {"id":cur.lastrowid}
+
+    @router.put("/items/{item_id}")
+    def inventory_item_update(item_id: int, payload: InventoryItemUpdate):
+        now=_now()
+        with connect() as con:
+            exists=con.execute("SELECT id FROM inventory_items WHERE id=?",(item_id,)).fetchone()
+            if exists is None:
+                raise HTTPException(404,"INVENTORY_ITEM_NOT_FOUND")
+            try:
+                con.execute("""UPDATE inventory_items SET
+                    article_number=?,name=?,manufacturer=?,category=?,supplier=?,unit=?,
+                    sevdesk_object_id=?,sevdesk_article_number=?,purchase_price_net=?,sales_price_net=?,
+                    minimum_stock=?,target_stock=?,active=?,notes=?,updated_at=?
+                    WHERE id=?""",
+                    (payload.article_number,payload.name,payload.manufacturer,payload.category,
+                     payload.supplier,payload.unit,payload.sevdesk_object_id,payload.sevdesk_article_number,
+                     payload.purchase_price_net,payload.sales_price_net,payload.minimum_stock,
+                     payload.target_stock,int(payload.active),payload.notes,now,item_id))
+            except sqlite3.IntegrityError as exc:
+                raise HTTPException(409,f"INVENTORY_ITEM_CONFLICT: {exc}")
+            return {"updated":True,"id":item_id}
 
     @router.get("/reorder")
     def inventory_reorder():
