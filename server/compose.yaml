@@ -46,7 +46,7 @@ volumes:
     name: ins-ei_ins_ei_data
   influxdb2_data:
     external: true
-    name: ins-ei_influxdb2_data
+    name: influxdb_influxdb_data
 
 networks:
   ins-platform:
