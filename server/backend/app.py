@@ -4217,6 +4217,11 @@ def api_oekofen_plants():
               FROM oekofen_problems WHERE plant_id=? ORDER BY create_date DESC,id DESC""",
               (row["plant_id"],)).fetchall()
             x["problems"]=[dict(p) for p in problems]
+            yesterday=(datetime.now(ZoneInfo("Europe/Vienna")).date()-timedelta(days=1)).isoformat()
+            csv_status=con.execute("""SELECT status,rows_imported,columns_found,completed_at,error
+                FROM oekofen_csv_imports WHERE plant_id=? AND day=?""",(row["plant_id"],yesterday)).fetchone()
+            x["csv_day"]=yesterday
+            x["csv_import"]=dict(csv_status) if csv_status else None
             result.append(x)
     return {"plants":result,"sync_interval_seconds":300}
 
