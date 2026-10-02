@@ -6339,6 +6339,23 @@ def _portal_oekofen_plant(user: dict[str,Any], plant_id: str | None=None):
     if row is None: raise HTTPException(404,"PORTAL_OEKOFEN_NOT_FOUND")
     return dict(row)
 
+def _oekofen_portal_normalize(label: str, value: str | None, *, target: bool=False) -> str | None:
+    """Normalize manufacturer sentinel values for customer-facing OekoFEN views."""
+    if value is None:return None
+    text=str(value).strip()
+    if not text:return None
+    # Pelletronic uses -3276.8 C as an invalid/not-present temperature sentinel.
+    try:
+        number=float(text.split()[0].replace(",","."))
+    except (ValueError,IndexError):
+        return text
+    if number <= -3000:return None
+    # For temperature targets, 8 C means there is currently no heat demand.
+    if target and "°C" in text and abs(number-8.0)<0.01:return None
+    # Room temperature 0 C represents a missing/inactive room sensor in these variables.
+    if "Raumtemperatur" in label and abs(number)<0.01:return None
+    return text
+
 def _oekofen_portal_live(plant_id: str) -> dict[str,Any]:
     names=[]
     for _,actual,target in OEKOFEN_MEASUREMENTS:
@@ -6348,7 +6365,8 @@ def _oekofen_portal_live(plant_id: str) -> dict[str,Any]:
     by_name={x.get("name"):x for x in values if isinstance(x,dict)}
     rows=[]
     for label,actual,target in OEKOFEN_MEASUREMENTS:
-        av=oekofen_format_variable(by_name.get(actual));tv=oekofen_format_variable(by_name.get(target)) if target else None
+        av=_oekofen_portal_normalize(label,oekofen_format_variable(by_name.get(actual)))
+        tv=_oekofen_portal_normalize(label,oekofen_format_variable(by_name.get(target)),target=True) if target else None
         if av is not None or tv is not None:rows.append({"label":label,"actual":av,"target":tv})
     return {"rows":rows,"updated_at":datetime.now(timezone.utc).isoformat()}
 
@@ -6386,6 +6404,9 @@ def portal_oekofen_history(period: str="24h", ins_portal_session: str | None = C
  |> range(start: {ranges[period]})
  |> filter(fn:(r)=>r._measurement=="oekofen_csv" and r.plant_id=="{safe}")
  |> filter(fn:(r)=>r._field =~ /AT|Kessel|PE1 KT|PU1|WW1|HK1 VL|HK2 VL/)
+ |> filter(fn:(r)=>r._value > -3000.0)
+ |> filter(fn:(r)=>not (r._field =~ /Soll/ and r._value == 8.0))
+ |> filter(fn:(r)=>not (r._field =~ /Raum/ and r._value == 0.0))
  |> aggregateWindow(every: {windows[period]}, fn: mean, createEmpty: false)
  |> keep(columns:["_time","_field","_value"])'''
     req=Request(INFLUX_URL+"/api/v2/query?org="+INFLUX_ORG,data=json.dumps({"query":flux,"type":"flux"}).encode(),method="POST",headers={"Authorization":f"Token {token}","Content-Type":"application/json","Accept":"application/csv"})
