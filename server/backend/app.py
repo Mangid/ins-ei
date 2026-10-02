@@ -170,6 +170,7 @@ def mqtt_live_worker():
 
 
 CUSTOMER_PORTAL_DIR = Path("/app/customer-portal")
+CUSTOMER_PORTAL_DEV_DIR = Path("/app/customer-portal-dev")
 
 app = FastAPI(
     title="INS-EI API",
@@ -6405,4 +6406,21 @@ def customer_portal_asset(asset_name: str):
     path = CUSTOMER_PORTAL_DIR / asset_name
     if not path.exists():
         raise HTTPException(404, "CUSTOMER_PORTAL_NOT_DEPLOYED")
+    return FileResponse(path)
+
+@app.get("/dev-portal")
+@app.get("/dev-portal/")
+def customer_portal_dev_index(ins_service_session: str | None = Cookie(default=None)):
+    if not _service_session_valid(ins_service_session):
+        raise HTTPException(401,"SERVICE_LOGIN_REQUIRED")
+    path = CUSTOMER_PORTAL_DEV_DIR / "index.html"
+    if not path.exists(): raise HTTPException(404,"CUSTOMER_PORTAL_DEV_NOT_DEPLOYED")
+    return FileResponse(path)
+
+@app.get("/dev-portal/{asset_name}")
+def customer_portal_dev_asset(asset_name: str, ins_service_session: str | None = Cookie(default=None)):
+    if not _service_session_valid(ins_service_session): raise HTTPException(401,"SERVICE_LOGIN_REQUIRED")
+    if asset_name not in {"portal.css","portal.js"}: raise HTTPException(404,"PORTAL_ASSET_NOT_FOUND")
+    path=CUSTOMER_PORTAL_DEV_DIR/asset_name
+    if not path.exists(): raise HTTPException(404,"CUSTOMER_PORTAL_DEV_NOT_DEPLOYED")
     return FileResponse(path)
