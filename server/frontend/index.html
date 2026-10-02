@@ -3,7 +3,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="INS-EI">
-<link rel="manifest" href="/manifest.webmanifest"><link rel="apple-touch-icon" href="/apple-touch-icon.png"><link rel="stylesheet" href="styles.css?v=0.4.6"></head>
+<link rel="manifest" href="/manifest.webmanifest"><link rel="apple-touch-icon" href="/apple-touch-icon.png"><link rel="stylesheet" href="styles.css?v=0.4.7"></head>
 <body class="service-locked"><div id="serviceAuth" class="service-auth"><div class="service-auth-card"><div class="service-auth-mark">INS-EI</div><h1>Servicezentrale</h1><p id="serviceAuthMessage">Sicherer Zugang wird geprüft …</p><button id="serviceAuthButton" class="primary" type="button" disabled>Passkey</button><small>Geschützt mit Passkey · Face ID · Touch ID · Windows Hello</small></div></div><button id="mobileMenu" class="mobile-menu" type="button" aria-label="Menü öffnen">☰</button><div id="navBackdrop" class="nav-backdrop"></div><aside id="sidebar"><div class="brand">INS-EI<small>Servicezentrale · v0.4.2</small></div><nav><a class="active" href="#dashboard" id="navDashboard">Dashboard</a><a href="#instances" id="navInstances">INS-EI Instanzen</a><a href="#customers" id="navCustomers">Kunden</a><a href="#tasks" id="navTasks">Aufgaben</a><a href="#projects" id="navProjects">Projekte</a><a href="#oekofen" id="navOekofen">ÖkoFEN</a><a href="#analysis">Analysen</a><a href="#system" id="navSystem">System</a></nav></aside>
 <main><header><div><h1 id="pageTitle">Mein Tag</h1><p id="todayLabel">INS-EI Arbeitsübersicht</p></div><div class="header-status"><span id="syncStatus" class="pill sync-status">Sync …</span><span id="api" class="pill">API …</span></div></header>
 <section id="dashboard" class="my-day">
@@ -27,7 +27,7 @@
 <div id="detail" class="overlay hidden"><div class="detail"><div class="detail-nav"><button id="close" class="detail-back">← Zurück zu Instanzen</button></div><div id="detailBody"></div></div></div>
 <script src="auth.js?v=20261001-passkey2"></script>
 <script src="offline.js?v=20260925-r5"></script>
-<script src="app.js?v=0.4.8"></script>
+<script src="app.js?v=0.4.9"></script>
 <script>
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
