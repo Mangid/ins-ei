@@ -6,7 +6,9 @@ const qty=(v,u)=>Number(v||0).toLocaleString("de-AT",{maximumFractionDigits:2})+
 let items=[],locations=[];
 
 function activate(){
-  if(location.hash!=="#inventory"){$("inventory")?.classList.add("hidden");return;}
+  const isInventory=location.hash==="#inventory";
+  $("inventory")?.classList.toggle("hidden",!isInventory);
+  if(!isInventory)return;
   document.querySelectorAll("main>section").forEach(s=>s.classList.add("hidden"));
   $("inventory")?.classList.remove("hidden");
   document.querySelectorAll("#sidebar nav a").forEach(a=>a.classList.toggle("active",a.id==="navInventory"));
