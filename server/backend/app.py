@@ -6352,6 +6352,19 @@ def _oekofen_portal_live(plant_id: str) -> dict[str,Any]:
         if av is not None or tv is not None:rows.append({"label":label,"actual":av,"target":tv})
     return {"rows":rows,"updated_at":datetime.now(timezone.utc).isoformat()}
 
+@app.get("/portal/api/oekofen/plants")
+def portal_oekofen_plants(ins_portal_session: str | None = Cookie(default=None)):
+    user=_portal_session(ins_portal_session)
+    if not user["is_admin"]: raise HTTPException(403,"PORTAL_ADMIN_REQUIRED")
+    with db() as con:
+        rows=con.execute("""SELECT p.plant_id,p.plant_name,p.serial_number,c.name customer_name,c.city customer_city
+            FROM oekofen_plants p
+            LEFT JOIN devices d ON d.oekofen_plant_id=p.plant_id
+            LEFT JOIN installations i ON i.id=d.installation_id
+            LEFT JOIN customers c ON c.id=i.customer_id
+            ORDER BY p.plant_name COLLATE NOCASE""").fetchall()
+    return {"plants":[dict(r) for r in rows]}
+
 @app.get("/portal/api/oekofen")
 def portal_oekofen(ins_portal_session: str | None = Cookie(default=None), plant_id: str | None=None):
     user=_portal_session(ins_portal_session);plant=_portal_oekofen_plant(user,plant_id)
