@@ -15,7 +15,9 @@ def _now() -> str:
 
 def _inventory_prices(manufacturer: str | None, purchase_price_net: float | None, sales_price_net: float | None):
     """OekoFEN purchase price is list price less the fixed 32% purchasing discount."""
-    if str(manufacturer or "").strip().casefold() in {"ökofen".casefold(), "oekofen"} and sales_price_net is not None:
+    if (purchase_price_net is None
+            and str(manufacturer or "").strip().casefold() in {"ökofen".casefold(), "oekofen"}
+            and sales_price_net is not None):
         return round(float(sales_price_net) * 0.68, 2), sales_price_net
     return purchase_price_net, sales_price_net
 
