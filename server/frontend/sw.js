@@ -1,4 +1,4 @@
-const CACHE_NAME = "ins-ei-shell-v30";
+const CACHE_NAME = "ins-ei-shell-v31";
 const PHOTO_CACHE = "ins-ei-photos-v1";
 
 const APP_SHELL = [
