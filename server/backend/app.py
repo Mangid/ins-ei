@@ -2014,6 +2014,23 @@ def init_oekofen_db():
             """
         )
 
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS oekofen_csv_imports (
+                plant_id TEXT NOT NULL,
+                day TEXT NOT NULL,
+                status TEXT NOT NULL,
+                rows_imported INTEGER NOT NULL DEFAULT 0,
+                columns_found INTEGER NOT NULL DEFAULT 0,
+                bytes_downloaded INTEGER NOT NULL DEFAULT 0,
+                encoding TEXT,
+                started_at TEXT NOT NULL,
+                completed_at TEXT,
+                error TEXT,
+                PRIMARY KEY (plant_id, day)
+            )
+        """)
+
+
 
 def oekofen_login() -> dict[str, Any]:
     username = OEKOFEN_USERNAME.read_text().strip()
@@ -3065,6 +3082,100 @@ def oekofen_csv_info(
 
 
 
+
+def _influx_escape_measurement(value: str) -> str:
+    return str(value).replace("\\","\\\\").replace(" ","\\ ").replace(",","\\,")
+
+def _influx_escape_tag(value: str) -> str:
+    return str(value).replace("\\","\\\\").replace(" ","\\ ").replace(",","\\,").replace("=","\\=")
+
+def _influx_escape_field_key(value: str) -> str:
+    return str(value).strip().replace("\\","\\\\").replace(" ","\\ ").replace(",","\\,").replace("=","\\=")
+
+def _oekofen_parse_timestamp(row: dict[str,Any]) -> datetime | None:
+    d=str(row.get("Datum") or "").strip();t=str(row.get("Zeit") or "").strip()
+    if not d or not t:return None
+    for fmt in ("%d.%m.%Y %H:%M:%S","%d.%m.%Y %H:%M"):
+        try:return datetime.strptime(d+" "+t,fmt).replace(tzinfo=ZoneInfo("Europe/Vienna"))
+        except ValueError:pass
+    return None
+
+def _oekofen_field_value(value: Any) -> str | None:
+    text=str(value or "").strip()
+    if not text:return None
+    normalized=text.replace(",",".")
+    try:
+        number=float(normalized)
+        if number != number or number in (float("inf"),float("-inf")):return None
+        return repr(number)
+    except ValueError:
+        escaped=text.replace("\\","\\\\").replace('"','\\"').replace("\n"," ")
+        return '"'+escaped+'"'
+
+def write_oekofen_csv_to_influx(plant_id: str, serial_number: str | None, raw: bytes) -> dict[str,Any]:
+    text,encoding=decode_oekofen_csv(raw);csv.field_size_limit(10*1024*1024)
+    reader=csv.DictReader(io.StringIO(text),delimiter=";")
+    if not reader.fieldnames:raise ValueError("OekoFEN CSV has no header")
+    headers=[str(x or "").strip() for x in reader.fieldnames]
+    rows=[];tz=ZoneInfo("Europe/Vienna")
+    for source in reader:
+        row={str(k or "").strip():v for k,v in source.items() if k is not None}
+        ts=_oekofen_parse_timestamp(row)
+        if ts is None:continue
+        fields=[]
+        for key in headers:
+            if key in ("Datum","Zeit") or not key:continue
+            encoded=_oekofen_field_value(row.get(key))
+            if encoded is not None:fields.append(_influx_escape_field_key(key)+"="+encoded)
+        if not fields:continue
+        tags="plant_id="+_influx_escape_tag(plant_id)
+        if serial_number:tags+=",serial_number="+_influx_escape_tag(serial_number)
+        rows.append("oekofen_csv,"+tags+" "+",".join(fields)+" "+str(int(ts.timestamp()*1_000_000_000)))
+    if not rows:raise ValueError("OekoFEN CSV contains no importable rows")
+    token=INFLUX_TOKEN.read_text().strip();query=urlencode({"org":INFLUX_ORG,"bucket":INFLUX_BUCKET,"precision":"ns"})
+    # Keep requests comfortably below common proxy/body limits.
+    for start in range(0,len(rows),250):
+        body="\n".join(rows[start:start+250]).encode("utf-8")
+        req=Request(INFLUX_URL+"/api/v2/write?"+query,data=body,method="POST",headers={"Authorization":f"Token {token}","Content-Type":"text/plain; charset=utf-8"})
+        with urlopen(req,timeout=20) as response:response.read()
+    return {"rows":len(rows),"columns":len(headers),"encoding":encoding,"bytes":len(raw)}
+
+def import_oekofen_csv_day(plant_id: str, day: str, force: bool=False) -> dict[str,Any]:
+    with db() as con:
+        plant=con.execute("SELECT plant_id,plant_name,serial_number FROM oekofen_plants WHERE plant_id=?",(plant_id,)).fetchone()
+        if plant is None:raise ValueError("OekoFEN plant not found")
+        previous=con.execute("SELECT status FROM oekofen_csv_imports WHERE plant_id=? AND day=?",(plant_id,day)).fetchone()
+        if previous and previous["status"]=="SUCCESS" and not force:return {"plant_id":plant_id,"day":day,"status":"SKIPPED_ALREADY_IMPORTED"}
+        started=datetime.now(timezone.utc).isoformat()
+        con.execute("""INSERT INTO oekofen_csv_imports(plant_id,day,status,started_at,error)
+            VALUES(?,?,'RUNNING',?,NULL) ON CONFLICT(plant_id,day) DO UPDATE SET
+            status='RUNNING',started_at=excluded.started_at,completed_at=NULL,error=NULL""",(plant_id,day,started))
+    try:
+        raw=oekofen_fetch_csv(plant_id,day)
+        result=write_oekofen_csv_to_influx(plant_id,plant["serial_number"],raw)
+        completed=datetime.now(timezone.utc).isoformat()
+        with db() as con:
+            con.execute("""UPDATE oekofen_csv_imports SET status='SUCCESS',rows_imported=?,columns_found=?,
+                bytes_downloaded=?,encoding=?,completed_at=?,error=NULL WHERE plant_id=? AND day=?""",
+                (result["rows"],result["columns"],result["bytes"],result["encoding"],completed,plant_id,day))
+        return {"plant_id":plant_id,"plant_name":plant["plant_name"],"day":day,"status":"SUCCESS",**result}
+    except Exception as exc:
+        with db() as con:
+            con.execute("UPDATE oekofen_csv_imports SET status='ERROR',completed_at=?,error=? WHERE plant_id=? AND day=?",
+                (datetime.now(timezone.utc).isoformat(),str(exc)[:1000],plant_id,day))
+        raise
+
+def import_oekofen_previous_day(force: bool=False) -> dict[str,Any]:
+    day=(datetime.now(ZoneInfo("Europe/Vienna")).date()-timedelta(days=1)).isoformat()
+    with db() as con:
+        plants=[dict(r) for r in con.execute("SELECT plant_id,plant_name FROM oekofen_plants ORDER BY plant_name COLLATE NOCASE")]
+    results=[];errors=[]
+    for plant in plants:
+        try:results.append(import_oekofen_csv_day(plant["plant_id"],day,force))
+        except Exception as exc:
+            errors.append({"plant_id":plant["plant_id"],"plant_name":plant["plant_name"],"error":str(exc)})
+    return {"day":day,"plants":len(plants),"success":sum(1 for r in results if r["status"]=="SUCCESS"),"skipped":sum(1 for r in results if r["status"].startswith("SKIPPED")),"errors":errors,"results":results}
+
 def write_telemetry_to_influx(
     installation_id: str,
     timestamp: datetime,
@@ -3908,6 +4019,22 @@ def reminder_worker():
         time.sleep(30)
 
 
+def oekofen_csv_worker():
+    """Import yesterday once daily after 03:00 Europe/Vienna, retrying failures hourly."""
+    last_attempt_hour=None
+    while True:
+        try:
+            now=datetime.now(ZoneInfo("Europe/Vienna"))
+            key=now.strftime("%Y-%m-%d-%H")
+            if now.hour>=3 and key!=last_attempt_hour:
+                last_attempt_hour=key
+                result=import_oekofen_previous_day(False)
+                print(f"OEKOFEN CSV day={result['day']} plants={result['plants']} success={result['success']} skipped={result['skipped']} errors={len(result['errors'])}",flush=True)
+        except Exception as exc:
+            print(f"OEKOFEN CSV worker error: {exc}",flush=True)
+        time.sleep(300)
+
+
 def oekofen_worker():
     while True:
         try:
@@ -3947,6 +4074,13 @@ async def lifespan(app: FastAPI):
         name="oekofen-worker",
     )
     oekofen_thread.start()
+
+    oekofen_csv_thread = threading.Thread(
+        target=oekofen_csv_worker,
+        daemon=True,
+        name="oekofen-csv-worker",
+    )
+    oekofen_csv_thread.start()
 
     async with mcp.session_manager.run():
         yield
@@ -4036,6 +4170,27 @@ def health():
     }
 
 
+
+
+@app.get("/api/v1/oekofen/csv-imports")
+def api_oekofen_csv_imports(day: str | None = None):
+    with db() as con:
+        if day:
+            rows=con.execute("""SELECT i.*,p.plant_name,p.serial_number FROM oekofen_csv_imports i
+                LEFT JOIN oekofen_plants p ON p.plant_id=i.plant_id WHERE i.day=? ORDER BY p.plant_name COLLATE NOCASE""",(day,)).fetchall()
+        else:
+            rows=con.execute("""SELECT i.*,p.plant_name,p.serial_number FROM oekofen_csv_imports i
+                LEFT JOIN oekofen_plants p ON p.plant_id=i.plant_id ORDER BY i.day DESC,p.plant_name COLLATE NOCASE LIMIT 250""").fetchall()
+    return {"imports":[dict(r) for r in rows]}
+
+@app.post("/api/v1/oekofen/csv-import/{plant_id}")
+def api_oekofen_csv_import_one(plant_id: str, day: str, force: bool=False):
+    try:return import_oekofen_csv_day(plant_id,day,force)
+    except Exception as exc:raise HTTPException(502,str(exc))
+
+@app.post("/api/v1/oekofen/csv-import-previous-day")
+def api_oekofen_csv_import_previous_day(force: bool=False):
+    return import_oekofen_previous_day(force)
 
 
 @app.get("/api/v1/oekofen/plants")
