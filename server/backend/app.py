@@ -4027,9 +4027,15 @@ def oekofen_csv_worker():
             now=datetime.now(ZoneInfo("Europe/Vienna"))
             key=now.strftime("%Y-%m-%d-%H")
             if now.hour>=3 and key!=last_attempt_hour:
-                last_attempt_hour=key
-                result=import_oekofen_previous_day(False)
-                print(f"OEKOFEN CSV day={result['day']} plants={result['plants']} success={result['success']} skipped={result['skipped']} errors={len(result['errors'])}",flush=True)
+                day=(now.date()-timedelta(days=1)).isoformat()
+                with db() as con:
+                    pending=con.execute("""SELECT COUNT(*) AS n FROM oekofen_plants p
+                        LEFT JOIN oekofen_csv_imports i ON i.plant_id=p.plant_id AND i.day=?
+                        WHERE i.status IS NULL OR i.status!='SUCCESS'""",(day,)).fetchone()["n"]
+                if pending:
+                    last_attempt_hour=key
+                    result=import_oekofen_previous_day(False)
+                    print(f"OEKOFEN CSV day={result['day']} plants={result['plants']} success={result['success']} skipped={result['skipped']} errors={len(result['errors'])}",flush=True)
         except Exception as exc:
             print(f"OEKOFEN CSV worker error: {exc}",flush=True)
         time.sleep(300)
