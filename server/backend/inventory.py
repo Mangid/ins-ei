@@ -297,6 +297,31 @@ def configure_inventory(db_path) -> None:
                  item["sales_price_net"],now))
             return {"id":cur.lastrowid}
 
+    def list_items_data(search: str | None = None):
+        with connect() as con:
+            rows=con.execute("""SELECT i.*,COALESCE(SUM(s.quantity),0) total_stock
+                FROM inventory_items i LEFT JOIN inventory_stock s ON s.item_id=i.id
+                WHERE i.active=1 GROUP BY i.id ORDER BY i.name COLLATE NOCASE""").fetchall()
+            out=[]
+            needle=str(search or "").strip().casefold()
+            for row in rows:
+                item=dict(row)
+                if needle and needle not in " ".join(str(item.get(k) or "") for k in ("article_number","name","manufacturer","category","supplier","sevdesk_article_number")).casefold():
+                    continue
+                item["stocks"]=[dict(x) for x in con.execute("""SELECT l.id location_id,l.name,l.code,COALESCE(s.quantity,0) quantity
+                    FROM inventory_locations l LEFT JOIN inventory_stock s ON s.location_id=l.id AND s.item_id=?
+                    WHERE l.active=1 ORDER BY l.name""",(row["id"],)).fetchall()]
+                item["needs_reorder"]=float(item["total_stock"]) < float(item["minimum_stock"] or 0)
+                out.append(item)
+            return out
+
+    def create_movement_data(item_id: int, movement_type: str, quantity: float,
+                             from_location_id: int | None = None, to_location_id: int | None = None,
+                             customer_id: int | None = None, note: str | None = None):
+        payload=InventoryMovementCreate(item_id=item_id,movement_type=movement_type,quantity=quantity,
+            from_location_id=from_location_id,to_location_id=to_location_id,customer_id=customer_id,note=note)
+        return inventory_movement_create(payload)
+
     @router.get("/items/{item_id}/movements")
     def inventory_item_movements(item_id: int):
         with connect() as con:
