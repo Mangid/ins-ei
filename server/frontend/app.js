@@ -80,6 +80,7 @@ function bindCustomerPickers(root=document){
 const pageTitles={dashboard:["Mein Tag","INS-EI Arbeitsübersicht"],instances:["INS-EI Instanzen","Live-Status"],customers:["Kunden","Kundenverwaltung"],visits:["Einsätze","Service & Dokumentation"],maintenances:["Wartungen","Wartungsverwaltung"],tasks:["Aufgaben","Offene Arbeiten & Termine"],projects:["Projekte","Projektübersicht"],oekofen:["ÖkoFEN Anlagen","Überwachung · automatischer Sync alle 5 Minuten"],system:["System","Server & Plattform"]};
 function setPageTitle(view){const x=pageTitles[view]||["INS-EI","Servicezentrale"];document.getElementById("pageTitle").textContent=x[0];document.getElementById("todayLabel").textContent=x[1]}
 function setView(view){
+  if(view==="dev-portal"){window.location.href="/dev-portal/";return}
   detail.classList.add("hidden");setPageTitle(view);
   customerPage.classList.toggle("hidden",view!=="customers");visitsPage.classList.toggle("hidden",view!=="visits");maintenancesPage.classList.toggle("hidden",view!=="maintenances");tasksPage.classList.toggle("hidden",view!=="tasks");projectsPage.classList.toggle("hidden",view!=="projects");oekofenPage.classList.toggle("hidden",view!=="oekofen");
   dashboardSection.classList.toggle("hidden",view!=="dashboard");
