@@ -5,7 +5,6 @@
 <div class="layout"><nav id="portalNav">
 <button class="active" data-page="home">Übersicht</button>
 <button data-page="systems">Meine Anlage</button>
-<button id="oekofenNav" data-page="oekofen" class="hidden">Heizung</button>
 
 
 <button data-page="service">Service</button>
@@ -23,6 +22,5 @@
 </div><p class="lead connection-note">Live-Daten werden über Home Assistant bereitgestellt.</p></section>
 
 
-<section id="oekofen" class="page"><div class="portal-page-head"><div><h1 id="oekofenTitle">Meine Heizung</h1><p class="lead" id="oekofenMeta">ÖkoFEN Anlage</p></div><span id="oekofenOnline" class="state-pill">Lade …</span></div><div id="oekofenLive" class="oek-live-grid"><div class="card">Aktuelle Werte werden geladen …</div></div><div class="history-head portal-history-head"><div><h2>Verlauf</h2><p class="lead">Historische Messwerte aus INS-EI.</p></div><div class="portal-periods"><button class="active" data-oek-period="24h">24 h</button><button data-oek-period="7d">7 Tage</button><button data-oek-period="30d">30 Tage</button></div></div><div id="oekofenCharts" class="oek-charts"><div class="card">Historie wird geladen …</div></div></section>
 <section id="service" class="page"><h1>Service</h1><p class="lead">Anlage, Kontakt und spätere Servicefunktionen.</p><div class="card"><h2>INS-Energietechnik</h2><p>Hier entsteht der direkte Servicebereich für Ihre Anlage.</p></div></section>
 <section id="admin" class="page"><h1>Benutzer</h1><p class="lead">Zugänge und Dashboard-Freigaben verwalten.</p><div class="card"><h2>Benutzer anlegen</h2><form id="userCreate"><input id="newUsername" placeholder="Benutzername" required><input id="newDisplayName" placeholder="Name" required><input id="newPassword" type="password" placeholder="Passwort (mind. 8 Zeichen)" required><label><input id="newAdmin" type="checkbox"> Administrator</label><div id="newDashboards"></div><button type="submit">Benutzer anlegen</button><span id="userCreateResult"></span></form></div><div class="card" style="margin-top:14px"><h2>Benutzer</h2><div id="userList">Lade …</div></div></section></main></div></div><script src="portal.js"></script></body></html>
