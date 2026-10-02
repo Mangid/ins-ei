@@ -3967,6 +3967,65 @@ def root():
     }
 
 
+
+def _dir_size(path: Path) -> int:
+    total=0
+    try:
+        for root,dirs,files in os.walk(path):
+            for name in files:
+                try: total += (Path(root)/name).stat().st_size
+                except OSError: pass
+    except OSError:
+        pass
+    return total
+
+def _host_mem() -> tuple[int,int]:
+    vals={}
+    try:
+        for line in Path("/host/proc/meminfo").read_text().splitlines():
+            key,val=line.split(":",1);vals[key]=int(val.strip().split()[0])*1024
+    except Exception:
+        return 0,0
+    total=vals.get("MemTotal",0);avail=vals.get("MemAvailable",0)
+    return total,max(0,total-avail)
+
+def _host_cpu_sample() -> tuple[int,int]:
+    try:
+        parts=Path("/host/proc/stat").read_text().splitlines()[0].split()[1:]
+        nums=[int(x) for x in parts]
+        idle=nums[3]+(nums[4] if len(nums)>4 else 0)
+        return sum(nums),idle
+    except Exception:
+        return 0,0
+
+@app.get("/api/v1/system/metrics")
+def system_metrics():
+    total1,idle1=_host_cpu_sample();time.sleep(0.12);total2,idle2=_host_cpu_sample()
+    delta=max(0,total2-total1);idle=max(0,idle2-idle1)
+    cpu=round(100*(delta-idle)/delta,1) if delta else None
+    mem_total,mem_used=_host_mem()
+    try:
+        disk=shutil.disk_usage("/host/root")
+        disk_total,disk_used,disk_free=disk.total,disk.used,disk.free
+    except OSError:
+        disk_total=disk_used=disk_free=0
+    sqlite_size=DB_PATH.stat().st_size if DB_PATH.exists() else 0
+    influx_size=_dir_size(Path("/influx-data"))
+    try:
+        uptime=float(Path("/host/proc/uptime").read_text().split()[0])
+    except Exception:
+        uptime=None
+    return {
+        "timestamp":datetime.now(timezone.utc).isoformat(),
+        "cpu_percent":cpu,
+        "memory":{"total":mem_total,"used":mem_used,"percent":round(100*mem_used/mem_total,1) if mem_total else None},
+        "disk":{"total":disk_total,"used":disk_used,"free":disk_free,"percent":round(100*disk_used/disk_total,1) if disk_total else None},
+        "databases":{"influx_bytes":influx_size,"sqlite_bytes":sqlite_size},
+        "uptime_seconds":uptime,
+        "services":{"api":"OK","mqtt":"OK" if MQTT_SERVICE_CLIENT is not None else "UNKNOWN","influx":"OK" if INFLUX_TOKEN.exists() else "UNKNOWN"},
+    }
+
+
 @app.get("/health")
 def health():
     return {
