@@ -1330,6 +1330,12 @@ def init_portal_db():
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS portal_dashboard_access (
+            dashboard_config_id INTEGER NOT NULL, user_id INTEGER NOT NULL, permission TEXT NOT NULL DEFAULT 'read', PRIMARY KEY(dashboard_config_id,user_id)
+        );
+        CREATE TABLE IF NOT EXISTS portal_dashboard_sources (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, dashboard_config_id INTEGER NOT NULL, source_type TEXT NOT NULL, name TEXT NOT NULL, source_ref TEXT NOT NULL, config_json TEXT NOT NULL DEFAULT '{}'
+        );
         """)
         con.execute("""INSERT OR IGNORE INTO portal_dashboards
             (id,name,description,module,config_json,sort_order) VALUES(?,?,?,?,?,?)""",
@@ -6383,11 +6389,11 @@ def _oekofen_portal_live(plant_id: str) -> dict[str,Any]:
     return {"rows":rows,"updated_at":datetime.now(timezone.utc).isoformat()}
 
 class PortalDashboardConfigSave(BaseModel):
-    customer_id: int | None = None
-    device_id: int | None = None
-    plant_id: str | None = None
     name: str
     active: bool = True
+    description: str | None = None
+    access: list[dict[str,Any]] = []
+    sources: list[dict[str,Any]] = []
     config: dict[str,Any] = {}
 
 @app.get("/portal/api/admin/dashboard-configs")
@@ -6404,19 +6410,46 @@ def portal_admin_dashboard_configs(ins_portal_session: str | None = Cookie(defau
 @app.post("/portal/api/admin/dashboard-configs")
 def portal_admin_dashboard_config_create(item: PortalDashboardConfigSave, ins_portal_session: str | None = Cookie(default=None)):
     _portal_admin(ins_portal_session);now=datetime.now(timezone.utc).isoformat()
+    payload={"description":item.description or "","blocks":item.config.get("blocks",[])}
     with db() as con:
-        cur=con.execute("""INSERT INTO portal_dashboard_configs(customer_id,device_id,plant_id,name,active,config_json,created_at,updated_at)
-            VALUES(?,?,?,?,?,?,?,?)""",(item.customer_id,item.device_id,item.plant_id,item.name.strip(),int(item.active),json.dumps(item.config,ensure_ascii=False),now,now))
-    return {"id":cur.lastrowid,"created":True}
+        cur=con.execute("INSERT INTO portal_dashboard_configs(name,active,config_json,created_at,updated_at) VALUES(?,?,?,?,?)",(item.name.strip(),int(item.active),json.dumps(payload,ensure_ascii=False),now,now));did=cur.lastrowid
+        for x in item.access:
+            if x.get("user_id") and x.get("permission") in ("read","write"):con.execute("INSERT OR REPLACE INTO portal_dashboard_access VALUES(?,?,?)",(did,int(x["user_id"]),x["permission"]))
+        for x in item.sources:
+            if x.get("type") and x.get("ref"):con.execute("INSERT INTO portal_dashboard_sources(dashboard_config_id,source_type,name,source_ref,config_json) VALUES(?,?,?,?,?)",(did,x["type"],x.get("name") or x["type"],str(x["ref"]),json.dumps(x.get("config") or {},ensure_ascii=False)))
+    return {"id":did,"created":True}
 
-@app.put("/portal/api/admin/dashboard-configs/{config_id}")
-def portal_admin_dashboard_config_update(config_id: int,item: PortalDashboardConfigSave,ins_portal_session: str | None = Cookie(default=None)):
-    _portal_admin(ins_portal_session);now=datetime.now(timezone.utc).isoformat()
+@app.get("/portal/api/admin/dashboard-builder-data")
+def portal_admin_dashboard_builder_data(ins_portal_session: str | None = Cookie(default=None)):
+    _portal_admin(ins_portal_session)
     with db() as con:
-        cur=con.execute("""UPDATE portal_dashboard_configs SET customer_id=?,device_id=?,plant_id=?,name=?,active=?,config_json=?,updated_at=? WHERE id=?""",
-            (item.customer_id,item.device_id,item.plant_id,item.name.strip(),int(item.active),json.dumps(item.config,ensure_ascii=False),now,config_id))
-        if not cur.rowcount:raise HTTPException(404,"DASHBOARD_CONFIG_NOT_FOUND")
-    return {"updated":True}
+        users=[dict(r) for r in con.execute("SELECT id,username,display_name,is_admin FROM portal_users WHERE active=1 ORDER BY display_name")]
+        plants=[dict(r) for r in con.execute("SELECT plant_id,plant_name,serial_number FROM oekofen_plants ORDER BY plant_name COLLATE NOCASE")]
+    return {"users":users,"source_types":[{"id":"oekofen","name":"ÖkoFEN"},{"id":"mypv","name":"my-PV"},{"id":"goodwe","name":"GoodWe"},{"id":"mqtt","name":"MQTT / INS-EI"},{"id":"home_assistant","name":"Home Assistant"}],"oekofen_plants":plants}
+
+@app.get("/portal/api/admin/source-samples")
+def portal_admin_source_samples(source_type: str, source_ref: str, ins_portal_session: str | None = Cookie(default=None)):
+    _portal_admin(ins_portal_session)
+    if source_type!="oekofen":return {"source_type":source_type,"source_ref":source_ref,"signals":[],"note":"Connector noch nicht implementiert"}
+    signals=[];names=[]
+    for label,actual,target in OEKOFEN_MEASUREMENTS:
+        names.append(actual)
+        if target:names.append(target)
+    try:
+        values=oekofen_fetch_variables(source_ref,list(dict.fromkeys(names)));by={x.get("name"):x for x in values if isinstance(x,dict)}
+        for label,actual,target in OEKOFEN_MEASUREMENTS:
+            for key,role in ((actual,"actual"),(target,"target")):
+                if key and by.get(key):
+                    item=by[key];signals.append({"scope":"live","key":key,"label":label+(" Soll" if role=="target" else ""),"sample":oekofen_format_variable(item),"raw":item.get("value"),"unit":item.get("unitText") or ""})
+    except Exception:pass
+    token=INFLUX_TOKEN.read_text().strip();safe=source_ref.replace('"','\\\"')
+    flux='from(bucket: "'+INFLUX_BUCKET+'") |> range(start:-24h) |> filter(fn:(r)=>r._measurement=="oekofen_csv" and r.plant_id=="'+safe+'") |> group(columns:["_field"]) |> last() |> keep(columns:["_field","_value"])'
+    try:
+        req=Request(INFLUX_URL+"/api/v2/query?org="+INFLUX_ORG,data=json.dumps({"query":flux,"type":"flux"}).encode(),method="POST",headers={"Authorization":f"Token {token}","Content-Type":"application/json","Accept":"application/csv"});raw=urlopen(req,timeout=20).read().decode()
+        for r in csv.DictReader(io.StringIO(raw)):
+            if r.get("_field"):signals.append({"scope":"history","key":r["_field"],"label":r["_field"],"sample":r.get("_value")})
+    except Exception:pass
+    return {"source_type":"oekofen","source_ref":source_ref,"signals":signals}
 
 @app.get("/portal/api/admin/oekofen/{plant_id}/available-signals")
 def portal_admin_oekofen_signals(plant_id: str, ins_portal_session: str | None = Cookie(default=None)):
@@ -6504,6 +6537,8 @@ def customer_portal_me(ins_portal_session: str | None = Cookie(default=None)):
 
 # DEV portal API aliases. These are explicit FastAPI routes so Caddy only has
 app.add_api_route("/dev-portal/api/admin/dashboard-configs", portal_admin_dashboard_configs, methods=["GET"])
+app.add_api_route("/dev-portal/api/admin/dashboard-builder-data", portal_admin_dashboard_builder_data, methods=["GET"])
+app.add_api_route("/dev-portal/api/admin/source-samples", portal_admin_source_samples, methods=["GET"])
 app.add_api_route("/dev-portal/api/admin/dashboard-configs", portal_admin_dashboard_config_create, methods=["POST"])
 app.add_api_route("/dev-portal/api/admin/dashboard-configs/{config_id}", portal_admin_dashboard_config_update, methods=["PUT"])
 app.add_api_route("/dev-portal/api/admin/oekofen/{plant_id}/available-signals", portal_admin_oekofen_signals, methods=["GET"])
