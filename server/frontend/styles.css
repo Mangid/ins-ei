@@ -267,3 +267,5 @@ body.service-locked>aside,body.service-locked>main,body.service-locked>.mobile-m
 #inventory #inventorySummary article span{font-size:12px;line-height:1.15}
 @media(max-width:900px){#inventory #inventorySummary{grid-template-columns:repeat(2,minmax(120px,1fr))}}
 @media(max-width:520px){#inventory #inventorySummary{grid-template-columns:repeat(2,1fr)}#inventory #inventorySummary article{padding:9px 11px}}
+
+.inventory-check-modal{max-width:900px}.inventory-check-list{display:grid;gap:8px;max-height:65vh;overflow:auto}.inventory-check-item{padding:12px;border:1px solid #20384b;border-radius:10px;background:#0c1a27}.inventory-check-item.checked{border-color:rgba(66,180,120,.45)}.inventory-check-item>div:first-child{display:flex;flex-direction:column;gap:3px}.inventory-check-item small{color:#8297a9}.check-counts{display:flex;align-items:end;flex-wrap:wrap;gap:8px;margin-top:9px}.check-counts label{font-size:11px;color:#8ea1b1}.check-counts input{display:block;width:88px;margin-top:3px}.inventory-check-item>.secondary{margin-top:9px}.inventory-check input[type=checkbox]{width:auto}
