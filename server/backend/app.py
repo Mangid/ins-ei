@@ -6519,6 +6519,25 @@ def portal_admin_dashboard_builder_data(ins_portal_session: str | None = Cookie(
         plants=[dict(r) for r in con.execute("SELECT plant_id,plant_name,serial_number FROM oekofen_plants ORDER BY plant_name COLLATE NOCASE")]
     return {"users":users,"source_types":[{"id":"oekofen","name":"ÖkoFEN"},{"id":"mypv","name":"my-PV"},{"id":"goodwe","name":"GoodWe"},{"id":"mqtt","name":"MQTT / INS-EI"},{"id":"home_assistant","name":"Home Assistant"}],"oekofen_plants":plants}
 
+@app.get("/portal/api/admin/source-history")
+def portal_admin_source_history(source_type:str,source_ref:str,keys:str,period:str="24h",ins_portal_session: str | None = Cookie(default=None)):
+    _portal_admin(ins_portal_session)
+    if source_type!="oekofen":return {"series":{}}
+    ranges={"24h":"-24h","7d":"-7d","30d":"-30d"};windows={"24h":"10m","7d":"1h","30d":"4h"}
+    if period not in ranges:raise HTTPException(400,"INVALID_PERIOD")
+    wanted=[x for x in keys.split(",") if x][:20]
+    if not wanted:return {"series":{}}
+    token=INFLUX_TOKEN.read_text().strip();safe=source_ref.replace('"','\\\"')
+    fields=" or ".join(['r._field=="'+x.replace('"','\\\"')+'"' for x in wanted])
+    flux='from(bucket: "'+INFLUX_BUCKET+'") |> range(start:'+ranges[period]+') |> filter(fn:(r)=>r._measurement=="oekofen_csv" and r.plant_id=="'+safe+'") |> filter(fn:(r)=>'+fields+') |> filter(fn:(r)=>r._value > -3000.0) |> aggregateWindow(every:'+windows[period]+',fn:mean,createEmpty:false) |> keep(columns:["_time","_field","_value"])'
+    req=Request(INFLUX_URL+"/api/v2/query?org="+INFLUX_ORG,data=json.dumps({"query":flux,"type":"flux"}).encode(),method="POST",headers={"Authorization":f"Token {token}","Content-Type":"application/json","Accept":"application/csv"})
+    raw=urlopen(req,timeout=20).read().decode();series={}
+    for row in csv.DictReader(io.StringIO(raw)):
+        try:v=float(row.get("_value",""))
+        except ValueError:continue
+        series.setdefault(row.get("_field",""),[]).append({"time":row.get("_time"),"value":v})
+    return {"series":series}
+
 @app.get("/portal/api/admin/source-samples")
 def portal_admin_source_samples(source_type: str, source_ref: str, ins_portal_session: str | None = Cookie(default=None)):
     _portal_admin(ins_portal_session)
@@ -6634,6 +6653,7 @@ app.add_api_route("/dev-portal/api/admin/dashboard-templates", portal_admin_dash
 app.add_api_route("/dev-portal/api/admin/dashboard-templates", portal_admin_dashboard_template_create, methods=["POST"])
 app.add_api_route("/dev-portal/api/admin/dashboard-templates/{template_id}", portal_admin_dashboard_template_delete, methods=["DELETE"])
 app.add_api_route("/dev-portal/api/admin/source-samples", portal_admin_source_samples, methods=["GET"])
+app.add_api_route("/dev-portal/api/admin/source-history", portal_admin_source_history, methods=["GET"])
 app.add_api_route("/dev-portal/api/admin/dashboard-configs", portal_admin_dashboard_config_create, methods=["POST"])
 app.add_api_route("/dev-portal/api/admin/dashboard-configs/{config_id}", portal_admin_dashboard_config_update, methods=["PUT"])
 app.add_api_route("/dev-portal/api/admin/dashboard-configs/{config_id}", portal_admin_dashboard_config_delete, methods=["DELETE"])
