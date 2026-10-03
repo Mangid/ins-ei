@@ -55,8 +55,17 @@ async function loadOekofenPortal(){
     const pd=await pr.json();
     const picker=document.getElementById("oekofenAdminPicker");
     const sel=document.getElementById("oekofenPlantSelect");
+    const search=document.getElementById("oekofenPlantSearch");
     picker.classList.remove("hidden");
-    sel.innerHTML='<option value="">Anlage auswählen …</option>'+pd.plants.map(p=>'<option value="'+escp(p.plant_id)+'">'+escp(p.plant_name||p.plant_id)+(p.customer_name?' · '+escp(p.customer_name):'')+(p.serial_number?' · '+escp(p.serial_number):'')+'</option>').join("");
+    const renderPlants=()=>{
+     const q=(search.value||"").trim().toLowerCase();
+     const filtered=pd.plants.filter(p=>!q||[p.plant_name,p.customer_name,p.customer_city,p.serial_number,p.plant_id].some(v=>String(v||"").toLowerCase().includes(q)));
+     const current=sel.value||localStorage.getItem("ins-dev-oekofen-plant")||"";
+     sel.innerHTML=filtered.map(p=>'<option value="'+escp(p.plant_id)+'">'+escp(p.plant_name||p.plant_id)+(p.customer_name?' · '+escp(p.customer_name):'')+(p.customer_city?' · '+escp(p.customer_city):'')+(p.serial_number?' · '+escp(p.serial_number):'')+'</option>').join("");
+     if(filtered.some(p=>p.plant_id===current))sel.value=current;
+    };
+    search.oninput=renderPlants;
+    renderPlants();
     const saved=localStorage.getItem("ins-dev-oekofen-plant");
     if(saved&&pd.plants.some(p=>p.plant_id===saved))sel.value=saved;
     sel.onchange=async()=>{
