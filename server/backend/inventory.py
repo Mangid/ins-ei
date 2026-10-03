@@ -1,12 +1,17 @@
 from datetime import datetime, timezone
 import sqlite3
+from pathlib import Path
 from typing import Any
+import shutil
+import uuid
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 
 router = APIRouter(prefix="/api/inventory", tags=["inventory"])
+INVENTORY_FILES_PATH = Path("/data/inventory_files")
 
 
 def _now() -> str:
@@ -71,6 +76,19 @@ def init_inventory_db(db_path) -> None:
             FOREIGN KEY(item_id) REFERENCES inventory_items(id) ON DELETE CASCADE,
             FOREIGN KEY(location_id) REFERENCES inventory_locations(id) ON DELETE RESTRICT
         );
+
+        CREATE TABLE IF NOT EXISTS inventory_files (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            item_id INTEGER NOT NULL,
+            file_name TEXT NOT NULL,
+            stored_name TEXT NOT NULL,
+            content_type TEXT,
+            description TEXT,
+            is_primary INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(item_id) REFERENCES inventory_items(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_inventory_files_item ON inventory_files(item_id, id DESC);
 
         CREATE TABLE IF NOT EXISTS inventory_movements (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -345,6 +363,54 @@ def configure_inventory(db_path) -> None:
         payload=InventoryMovementCreate(item_id=item_id,movement_type=movement_type,quantity=quantity,
             from_location_id=from_location_id,to_location_id=to_location_id,customer_id=customer_id,note=note)
         return inventory_movement_create(payload)
+
+    @router.post("/items/{item_id}/files")
+    async def inventory_file_upload(item_id: int, file: UploadFile = File(...),
+                                    description: str | None = Form(default=None)):
+        INVENTORY_FILES_PATH.mkdir(parents=True,exist_ok=True)
+        with connect() as con:
+            if con.execute("SELECT 1 FROM inventory_items WHERE id=?",(item_id,)).fetchone() is None:
+                raise HTTPException(404,"INVENTORY_ITEM_NOT_FOUND")
+        suffix=Path(file.filename or "").suffix.lower()
+        stored_name=f"{uuid.uuid4().hex}{suffix}"
+        target=INVENTORY_FILES_PATH/stored_name
+        with target.open("wb") as out:
+            shutil.copyfileobj(file.file,out)
+        now=_now()
+        with connect() as con:
+            has_primary=con.execute("SELECT 1 FROM inventory_files WHERE item_id=? AND is_primary=1",(item_id,)).fetchone()
+            is_primary=1 if has_primary is None and (file.content_type or "").startswith("image/") else 0
+            cur=con.execute("""INSERT INTO inventory_files
+                (item_id,file_name,stored_name,content_type,description,is_primary,created_at)
+                VALUES(?,?,?,?,?,?,?)""",(item_id,file.filename or stored_name,stored_name,
+                file.content_type,description,is_primary,now))
+        return {"id":cur.lastrowid,"stored":True}
+
+    @router.get("/items/{item_id}/files")
+    def inventory_files(item_id: int):
+        with connect() as con:
+            rows=con.execute("SELECT id,item_id,file_name,content_type,description,is_primary,created_at FROM inventory_files WHERE item_id=? ORDER BY is_primary DESC,id DESC",(item_id,)).fetchall()
+        return [dict(r) for r in rows]
+
+    @router.get("/files/{file_id}")
+    def inventory_file_get(file_id: int):
+        with connect() as con:
+            row=con.execute("SELECT * FROM inventory_files WHERE id=?",(file_id,)).fetchone()
+        if row is None: raise HTTPException(404,"INVENTORY_FILE_NOT_FOUND")
+        path=INVENTORY_FILES_PATH/row["stored_name"]
+        if not path.exists(): raise HTTPException(404,"INVENTORY_STORED_FILE_NOT_FOUND")
+        return FileResponse(path,media_type=row["content_type"] or "application/octet-stream",
+                            headers={"Content-Disposition":f'inline; filename="{row["file_name"]}"'})
+
+    @router.delete("/files/{file_id}")
+    def inventory_file_delete(file_id: int):
+        with connect() as con:
+            row=con.execute("SELECT * FROM inventory_files WHERE id=?",(file_id,)).fetchone()
+            if row is None: raise HTTPException(404,"INVENTORY_FILE_NOT_FOUND")
+            con.execute("DELETE FROM inventory_files WHERE id=?",(file_id,))
+        path=INVENTORY_FILES_PATH/row["stored_name"]
+        if path.exists(): path.unlink()
+        return {"deleted":True,"id":file_id}
 
     @router.get("/items/{item_id}/movements")
     def inventory_item_movements(item_id: int):
