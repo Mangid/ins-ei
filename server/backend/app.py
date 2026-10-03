@@ -6433,11 +6433,15 @@ class PortalDashboardConfigSave(BaseModel):
 def portal_admin_dashboard_configs(ins_portal_session: str | None = Cookie(default=None)):
     _portal_admin(ins_portal_session)
     with db() as con:
-        rows=con.execute("""SELECT d.*,c.name customer_name FROM portal_dashboard_configs d
-            LEFT JOIN customers c ON c.id=d.customer_id ORDER BY d.name COLLATE NOCASE""").fetchall()
-    result=[]
-    for r in rows:
-        x=dict(r);x["config"]=json.loads(x.pop("config_json") or "{}");result.append(x)
+        rows=con.execute("SELECT * FROM portal_dashboard_configs ORDER BY name COLLATE NOCASE,id").fetchall()
+        result=[]
+        for r in rows:
+            x=dict(r);x["config"]=json.loads(x.pop("config_json") or "{}")
+            x["access"]=[dict(a) for a in con.execute("SELECT user_id,permission FROM portal_dashboard_access WHERE dashboard_config_id=? ORDER BY user_id",(x["id"],))]
+            x["sources"]=[]
+            for src in con.execute("SELECT id,source_type,name,source_ref,config_json FROM portal_dashboard_sources WHERE dashboard_config_id=? ORDER BY id",(x["id"],)):
+                y=dict(src);y["config"]=json.loads(y.pop("config_json") or "{}");x["sources"].append(y)
+            result.append(x)
     return {"dashboards":result}
 
 @app.post("/portal/api/admin/dashboard-configs")
@@ -6483,6 +6487,28 @@ def portal_admin_dashboard_template_delete(template_id:int,ins_portal_session: s
     with db() as con:
         cur=con.execute("DELETE FROM portal_dashboard_templates WHERE id=?",(template_id,))
         if not cur.rowcount:raise HTTPException(404,"TEMPLATE_NOT_FOUND")
+    return {"deleted":True}
+
+@app.put("/portal/api/admin/dashboard-configs/{config_id}")
+def portal_admin_dashboard_config_update(config_id:int,item:PortalDashboardConfigSave,ins_portal_session: str | None = Cookie(default=None)):
+    _portal_admin(ins_portal_session);now=datetime.now(timezone.utc).isoformat();payload={"description":item.description or "","blocks":item.config.get("blocks",[])}
+    with db() as con:
+        cur=con.execute("UPDATE portal_dashboard_configs SET name=?,active=?,config_json=?,updated_at=? WHERE id=?",(item.name.strip(),int(item.active),json.dumps(payload,ensure_ascii=False),now,config_id))
+        if not cur.rowcount:raise HTTPException(404,"DASHBOARD_CONFIG_NOT_FOUND")
+        con.execute("DELETE FROM portal_dashboard_access WHERE dashboard_config_id=?",(config_id,));con.execute("DELETE FROM portal_dashboard_sources WHERE dashboard_config_id=?",(config_id,))
+        for x in item.access:
+            if x.get("user_id") and x.get("permission") in ("read","write"):con.execute("INSERT INTO portal_dashboard_access VALUES(?,?,?)",(config_id,int(x["user_id"]),x["permission"]))
+        for x in item.sources:
+            if x.get("type") and x.get("ref"):con.execute("INSERT INTO portal_dashboard_sources(dashboard_config_id,source_type,name,source_ref,config_json) VALUES(?,?,?,?,?)",(config_id,x["type"],x.get("name") or x["type"],str(x["ref"]),json.dumps(x.get("config") or {},ensure_ascii=False)))
+    return {"updated":True}
+
+@app.delete("/portal/api/admin/dashboard-configs/{config_id}")
+def portal_admin_dashboard_config_delete(config_id:int,ins_portal_session: str | None = Cookie(default=None)):
+    _portal_admin(ins_portal_session)
+    with db() as con:
+        con.execute("DELETE FROM portal_dashboard_access WHERE dashboard_config_id=?",(config_id,));con.execute("DELETE FROM portal_dashboard_sources WHERE dashboard_config_id=?",(config_id,))
+        cur=con.execute("DELETE FROM portal_dashboard_configs WHERE id=?",(config_id,))
+        if not cur.rowcount:raise HTTPException(404,"DASHBOARD_CONFIG_NOT_FOUND")
     return {"deleted":True}
 
 @app.get("/portal/api/admin/dashboard-builder-data")
@@ -6609,6 +6635,8 @@ app.add_api_route("/dev-portal/api/admin/dashboard-templates", portal_admin_dash
 app.add_api_route("/dev-portal/api/admin/dashboard-templates/{template_id}", portal_admin_dashboard_template_delete, methods=["DELETE"])
 app.add_api_route("/dev-portal/api/admin/source-samples", portal_admin_source_samples, methods=["GET"])
 app.add_api_route("/dev-portal/api/admin/dashboard-configs", portal_admin_dashboard_config_create, methods=["POST"])
+app.add_api_route("/dev-portal/api/admin/dashboard-configs/{config_id}", portal_admin_dashboard_config_update, methods=["PUT"])
+app.add_api_route("/dev-portal/api/admin/dashboard-configs/{config_id}", portal_admin_dashboard_config_delete, methods=["DELETE"])
 app.add_api_route("/dev-portal/api/admin/oekofen/{plant_id}/available-signals", portal_admin_oekofen_signals, methods=["GET"])
 # to proxy /dev-portal* without path rewriting.
 app.add_api_route("/dev-portal/api/login", customer_portal_login, methods=["POST"])
