@@ -120,18 +120,48 @@ async function refreshOekofenLive(){
   oekofenLive.innerHTML=groups.join("")||'<div class="card">Keine aktuellen Messwerte verfügbar.</div>';
  }catch(e){oekofenOnline.textContent="● Keine Verbindung";oekofenOnline.classList.remove("ok")}
 }
+function friendlyField(name){
+ const map=[
+  [/^AT\[°C\]$/,"Außentemperatur"],[/^ATakt\[°C\]$/,"Außentemperatur aktuell"],
+  [/PE1 KT\[°C\]/,"Kesseltemperatur"],[/PE1 KT_SOLL\[°C\]/,"Kessel Soll"],
+  [/PU1 TPO Ist\[°C\]/,"Puffer oben"],[/PU1 TPM Ist\[°C\]/,"Puffer Mitte"],
+  [/PU1 TPO Soll\[°C\]/,"Puffer oben Soll"],[/PU1 TPM Soll\[°C\]/,"Puffer Mitte Soll"],
+  [/WW1 EinT Ist\[°C\]/,"Warmwasser"],[/WW1 Soll\[°C\]/,"Warmwasser Soll"],
+  [/HK1 VL Ist\[°C\]/,"Vorlauf"],[/HK1 VL Soll\[°C\]/,"Vorlauf Soll"],
+  [/HK2 VL Ist\[°C\]/,"Vorlauf"],[/HK2 VL Soll\[°C\]/,"Vorlauf Soll"]
+ ];for(const [re,label] of map)if(re.test(name))return label;return name.replace(/\[°C\]/g,"").replace(/ Ist/g,"");
+}
 function svgChart(title,series){
  const entries=Object.entries(series).filter(([,v])=>v.length);if(!entries.length)return"";
- const all=entries.flatMap(([,v])=>v.map(x=>x.value));let min=Math.min(...all),max=Math.max(...all);if(max===min){max+=1;min-=1}
- const W=760,H=220,p=28;const times=entries.flatMap(([,v])=>v.map(x=>Date.parse(x.time))).filter(Number.isFinite);const t0=Math.min(...times),t1=Math.max(...times);
- const paths=entries.map(([name,pts],idx)=>{const d=pts.map((x,j)=>{const tx=Date.parse(x.time),px=p+(tx-t0)/Math.max(1,t1-t0)*(W-2*p),py=H-p-(x.value-min)/(max-min)*(H-2*p);return(j?"L":"M")+px.toFixed(1)+" "+py.toFixed(1)}).join(" ");return '<path class="chart-line line-'+(idx%6)+'" d="'+d+'" fill="none"/>'}).join("");
- return '<article class="card chart-card"><div class="chart-head"><h2>'+title+'</h2><div class="chart-legend">'+entries.map(([n],i)=>'<span class="line-'+(i%6)+'">'+escp(n)+'</span>').join("")+'</div></div><svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">'+paths+'</svg><div class="chart-range"><span>'+min.toFixed(1)+'</span><span>'+max.toFixed(1)+'</span></div></article>'
+ const all=entries.flatMap(([,v])=>v.map(x=>x.value)).filter(Number.isFinite);if(!all.length)return"";
+ let dataMin=Math.min(...all),dataMax=Math.max(...all),pad=Math.max(1,(dataMax-dataMin)*.12);
+ let min=Math.floor((dataMin-pad)/5)*5,max=Math.ceil((dataMax+pad)/5)*5;if(max<=min)max=min+5;
+ const W=760,H=250,L=48,R=16,T=18,B=34;
+ const times=entries.flatMap(([,v])=>v.map(x=>Date.parse(x.time))).filter(Number.isFinite),t0=Math.min(...times),t1=Math.max(...times);
+ const x=ts=>L+(ts-t0)/Math.max(1,t1-t0)*(W-L-R),y=v=>T+(max-v)/(max-min)*(H-T-B);
+ const ticks=Array.from({length:5},(_,i)=>min+(max-min)*i/4);
+ const grid=ticks.map(v=>'<line x1="'+L+'" y1="'+y(v)+'" x2="'+(W-R)+'" y2="'+y(v)+'" class="chart-grid"/><text x="'+(L-7)+'" y="'+(y(v)+3)+'" class="chart-axis" text-anchor="end">'+v.toFixed(v%1?1:0)+'°</text>').join("");
+ const paths=entries.map(([name,pts],idx)=>{const d=pts.map((p,j)=>(j?"L":"M")+x(Date.parse(p.time)).toFixed(1)+" "+y(p.value).toFixed(1)).join(" ");return '<path class="chart-line line-'+(idx%6)+'" data-series="'+idx+'" d="'+d+'" fill="none"/>'}).join("");
+ const labels=Array.from({length:5},(_,i)=>{const ts=t0+(t1-t0)*i/4,d=new Date(ts);return '<text x="'+x(ts)+'" y="'+(H-8)+'" class="chart-axis" text-anchor="'+(i===0?"start":i===4?"end":"middle")+'">'+d.toLocaleString("de-AT",{day:t1-t0>86400000?"2-digit":undefined,month:t1-t0>86400000?"2-digit":undefined,hour:"2-digit",minute:"2-digit"})+'</text>'}).join("");
+ const id="chart-"+Math.random().toString(36).slice(2);
+ setTimeout(()=>bindChartHover(id,entries,{W,H,L,R,T,B,min,max,t0,t1}),0);
+ return '<article class="card chart-card" id="'+id+'"><div class="chart-head"><h2>'+title+'</h2><div class="chart-legend">'+entries.map(([n],i)=>'<span class="line-'+(i%6)+'">'+escp(friendlyField(n))+'</span>').join("")+'</div></div><div class="chart-svg-wrap"><svg viewBox="0 0 '+W+' '+H+'">'+grid+paths+labels+'<line class="chart-hover-line" x1="0" y1="'+T+'" x2="0" y2="'+(H-B)+'"/><circle class="chart-hover-dot" cx="0" cy="0" r="4"/></svg><div class="chart-tooltip"></div></div></article>'
+}
+function bindChartHover(id,entries,cfg){
+ const card=document.getElementById(id);if(!card)return;const svg=card.querySelector("svg"),tip=card.querySelector(".chart-tooltip"),line=card.querySelector(".chart-hover-line"),dot=card.querySelector(".chart-hover-dot");
+ svg.addEventListener("mousemove",e=>{const r=svg.getBoundingClientRect(),px=(e.clientX-r.left)/r.width*cfg.W,ratio=Math.max(0,Math.min(1,(px-cfg.L)/(cfg.W-cfg.L-cfg.R))),target=cfg.t0+ratio*(cfg.t1-cfg.t0);let best=null;
+  entries.forEach(([name,pts],idx)=>pts.forEach(p=>{const ts=Date.parse(p.time),dist=Math.abs(ts-target);if(!best||dist<best.dist)best={name,p,idx,dist}}));if(!best)return;
+  const ts=Date.parse(best.p.time),cx=cfg.L+(ts-cfg.t0)/Math.max(1,cfg.t1-cfg.t0)*(cfg.W-cfg.L-cfg.R),cy=cfg.T+(cfg.max-best.p.value)/(cfg.max-cfg.min)*(cfg.H-cfg.T-cfg.B);
+  line.setAttribute("x1",cx);line.setAttribute("x2",cx);dot.setAttribute("cx",cx);dot.setAttribute("cy",cy);line.classList.add("show");dot.classList.add("show");
+  tip.innerHTML='<strong>'+escp(friendlyField(best.name))+'</strong><br>'+Number(best.p.value).toFixed(1)+' °C<br><small>'+new Date(ts).toLocaleString("de-AT",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})+'</small>';tip.classList.add("show");tip.style.left=Math.min(r.width-150,Math.max(8,e.clientX-r.left+12))+"px";tip.style.top=Math.max(8,e.clientY-r.top-55)+"px";
+ });svg.addEventListener("mouseleave",()=>{tip.classList.remove("show");line.classList.remove("show");dot.classList.remove("show")});
 }
 async function loadOekofenHistory(){
  if(!oekofenPlant)return;oekofenCharts.innerHTML='<div class="card">Historie wird geladen …</div>';
  try{const r=await fetch("/dev-portal/api/oekofen/history?period="+oekofenPeriod+oekQuery(),{cache:"no-store"});if(!r.ok)throw Error(r.status);const d=await r.json(),s=d.series||{};
  const pick=re=>Object.fromEntries(Object.entries(s).filter(([k])=>re.test(k)));
- const cards=[svgChart("Kessel & Außentemperatur",pick(/AT|Kessel|PE1 KT/)),svgChart("Puffer",pick(/PU1/)),svgChart("Warmwasser",pick(/WW1/)),svgChart("Heizkreis 1",pick(/HK1 VL/)),svgChart("Heizkreis 2",pick(/HK2 VL/))].filter(Boolean);
+ const tempOnly=obj=>Object.fromEntries(Object.entries(obj).filter(([k])=>/\[°C\]/.test(k)&&!/Status|Pumpe/.test(k)));
+ const cards=[svgChart("Kessel & Außentemperatur",tempOnly(pick(/AT|Kessel|PE1 KT/))),svgChart("Puffer",tempOnly(pick(/PU1/))),svgChart("Warmwasser",tempOnly(pick(/WW1/))),svgChart("Heizkreis 1",tempOnly(pick(/HK1 VL/))),svgChart("Heizkreis 2",tempOnly(pick(/HK2 VL/)))].filter(Boolean);
  oekofenCharts.innerHTML=cards.join("")||'<div class="card">Für diesen Zeitraum sind noch keine historischen Daten vorhanden.</div>'}catch(e){oekofenCharts.innerHTML='<div class="card">Historie konnte nicht geladen werden.</div>'}
 }
 document.querySelectorAll("[data-oek-period]").forEach(b=>b.onclick=()=>{document.querySelectorAll("[data-oek-period]").forEach(x=>x.classList.toggle("active",x===b));oekofenPeriod=b.dataset.oekPeriod;loadOekofenHistory()});
