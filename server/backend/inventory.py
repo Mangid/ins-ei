@@ -229,6 +229,20 @@ def configure_inventory(db_path) -> None:
                 raise HTTPException(409,f"INVENTORY_ITEM_CONFLICT: {exc}")
             return {"updated":True,"id":item_id}
 
+    @router.delete("/items/{item_id}")
+    def inventory_item_delete(item_id: int):
+        """Archive an inventory item while preserving stock and movement history."""
+        now=_now()
+        with connect() as con:
+            item=con.execute("""SELECT i.id,i.article_number,i.name,COALESCE(SUM(s.quantity),0) AS total_stock
+                FROM inventory_items i LEFT JOIN inventory_stock s ON s.item_id=i.id
+                WHERE i.id=? GROUP BY i.id""",(item_id,)).fetchone()
+            if item is None:
+                raise HTTPException(404,"INVENTORY_ITEM_NOT_FOUND")
+            con.execute("UPDATE inventory_items SET active=0,updated_at=? WHERE id=?",(now,item_id))
+            return {"archived":True,"id":item_id,"article_number":item["article_number"],
+                    "name":item["name"],"preserved_stock":item["total_stock"]}
+
     @router.get("/reorder")
     def inventory_reorder():
         with connect() as con:
