@@ -259,3 +259,11 @@ body.service-locked>aside,body.service-locked>main,body.service-locked>.mobile-m
 .inventory-files{margin-top:18px;padding-top:16px;border-top:1px solid #24394b}.inventory-files .section-title{margin-bottom:10px}.inventory-upload-label{cursor:pointer}.inventory-file{display:grid;grid-template-columns:58px 1fr auto;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid #203344}.inventory-file img{width:58px;height:48px;object-fit:cover;border-radius:7px}.inventory-file a{color:#d8e7f3;text-decoration:none;word-break:break-word}.inventory-file small{display:block;color:#8194a5;margin-top:3px}.inventory-doc{display:grid;place-items:center;width:58px;height:48px;border-radius:7px;background:#152638;font-size:24px}@media(max-width:600px){.inventory-file{grid-template-columns:52px 1fr}.inventory-file img,.inventory-doc{width:52px;height:44px}.inventory-file button{grid-column:2;justify-self:start}}
 
 .inventory-bus-low td{background:rgba(217,139,31,.035)}.stock-chip-bus-low{border-color:#d98b1f!important;background:rgba(217,139,31,.13)!important}.inventory-statuses{display:flex;flex-wrap:wrap;gap:6px}.bus-refill-badge{display:inline-flex;align-items:center;padding:5px 9px;border-radius:999px;background:rgba(217,139,31,.16);border:1px solid rgba(217,139,31,.48);color:#f0b44d;font-size:12px;font-weight:700;white-space:nowrap}
+
+/* Compact inventory KPI strip */
+#inventory #inventorySummary{display:grid;grid-template-columns:repeat(5,minmax(120px,1fr));gap:8px;margin:8px 0 10px}
+#inventory #inventorySummary article{min-height:0;padding:10px 14px;border-radius:10px}
+#inventory #inventorySummary article b{font-size:22px;line-height:1.05;margin:0 0 3px}
+#inventory #inventorySummary article span{font-size:12px;line-height:1.15}
+@media(max-width:900px){#inventory #inventorySummary{grid-template-columns:repeat(2,minmax(120px,1fr))}}
+@media(max-width:520px){#inventory #inventorySummary{grid-template-columns:repeat(2,1fr)}#inventory #inventorySummary article{padding:9px 11px}}
