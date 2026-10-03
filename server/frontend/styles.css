@@ -255,3 +255,5 @@ body.service-locked>aside,body.service-locked>main,body.service-locked>.mobile-m
   .inventory-table td:nth-child(8){grid-column:2;text-align:right}.inventory-table td:nth-child(9){grid-column:1/-1}
   .inventory-actions{display:grid;grid-template-columns:1fr 1fr;gap:7px}.inventory-actions button{width:100%}
 }
+
+.inventory-files{margin-top:18px;padding-top:16px;border-top:1px solid #24394b}.inventory-files .section-title{margin-bottom:10px}.inventory-upload-label{cursor:pointer}.inventory-file{display:grid;grid-template-columns:58px 1fr auto;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid #203344}.inventory-file img{width:58px;height:48px;object-fit:cover;border-radius:7px}.inventory-file a{color:#d8e7f3;text-decoration:none;word-break:break-word}.inventory-file small{display:block;color:#8194a5;margin-top:3px}.inventory-doc{display:grid;place-items:center;width:58px;height:48px;border-radius:7px;background:#152638;font-size:24px}@media(max-width:600px){.inventory-file{grid-template-columns:52px 1fr}.inventory-file img,.inventory-doc{width:52px;height:44px}.inventory-file button{grid-column:2;justify-self:start}}
