@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 import shutil
 import uuid
+import json
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from fastapi.responses import FileResponse
@@ -89,6 +90,25 @@ def init_inventory_db(db_path) -> None:
             FOREIGN KEY(item_id) REFERENCES inventory_items(id) ON DELETE CASCADE
         );
         CREATE INDEX IF NOT EXISTS idx_inventory_files_item ON inventory_files(item_id, id DESC);
+
+        CREATE TABLE IF NOT EXISTS inventory_checks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            status TEXT NOT NULL DEFAULT 'open',
+            started_at TEXT NOT NULL,
+            completed_at TEXT
+        );
+        CREATE TABLE IF NOT EXISTS inventory_check_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            check_id INTEGER NOT NULL,
+            item_id INTEGER NOT NULL,
+            mode TEXT NOT NULL,
+            result TEXT,
+            counted_json TEXT,
+            checked_at TEXT,
+            FOREIGN KEY(check_id) REFERENCES inventory_checks(id) ON DELETE CASCADE,
+            FOREIGN KEY(item_id) REFERENCES inventory_items(id) ON DELETE RESTRICT
+        );
+        CREATE INDEX IF NOT EXISTS idx_inventory_check_items_check ON inventory_check_items(check_id,id);
 
         CREATE TABLE IF NOT EXISTS inventory_movements (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -381,6 +401,77 @@ def configure_inventory(db_path) -> None:
         payload=InventoryMovementCreate(item_id=item_id,movement_type=movement_type,quantity=quantity,
             from_location_id=from_location_id,to_location_id=to_location_id,customer_id=customer_id,note=note)
         return inventory_movement_create(payload)
+
+    @router.post("/checks")
+    def inventory_check_start():
+        now=_now()
+        with connect() as con:
+            open_check=con.execute("SELECT id FROM inventory_checks WHERE status='open' ORDER BY id DESC LIMIT 1").fetchone()
+            if open_check: return {"id":open_check["id"],"existing":True}
+            cur=con.execute("INSERT INTO inventory_checks(status,started_at) VALUES('open',?)",(now,))
+            check_id=cur.lastrowid
+            rows=con.execute("SELECT id,minimum_stock,target_stock FROM inventory_items WHERE active=1 AND is_consumable=1 ORDER BY name COLLATE NOCASE").fetchall()
+            for row in rows:
+                # Quantitative if either total or bus minimum is configured; otherwise qualitative.
+                mode="count" if float(row["minimum_stock"] or 0)>0 or float(row["target_stock"] or 0)>0 else "sufficient"
+                con.execute("INSERT INTO inventory_check_items(check_id,item_id,mode) VALUES(?,?,?)",(check_id,row["id"],mode))
+        return {"id":check_id,"existing":False}
+
+    @router.get("/checks/{check_id}")
+    def inventory_check_get(check_id: int):
+        with connect() as con:
+            check=con.execute("SELECT * FROM inventory_checks WHERE id=?",(check_id,)).fetchone()
+            if check is None: raise HTTPException(404,"INVENTORY_CHECK_NOT_FOUND")
+            rows=con.execute("""SELECT ci.*,i.article_number,i.name,i.unit,i.minimum_stock,
+                i.target_stock AS minimum_bus_stock
+                FROM inventory_check_items ci JOIN inventory_items i ON i.id=ci.item_id
+                WHERE ci.check_id=? ORDER BY ci.id""",(check_id,)).fetchall()
+            out=[]
+            for row in rows:
+                x=dict(row)
+                x["counted"]=json.loads(x.pop("counted_json") or "{}")
+                x["stocks"]=[dict(s) for s in con.execute("""SELECT l.id location_id,l.name,l.code,COALESCE(s.quantity,0) quantity
+                    FROM inventory_locations l LEFT JOIN inventory_stock s ON s.location_id=l.id AND s.item_id=?
+                    WHERE l.active=1 ORDER BY l.name""",(row["item_id"],)).fetchall()]
+                out.append(x)
+        return {"check":dict(check),"items":out}
+
+    @router.put("/checks/{check_id}/items/{check_item_id}")
+    def inventory_check_item_update(check_id: int, check_item_id: int, payload: dict[str, Any]):
+        now=_now()
+        result=str(payload.get("result") or "")
+        counted=payload.get("counted") or {}
+        if result not in {"sufficient","counted"}:
+            raise HTTPException(400,"INVENTORY_CHECK_RESULT_INVALID")
+        with connect() as con:
+            row=con.execute("SELECT mode FROM inventory_check_items WHERE id=? AND check_id=?",(check_item_id,check_id)).fetchone()
+            if row is None: raise HTTPException(404,"INVENTORY_CHECK_ITEM_NOT_FOUND")
+            if row["mode"]=="count" and result!="counted": raise HTTPException(400,"INVENTORY_CHECK_COUNT_REQUIRED")
+            con.execute("UPDATE inventory_check_items SET result=?,counted_json=?,checked_at=? WHERE id=?",
+                        (result,json.dumps(counted),now,check_item_id))
+        return {"updated":True}
+
+    @router.post("/checks/{check_id}/complete")
+    def inventory_check_complete(check_id: int):
+        now=_now()
+        with connect() as con:
+            check=con.execute("SELECT * FROM inventory_checks WHERE id=?",(check_id,)).fetchone()
+            if check is None: raise HTTPException(404,"INVENTORY_CHECK_NOT_FOUND")
+            pending=con.execute("SELECT COUNT(*) n FROM inventory_check_items WHERE check_id=? AND result IS NULL",(check_id,)).fetchone()["n"]
+            if pending: raise HTTPException(409,f"INVENTORY_CHECK_INCOMPLETE:{pending}")
+            rows=con.execute("SELECT * FROM inventory_check_items WHERE check_id=?",(check_id,)).fetchall()
+            for row in rows:
+                if row["mode"]=="count":
+                    counted=json.loads(row["counted_json"] or "{}")
+                    for location_id,value in counted.items():
+                        qty=max(0,float(value or 0))
+                        con.execute("""INSERT INTO inventory_stock(item_id,location_id,quantity,updated_at)
+                            VALUES(?,?,?,?) ON CONFLICT(item_id,location_id)
+                            DO UPDATE SET quantity=excluded.quantity,updated_at=excluded.updated_at""",
+                            (row["item_id"],int(location_id),qty,now))
+                con.execute("UPDATE inventory_items SET last_stock_check_at=?,updated_at=? WHERE id=?",(now,now,row["item_id"]))
+            con.execute("UPDATE inventory_checks SET status='completed',completed_at=? WHERE id=?",(now,check_id))
+        return {"completed":True,"id":check_id}
 
     @router.post("/items/{item_id}/files")
     async def inventory_file_upload(item_id: int, file: UploadFile = File(...),
