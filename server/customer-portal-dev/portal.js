@@ -64,7 +64,6 @@ async function loadOekofenPortal(){
      sel.innerHTML=filtered.map(p=>'<option value="'+escp(p.plant_id)+'">'+escp(p.plant_name||p.plant_id)+(p.customer_name?' · '+escp(p.customer_name):'')+(p.customer_city?' · '+escp(p.customer_city):'')+(p.serial_number?' · '+escp(p.serial_number):'')+'</option>').join("");
      if(filtered.some(p=>p.plant_id===current))sel.value=current;
     };
-    search.oninput=renderPlants;
     renderPlants();
     const saved=localStorage.getItem("ins-dev-oekofen-plant");
     if(saved&&pd.plants.some(p=>p.plant_id===saved))sel.value=saved;
@@ -78,6 +77,13 @@ async function loadOekofenPortal(){
      oekofenMeta.textContent=[p.serial_number,p.customer_name,p.customer_city].filter(Boolean).join(" · ");
      await refreshOekofenLive();
      await loadOekofenHistory();
+    };
+    search.oninput=()=>{
+     renderPlants();
+     if(sel.options.length===1){
+      sel.selectedIndex=0;
+      sel.onchange();
+     }
     };
     oekofenNav?.classList.remove("hidden");
     if(sel.value)await sel.onchange();
