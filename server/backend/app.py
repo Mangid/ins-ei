@@ -6585,7 +6585,6 @@ app.add_api_route("/dev-portal/api/admin/dashboard-templates", portal_admin_dash
 app.add_api_route("/dev-portal/api/admin/dashboard-templates/{template_id}", portal_admin_dashboard_template_delete, methods=["DELETE"])
 app.add_api_route("/dev-portal/api/admin/source-samples", portal_admin_source_samples, methods=["GET"])
 app.add_api_route("/dev-portal/api/admin/dashboard-configs", portal_admin_dashboard_config_create, methods=["POST"])
-app.add_api_route("/dev-portal/api/admin/dashboard-configs/{config_id}", portal_admin_dashboard_config_update, methods=["PUT"])
 app.add_api_route("/dev-portal/api/admin/oekofen/{plant_id}/available-signals", portal_admin_oekofen_signals, methods=["GET"])
 # to proxy /dev-portal* without path rewriting.
 app.add_api_route("/dev-portal/api/login", customer_portal_login, methods=["POST"])
