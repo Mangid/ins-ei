@@ -6554,7 +6554,7 @@ def portal_admin_source_samples(source_type: str, source_ref: str, ins_portal_se
                     item=by[key];signals.append({"scope":"live","key":key,"label":label+(" Soll" if role=="target" else ""),"sample":oekofen_format_variable(item),"raw":item.get("value"),"unit":item.get("unitText") or ""})
     except Exception:pass
     token=INFLUX_TOKEN.read_text().strip();safe=source_ref.replace('"','\\\"')
-    flux='from(bucket: "'+INFLUX_BUCKET+'") |> range(start:-24h) |> filter(fn:(r)=>r._measurement=="oekofen_csv" and r.plant_id=="'+safe+'") |> group(columns:["_field"]) |> last() |> keep(columns:["_field","_value"])'
+    flux='from(bucket: "'+INFLUX_BUCKET+'") |> range(start:-7d) |> filter(fn:(r)=>r._measurement=="oekofen_csv" and r.plant_id=="'+safe+'") |> group(columns:["_field"]) |> last() |> keep(columns:["_time","_field","_value"])'
     try:
         req=Request(INFLUX_URL+"/api/v2/query?org="+INFLUX_ORG,data=json.dumps({"query":flux,"type":"flux"}).encode(),method="POST",headers={"Authorization":f"Token {token}","Content-Type":"application/json","Accept":"application/csv"});raw=urlopen(req,timeout=20).read().decode()
         for r in csv.DictReader(io.StringIO(raw)):
