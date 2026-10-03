@@ -6691,6 +6691,46 @@ def customer_portal_asset(asset_name: str):
         raise HTTPException(404, "CUSTOMER_PORTAL_NOT_DEPLOYED")
     return FileResponse(path)
 
+@app.get("/dev-portal/api/admin/dashboard-configs/{config_id}/preview-data")
+def portal_admin_dashboard_preview_data(config_id:int,period:str="24h",ins_portal_session: str | None = Cookie(default=None)):
+    _portal_admin(ins_portal_session)
+    ranges={"24h":"-24h","7d":"-7d","30d":"-30d"};windows={"24h":"10m","7d":"1h","30d":"4h"}
+    if period not in ranges:raise HTTPException(400,"INVALID_PERIOD")
+    with db() as con:
+        row=con.execute("SELECT * FROM portal_dashboard_configs WHERE id=?",(config_id,)).fetchone()
+        if row is None:raise HTTPException(404,"DASHBOARD_CONFIG_NOT_FOUND")
+        cfg=json.loads(row["config_json"] or "{}")
+        sources=[dict(x) for x in con.execute("SELECT id,source_type,name,source_ref,config_json FROM portal_dashboard_sources WHERE dashboard_config_id=? ORDER BY id",(config_id,))]
+    live={};history={}
+    for si,src in enumerate(sources):
+        needed=[]
+        for b in cfg.get("blocks",[]):
+            for it in b.get("items",[]):
+                if int(it.get("source_index",-1))==si and it.get("key"):needed.append(it["key"])
+        if src["source_type"]!="oekofen" or not needed:continue
+        try:
+            vals=oekofen_fetch_variables(src["source_ref"],list(dict.fromkeys(needed)))
+            for x in vals:
+                if x.get("name") in needed:live[f"{si}:{x['name']}"]=oekofen_format_variable(x)
+        except Exception:pass
+        token=INFLUX_TOKEN.read_text().strip();safe=src["source_ref"].replace('"','\\\"');fields=" or ".join(['r._field=="'+k.replace('"','\\\"')+'"' for k in set(needed)])
+        flux='from(bucket: "'+INFLUX_BUCKET+'") |> range(start:'+ranges[period]+') |> filter(fn:(r)=>r._measurement=="oekofen_csv" and r.plant_id=="'+safe+'") |> filter(fn:(r)=>'+fields+') |> filter(fn:(r)=>r._value > -3000.0) |> aggregateWindow(every:'+windows[period]+',fn:mean,createEmpty:false) |> keep(columns:["_time","_field","_value"])'
+        try:
+            req=Request(INFLUX_URL+"/api/v2/query?org="+INFLUX_ORG,data=json.dumps({"query":flux,"type":"flux"}).encode(),method="POST",headers={"Authorization":f"Token {token}","Content-Type":"application/json","Accept":"application/csv"});raw=urlopen(req,timeout=20).read().decode()
+            for r in csv.DictReader(io.StringIO(raw)):
+                try:v=float(r.get("_value",""))
+                except ValueError:continue
+                history.setdefault(f"{si}:{r.get('_field','')}",[]).append({"time":r.get("_time"),"value":v})
+        except Exception:pass
+    return {"id":row["id"],"name":row["name"],"description":cfg.get("description",""),"blocks":cfg.get("blocks",[]),"sources":sources,"live":live,"history":history,"period":period}
+
+@app.get("/dev-portal/preview/{config_id}")
+def customer_portal_dev_preview(config_id:int,ins_service_session: str | None = Cookie(default=None)):
+    if not _service_session_valid(ins_service_session):raise HTTPException(401,"SERVICE_LOGIN_REQUIRED")
+    path=CUSTOMER_PORTAL_DEV_DIR/"preview.html"
+    if not path.exists():raise HTTPException(404,"PREVIEW_NOT_DEPLOYED")
+    return FileResponse(path)
+
 @app.get("/dev-portal")
 @app.get("/dev-portal/")
 def customer_portal_dev_index(ins_service_session: str | None = Cookie(default=None)):
