@@ -3,7 +3,7 @@ const $=id=>document.getElementById(id);
 const esc=v=>String(v??"").replaceAll("&","&amp;").replaceAll('"',"&quot;").replaceAll("<","&lt;").replaceAll(">","&gt;");
 const eur=v=>v===null||v===undefined||v===""?"–":Number(v).toLocaleString("de-AT",{style:"currency",currency:"EUR"});
 const qty=(v,u)=>Number(v||0).toLocaleString("de-AT",{maximumFractionDigits:2})+" "+(u||"");
-let items=[],locations=[];
+let items=[],locations=[],inventoryFilter="all";
 
 function activate(){
   const isInventory=location.hash==="#inventory";
@@ -23,7 +23,7 @@ async function load(){
 }
 function render(){
   const q=($("inventorySearch")?.value||"").trim().toLowerCase();
-  const filtered=items.filter(x=>!q||[x.article_number,x.name,x.manufacturer,x.category,x.supplier,x.sevdesk_article_number].some(v=>String(v||"").toLowerCase().includes(q)));
+  const filtered=items.filter(x=>(!q||[x.article_number,x.name,x.manufacturer,x.category,x.supplier,x.sevdesk_article_number,x.notes].some(v=>String(v||"").toLowerCase().includes(q)))&&(inventoryFilter==="all"||inventoryFilter==="reorder"&&x.needs_reorder||inventoryFilter==="transfer"&&x.needs_bus_refill));
   const low=items.filter(x=>x.needs_reorder);
   const busLow=items.filter(x=>x.needs_bus_refill);
   $("inventoryCount").textContent=filtered.length+" Artikel";
@@ -48,6 +48,7 @@ function close(){$("inventoryDialog").classList.add("hidden");$("inventoryDialog
 $("navInventory")?.addEventListener("click",()=>setTimeout(activate,0));
 window.addEventListener("hashchange",()=>setTimeout(activate,0));
 $("inventorySearch")?.addEventListener("input",render);
+document.querySelectorAll("[data-inventory-filter]").forEach(b=>b.addEventListener("click",()=>{inventoryFilter=b.dataset.inventoryFilter||"all";document.querySelectorAll("[data-inventory-filter]").forEach(x=>x.classList.toggle("selected",x===b));render()}));
 $("newInventoryLocation")?.addEventListener("click",()=>{
  show('<div class="detail inventory-modal"><div class="detail-head"><div><h1>Lagerort anlegen</h1><span class="meta">z. B. HTZ oder Bus</span></div></div><form id="inventoryLocationForm" class="customer-form"><label>Name<input name="name" required autofocus></label><label>Kürzel<input name="code" placeholder="optional"></label><div class="form-actions"><button type="button" class="secondary" id="inventoryCancel">Abbrechen</button><button class="primary">Anlegen</button></div></form></div>');
  $("inventoryCancel").onclick=close;$("inventoryLocationForm").onsubmit=async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.currentTarget).entries());if(!d.code)d.code=null;const r=await fetch("/api/inventory/locations",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(d)});if(r.ok){close();load()}else alert("Lagerort konnte nicht angelegt werden.")};
