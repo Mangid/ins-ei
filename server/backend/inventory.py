@@ -110,6 +110,13 @@ def init_inventory_db(db_path) -> None:
         CREATE INDEX IF NOT EXISTS idx_inventory_movements_item ON inventory_movements(item_id, occurred_at DESC);
         CREATE INDEX IF NOT EXISTS idx_inventory_movements_customer ON inventory_movements(customer_id, occurred_at DESC);
         """)
+        cols={row[1] for row in con.execute("PRAGMA table_info(inventory_items)").fetchall()}
+        if "is_consumable" not in cols:
+            con.execute("ALTER TABLE inventory_items ADD COLUMN is_consumable INTEGER NOT NULL DEFAULT 0")
+        if "check_interval_days" not in cols:
+            con.execute("ALTER TABLE inventory_items ADD COLUMN check_interval_days INTEGER NOT NULL DEFAULT 30")
+        if "last_stock_check_at" not in cols:
+            con.execute("ALTER TABLE inventory_items ADD COLUMN last_stock_check_at TEXT")
         con.commit()
     finally:
         con.close()
@@ -133,6 +140,9 @@ class InventoryItemCreate(BaseModel):
     sales_price_net: float | None = None
     minimum_stock: float = 0
     target_stock: float | None = None
+    is_consumable: bool = False
+    check_interval_days: int = Field(default=30, ge=1, le=3650)
+    last_stock_check_at: str | None = None
     notes: str | None = None
 
 
@@ -204,6 +214,14 @@ def configure_inventory(db_path) -> None:
                 item["needs_bus_refill"]=bus_stock <= item["minimum_bus_stock"] if item["minimum_bus_stock"] > 0 else False
                 item["suggested_bus_refill_quantity"]=max(0,item["minimum_bus_stock"]-bus_stock)
                 item["needs_reorder"]=float(item["total_stock"]) <= float(item["minimum_stock"] or 0) if float(item["minimum_stock"] or 0) > 0 else False
+                if item.get("is_consumable"):
+                    try:
+                        last=datetime.fromisoformat(str(item.get("last_stock_check_at") or "").replace("Z","+00:00"))
+                        item["needs_stock_check"]=(datetime.now(timezone.utc)-last).days >= int(item.get("check_interval_days") or 30)
+                    except Exception:
+                        item["needs_stock_check"]=True
+                else:
+                    item["needs_stock_check"]=False
                 result.append(item)
             return result
 
@@ -216,12 +234,12 @@ def configure_inventory(db_path) -> None:
                 cur=con.execute("""INSERT INTO inventory_items
                     (article_number,name,manufacturer,category,supplier,unit,sevdesk_object_id,
                      sevdesk_article_number,purchase_price_net,sales_price_net,minimum_stock,
-                     target_stock,notes,created_at,updated_at)
-                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                     target_stock,is_consumable,check_interval_days,last_stock_check_at,notes,created_at,updated_at)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (payload.article_number,payload.name,payload.manufacturer,payload.category,
                      payload.supplier,payload.unit,payload.sevdesk_object_id,payload.sevdesk_article_number,
                      purchase_price_net,sales_price_net,payload.minimum_stock,
-                     payload.target_stock,payload.notes,now,now))
+                     payload.target_stock,int(payload.is_consumable),payload.check_interval_days,payload.last_stock_check_at,payload.notes,now,now))
             except sqlite3.IntegrityError as exc:
                 raise HTTPException(409,f"INVENTORY_ITEM_CONFLICT: {exc}")
             return {"id":cur.lastrowid}
@@ -238,12 +256,12 @@ def configure_inventory(db_path) -> None:
                 con.execute("""UPDATE inventory_items SET
                     article_number=?,name=?,manufacturer=?,category=?,supplier=?,unit=?,
                     sevdesk_object_id=?,sevdesk_article_number=?,purchase_price_net=?,sales_price_net=?,
-                    minimum_stock=?,target_stock=?,active=?,notes=?,updated_at=?
+                    minimum_stock=?,target_stock=?,is_consumable=?,check_interval_days=?,last_stock_check_at=?,active=?,notes=?,updated_at=?
                     WHERE id=?""",
                     (payload.article_number,payload.name,payload.manufacturer,payload.category,
                      payload.supplier,payload.unit,payload.sevdesk_object_id,payload.sevdesk_article_number,
                      purchase_price_net,sales_price_net,payload.minimum_stock,
-                     payload.target_stock,int(payload.active),payload.notes,now,item_id))
+                     payload.target_stock,int(payload.is_consumable),payload.check_interval_days,payload.last_stock_check_at,int(payload.active),payload.notes,now,item_id))
             except sqlite3.IntegrityError as exc:
                 raise HTTPException(409,f"INVENTORY_ITEM_CONFLICT: {exc}")
             return {"updated":True,"id":item_id}
