@@ -182,9 +182,10 @@ def configure_inventory(db_path) -> None:
                 item["stocks"]=[dict(s) for s in stocks]
                 bus_stock=next((float(s["quantity"]) for s in item["stocks"] if str(s.get("code") or "").casefold()=="bus"),0.0)
                 item["bus_stock"]=bus_stock
-                item["needs_bus_refill"]=bus_stock < float(item["minimum_stock"] or 0)
-                item["suggested_bus_refill_quantity"]=max(0,float(item["minimum_stock"] or 0)-bus_stock)
-                item["needs_reorder"]=item["needs_bus_refill"]
+                item["minimum_bus_stock"]=float(item["target_stock"] or 0)
+                item["needs_bus_refill"]=bus_stock <= item["minimum_bus_stock"] if item["minimum_bus_stock"] > 0 else False
+                item["suggested_bus_refill_quantity"]=max(0,item["minimum_bus_stock"]-bus_stock)
+                item["needs_reorder"]=float(item["total_stock"]) <= float(item["minimum_stock"] or 0) if float(item["minimum_stock"] or 0) > 0 else False
                 result.append(item)
             return result
 
@@ -248,13 +249,15 @@ def configure_inventory(db_path) -> None:
         with connect() as con:
             return [dict(r) for r in con.execute("""
                 SELECT i.id,i.article_number,i.name,i.manufacturer,i.supplier,i.unit,
-                       i.minimum_stock AS minimum_bus_stock,i.purchase_price_net,i.sales_price_net,
-                       COALESCE(bs.quantity,0) AS bus_stock,
-                       MAX(0,i.minimum_stock-COALESCE(bs.quantity,0)) AS suggested_bus_refill_quantity
+                       i.minimum_stock,i.target_stock AS minimum_bus_stock,
+                       i.purchase_price_net,i.sales_price_net,
+                       COALESCE(SUM(s.quantity),0) AS total_stock,
+                       MAX(0,i.minimum_stock-COALESCE(SUM(s.quantity),0)) AS suggested_order_quantity
                 FROM inventory_items i
-                LEFT JOIN inventory_locations bl ON lower(bl.code)='bus' AND bl.active=1
-                LEFT JOIN inventory_stock bs ON bs.item_id=i.id AND bs.location_id=bl.id
-                WHERE i.active=1 AND COALESCE(bs.quantity,0) < i.minimum_stock
+                LEFT JOIN inventory_stock s ON s.item_id=i.id
+                WHERE i.active=1
+                GROUP BY i.id
+                HAVING i.minimum_stock > 0 AND total_stock <= i.minimum_stock
                 ORDER BY COALESCE(i.supplier,''),i.name COLLATE NOCASE
             """).fetchall()]
 
@@ -329,10 +332,10 @@ def configure_inventory(db_path) -> None:
                     WHERE l.active=1 ORDER BY l.name""",(row["id"],)).fetchall()]
                 bus_stock=next((float(s["quantity"]) for s in item["stocks"] if str(s.get("code") or "").casefold()=="bus"),0.0)
                 item["bus_stock"]=bus_stock
-                item["minimum_bus_stock"]=float(item["minimum_stock"] or 0)
-                item["needs_bus_refill"]=bus_stock < item["minimum_bus_stock"]
+                item["minimum_bus_stock"]=float(item["target_stock"] or 0)
+                item["needs_bus_refill"]=bus_stock <= item["minimum_bus_stock"] if item["minimum_bus_stock"] > 0 else False
                 item["suggested_bus_refill_quantity"]=max(0,item["minimum_bus_stock"]-bus_stock)
-                item["needs_reorder"]=item["needs_bus_refill"]
+                item["needs_reorder"]=float(item["total_stock"]) <= float(item["minimum_stock"] or 0) if float(item["minimum_stock"] or 0) > 0 else False
                 out.append(item)
             return out
 
