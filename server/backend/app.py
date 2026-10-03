@@ -1346,6 +1346,16 @@ def init_portal_db():
             updated_at TEXT NOT NULL
         );
         """)
+        for col,ddl in [
+            ("role","TEXT NOT NULL DEFAULT 'end_customer'"),
+            ("access_status","TEXT NOT NULL DEFAULT 'active'"),
+            ("trial_start","TEXT"),
+            ("trial_end","TEXT"),
+            ("custom_dashboard_id","INTEGER")
+        ]:
+            try: con.execute(f"ALTER TABLE portal_users ADD COLUMN {col} {ddl}")
+            except sqlite3.OperationalError: pass
+        con.execute("UPDATE portal_users SET role='admin' WHERE is_admin=1")
         con.execute("""INSERT OR IGNORE INTO portal_dashboards
             (id,name,description,module,config_json,sort_order) VALUES(?,?,?,?,?,?)""",
             ("oschmalz-heating","Temporäre Heizung",
@@ -6146,6 +6156,11 @@ class PortalUserCreate(BaseModel):
     display_name: str
     password: str
     is_admin: bool = False
+    role: str = "end_customer"
+    access_status: str = "active"
+    trial_start: str | None = None
+    trial_end: str | None = None
+    custom_dashboard_id: int | None = None
     dashboard_ids: list[str] = []
 
 
@@ -6153,6 +6168,11 @@ class PortalUserUpdate(BaseModel):
     display_name: str
     active: bool = True
     is_admin: bool = False
+    role: str = "end_customer"
+    access_status: str = "active"
+    trial_start: str | None = None
+    trial_end: str | None = None
+    custom_dashboard_id: int | None = None
     password: str | None = None
     dashboard_ids: list[str] = []
 
@@ -6207,7 +6227,7 @@ def portal_admin_users(ins_portal_session: str | None = Cookie(default=None)):
     with db() as con:
         dashboards = [dict(x) for x in con.execute("SELECT id,name,description FROM portal_dashboards ORDER BY sort_order,name")]
         users = []
-        for row in con.execute("SELECT id,username,display_name,is_admin,active,created_at FROM portal_users ORDER BY display_name"):
+        for row in con.execute("SELECT id,username,display_name,is_admin,role,access_status,trial_start,trial_end,custom_dashboard_id,active,created_at FROM portal_users ORDER BY display_name"):
             item = dict(row)
             item["dashboard_ids"] = [x["dashboard_id"] for x in con.execute("SELECT dashboard_id FROM portal_user_dashboards WHERE user_id=?",(row["id"],))]
             users.append(item)
@@ -6223,8 +6243,10 @@ def portal_admin_create_user(request: PortalUserCreate, ins_portal_session: str 
     salt = secrets.token_hex(16)
     try:
         with db() as con:
-            cur = con.execute("""INSERT INTO portal_users(username,display_name,password_salt,password_hash,is_admin,active,created_at)
-                VALUES(?,?,?,?,?,1,?)""",(username,request.display_name.strip(),salt,_portal_hash(request.password,salt),int(request.is_admin),datetime.now(timezone.utc).isoformat()))
+            role=request.role if request.role in ("admin","partner","end_customer") else "end_customer"
+            status=request.access_status if request.access_status in ("active","trial","suspended") else "active"
+            cur = con.execute("""INSERT INTO portal_users(username,display_name,password_salt,password_hash,is_admin,role,access_status,trial_start,trial_end,custom_dashboard_id,active,created_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,1,?)""",(username,request.display_name.strip(),salt,_portal_hash(request.password,salt),int(role=="admin"),role,status,request.trial_start,request.trial_end,request.custom_dashboard_id,datetime.now(timezone.utc).isoformat()))
             uid = cur.lastrowid
             allowed={x["id"] for x in con.execute("SELECT id FROM portal_dashboards")}
             ids = allowed if request.is_admin else set(request.dashboard_ids) & allowed
@@ -6243,7 +6265,9 @@ def portal_admin_update_user(user_id: int, request: PortalUserUpdate, ins_portal
         if row is None: raise HTTPException(404, "PORTAL_USER_NOT_FOUND")
         if user_id == admin["id"] and not request.active:
             raise HTTPException(400, "PORTAL_CANNOT_DISABLE_SELF")
-        con.execute("UPDATE portal_users SET display_name=?,active=?,is_admin=? WHERE id=?",(request.display_name.strip(),int(request.active),int(request.is_admin),user_id))
+        role=request.role if request.role in ("admin","partner","end_customer") else "end_customer"
+        status=request.access_status if request.access_status in ("active","trial","suspended") else "active"
+        con.execute("UPDATE portal_users SET display_name=?,active=?,is_admin=?,role=?,access_status=?,trial_start=?,trial_end=?,custom_dashboard_id=? WHERE id=?",(request.display_name.strip(),int(request.active),int(role=="admin"),role,status,request.trial_start,request.trial_end,request.custom_dashboard_id,user_id))
         if request.password:
             if len(request.password) < 8: raise HTTPException(400, "PORTAL_PASSWORD_TOO_SHORT")
             salt=secrets.token_hex(16)
