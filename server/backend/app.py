@@ -1336,6 +1336,15 @@ def init_portal_db():
         CREATE TABLE IF NOT EXISTS portal_dashboard_sources (
             id INTEGER PRIMARY KEY AUTOINCREMENT, dashboard_config_id INTEGER NOT NULL, source_type TEXT NOT NULL, name TEXT NOT NULL, source_ref TEXT NOT NULL, config_json TEXT NOT NULL DEFAULT '{}'
         );
+        CREATE TABLE IF NOT EXISTS portal_dashboard_templates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            block_type TEXT NOT NULL,
+            source_type TEXT,
+            template_json TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
         """)
         con.execute("""INSERT OR IGNORE INTO portal_dashboards
             (id,name,description,module,config_json,sort_order) VALUES(?,?,?,?,?,?)""",
@@ -6419,6 +6428,39 @@ def portal_admin_dashboard_config_create(item: PortalDashboardConfigSave, ins_po
             if x.get("type") and x.get("ref"):con.execute("INSERT INTO portal_dashboard_sources(dashboard_config_id,source_type,name,source_ref,config_json) VALUES(?,?,?,?,?)",(did,x["type"],x.get("name") or x["type"],str(x["ref"]),json.dumps(x.get("config") or {},ensure_ascii=False)))
     return {"id":did,"created":True}
 
+class PortalDashboardTemplateSave(BaseModel):
+    name: str
+    block_type: str
+    source_type: str | None = None
+    template: dict[str,Any]
+
+@app.get("/portal/api/admin/dashboard-templates")
+def portal_admin_dashboard_templates(ins_portal_session: str | None = Cookie(default=None)):
+    _portal_admin(ins_portal_session)
+    with db() as con:rows=con.execute("SELECT * FROM portal_dashboard_templates ORDER BY name COLLATE NOCASE").fetchall()
+    result=[]
+    for r in rows:
+        x=dict(r);x["template"]=json.loads(x.pop("template_json") or "{}");result.append(x)
+    return {"templates":result}
+
+@app.post("/portal/api/admin/dashboard-templates")
+def portal_admin_dashboard_template_create(item: PortalDashboardTemplateSave,ins_portal_session: str | None = Cookie(default=None)):
+    _portal_admin(ins_portal_session)
+    if item.block_type not in ("card","chart"):raise HTTPException(400,"INVALID_TEMPLATE_TYPE")
+    now=datetime.now(timezone.utc).isoformat()
+    with db() as con:
+        cur=con.execute("INSERT INTO portal_dashboard_templates(name,block_type,source_type,template_json,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+            (item.name.strip(),item.block_type,item.source_type,json.dumps(item.template,ensure_ascii=False),now,now))
+    return {"id":cur.lastrowid,"created":True}
+
+@app.delete("/portal/api/admin/dashboard-templates/{template_id}")
+def portal_admin_dashboard_template_delete(template_id:int,ins_portal_session: str | None = Cookie(default=None)):
+    _portal_admin(ins_portal_session)
+    with db() as con:
+        cur=con.execute("DELETE FROM portal_dashboard_templates WHERE id=?",(template_id,))
+        if not cur.rowcount:raise HTTPException(404,"TEMPLATE_NOT_FOUND")
+    return {"deleted":True}
+
 @app.get("/portal/api/admin/dashboard-builder-data")
 def portal_admin_dashboard_builder_data(ins_portal_session: str | None = Cookie(default=None)):
     _portal_admin(ins_portal_session)
@@ -6538,6 +6580,9 @@ def customer_portal_me(ins_portal_session: str | None = Cookie(default=None)):
 # DEV portal API aliases. These are explicit FastAPI routes so Caddy only has
 app.add_api_route("/dev-portal/api/admin/dashboard-configs", portal_admin_dashboard_configs, methods=["GET"])
 app.add_api_route("/dev-portal/api/admin/dashboard-builder-data", portal_admin_dashboard_builder_data, methods=["GET"])
+app.add_api_route("/dev-portal/api/admin/dashboard-templates", portal_admin_dashboard_templates, methods=["GET"])
+app.add_api_route("/dev-portal/api/admin/dashboard-templates", portal_admin_dashboard_template_create, methods=["POST"])
+app.add_api_route("/dev-portal/api/admin/dashboard-templates/{template_id}", portal_admin_dashboard_template_delete, methods=["DELETE"])
 app.add_api_route("/dev-portal/api/admin/source-samples", portal_admin_source_samples, methods=["GET"])
 app.add_api_route("/dev-portal/api/admin/dashboard-configs", portal_admin_dashboard_config_create, methods=["POST"])
 app.add_api_route("/dev-portal/api/admin/dashboard-configs/{config_id}", portal_admin_dashboard_config_update, methods=["PUT"])
