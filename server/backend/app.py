@@ -6713,15 +6713,28 @@ def portal_admin_dashboard_preview_data(config_id:int,period:str="24h",ins_porta
             for x in vals:
                 if x.get("name") in needed:live[f"{si}:{x['name']}"]=oekofen_format_variable(x)
         except Exception:pass
-        token=INFLUX_TOKEN.read_text().strip();safe=src["source_ref"].replace('"','\\\"');fields=" or ".join(['r._field=="'+k.replace('"','\\\"')+'"' for k in set(needed)])
-        flux='from(bucket: "'+INFLUX_BUCKET+'") |> range(start:'+ranges[period]+') |> filter(fn:(r)=>r._measurement=="oekofen_csv" and r.plant_id=="'+safe+'") |> filter(fn:(r)=>'+fields+') |> filter(fn:(r)=>r._value > -3000.0) |> aggregateWindow(every:'+windows[period]+',fn:mean,createEmpty:false) |> keep(columns:["_time","_field","_value"])'
-        try:
-            req=Request(INFLUX_URL+"/api/v2/query?org="+INFLUX_ORG,data=json.dumps({"query":flux,"type":"flux"}).encode(),method="POST",headers={"Authorization":f"Token {token}","Content-Type":"application/json","Accept":"application/csv"});raw=urlopen(req,timeout=20).read().decode()
-            for r in csv.DictReader(io.StringIO(raw)):
-                try:v=float(r.get("_value",""))
-                except ValueError:continue
-                history.setdefault(f"{si}:{r.get('_field','')}",[]).append({"time":r.get("_time"),"value":v})
-        except Exception:pass
+        token=INFLUX_TOKEN.read_text().strip();safe=src["source_ref"].replace('"','\\\"')
+        displays={}
+        for b in cfg.get("blocks",[]):
+            for it in b.get("items",[]):
+                if int(it.get("source_index",-1))==si and it.get("key"):displays[it["key"]]=it.get("display","line")
+        analog=[k for k in set(needed) if displays.get(k) not in ("binary","percent_binary")]
+        discrete=[k for k in set(needed) if displays.get(k) in ("binary","percent_binary")]
+        queries=[]
+        if analog:
+            fields=" or ".join(['r._field=="'+k.replace('"','\\\"')+'"' for k in analog])
+            queries.append('from(bucket: "'+INFLUX_BUCKET+'") |> range(start:'+ranges[period]+') |> filter(fn:(r)=>r._measurement=="oekofen_csv" and r.plant_id=="'+safe+'") |> filter(fn:(r)=>'+fields+') |> filter(fn:(r)=>r._value > -3000.0) |> aggregateWindow(every:'+windows[period]+',fn:mean,createEmpty:false) |> keep(columns:["_time","_field","_value"])')
+        if discrete:
+            fields=" or ".join(['r._field=="'+k.replace('"','\\\"')+'"' for k in discrete])
+            queries.append('from(bucket: "'+INFLUX_BUCKET+'") |> range(start:'+ranges[period]+') |> filter(fn:(r)=>r._measurement=="oekofen_csv" and r.plant_id=="'+safe+'") |> filter(fn:(r)=>'+fields+') |> aggregateWindow(every:'+windows[period]+',fn:last,createEmpty:false) |> keep(columns:["_time","_field","_value"])')
+        for flux in queries:
+            try:
+                req=Request(INFLUX_URL+"/api/v2/query?org="+INFLUX_ORG,data=json.dumps({"query":flux,"type":"flux"}).encode(),method="POST",headers={"Authorization":f"Token {token}","Content-Type":"application/json","Accept":"application/csv"});raw=urlopen(req,timeout=20).read().decode()
+                for r in csv.DictReader(io.StringIO(raw)):
+                    try:v=float(r.get("_value",""))
+                    except ValueError:continue
+                    history.setdefault(f"{si}:{r.get('_field','')}",[]).append({"time":r.get("_time"),"value":v})
+            except Exception:pass
     return {"id":row["id"],"name":row["name"],"description":cfg.get("description",""),"blocks":cfg.get("blocks",[]),"sources":sources,"live":live,"history":history,"period":period}
 
 @app.get("/dev-portal/preview/{config_id}")
