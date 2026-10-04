@@ -6718,8 +6718,8 @@ def portal_admin_dashboard_preview_data(config_id:int,period:str="24h",ins_porta
         for b in cfg.get("blocks",[]):
             for it in b.get("items",[]):
                 if int(it.get("source_index",-1))==si and it.get("key"):displays[it["key"]]=it.get("display","line")
-        analog=[k for k in set(needed) if displays.get(k) not in ("binary","percent_binary")]
-        discrete=[k for k in set(needed) if displays.get(k) in ("binary","percent_binary")]
+        analog=[k for k in set(needed) if displays.get(k) not in ("binary","percent_binary","mixer")]
+        discrete=[k for k in set(needed) if displays.get(k) in ("binary","percent_binary","mixer")]
         queries=[]
         if analog:
             fields=" or ".join(['r._field=="'+k.replace('"','\\\"')+'"' for k in analog])
