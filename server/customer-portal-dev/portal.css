@@ -34,3 +34,6 @@
 .tile-order{display:flex;gap:3px}.tile-order button{padding:5px 7px!important;min-width:28px}
 
 .tile-order{display:grid!important;grid-template-columns:30px!important;grid-template-rows:repeat(3,26px);gap:3px!important;align-self:center}.tile-order button{width:30px!important;height:26px!important;min-width:30px!important;padding:0!important;line-height:24px!important}.config-signal:has(.tile-order){grid-template-columns:minmax(300px,1.7fr) minmax(140px,.75fr) minmax(130px,.65fr) 150px minmax(240px,1.15fr) 34px!important}
+
+/* Keep history rows aligned with live rows: signal | label | sample | display | target | controls */
+.config-signal:has([data-display]){grid-template-columns:minmax(300px,1.7fr) minmax(140px,.75fr) minmax(130px,.65fr) 150px minmax(240px,1.15fr) 34px!important;align-items:stretch}.config-signal:has([data-display])>.signal-picker-btn,.config-signal:has([data-display])>input,.config-signal:has([data-display])>.signal-sample,.config-signal:has([data-display])>select{min-width:0;width:100%}.config-signal:has([data-display])>button[data-del]{width:34px!important;min-width:34px!important}
