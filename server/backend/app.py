@@ -6726,7 +6726,10 @@ def portal_admin_dashboard_preview_data(config_id:int,period:str="24h",ins_porta
         needed=[]
         for b in cfg.get("blocks",[]):
             for it in b.get("items",[]):
-                if int(it.get("source_index",-1))==si and it.get("key"):\n                    needed.append(it["key"])\n                    if it.get("target_key") and int(it.get("target_source_index",it.get("source_index",-1)))==si: needed.append(it["target_key"])
+                if int(it.get("source_index",-1))==si and it.get("key"):
+                    needed.append(it["key"])
+                    if it.get("target_key") and int(it.get("target_source_index",it.get("source_index",-1)))==si:
+                        needed.append(it["target_key"])
         if src["source_type"]!="oekofen" or not needed:continue
         try:
             vals=oekofen_fetch_variables(src["source_ref"],list(dict.fromkeys(needed)))
@@ -6737,7 +6740,10 @@ def portal_admin_dashboard_preview_data(config_id:int,period:str="24h",ins_porta
         displays={}
         for b in cfg.get("blocks",[]):
             for it in b.get("items",[]):
-                if int(it.get("source_index",-1))==si and it.get("key"):\n                    displays[it["key"]]=it.get("display","line")\n                    if it.get("target_key") and int(it.get("target_source_index",it.get("source_index",-1)))==si: displays[it["target_key"]]="line"
+                if int(it.get("source_index",-1))==si and it.get("key"):
+                    displays[it["key"]]=it.get("display","line")
+                    if it.get("target_key") and int(it.get("target_source_index",it.get("source_index",-1)))==si:
+                        displays[it["target_key"]]="line"
         analog=[k for k in set(needed) if displays.get(k) not in ("binary","percent_binary","mixer")]
         discrete=[k for k in set(needed) if displays.get(k) in ("binary","percent_binary","mixer")]
         queries=[]
