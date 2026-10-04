@@ -4059,25 +4059,40 @@ def reminder_worker():
 
 
 def oekofen_csv_worker():
-    """Import yesterday once daily after 03:00 Europe/Vienna, retrying failures hourly."""
-    last_attempt_hour=None
+    """Continuously refresh today's OekoFEN CSV history.
+
+    Each plant is refreshed roughly every five minutes, staggered across the
+    fleet. Daily CSV rows already carry stable timestamps, so repeated Influx
+    writes are idempotent and also pick up corrections to today's file.
+    """
+    cycle_seconds=300
     while True:
+        cycle_started=time.monotonic()
         try:
             now=datetime.now(ZoneInfo("Europe/Vienna"))
-            key=now.strftime("%Y-%m-%d-%H")
-            if now.hour in (3,6,12,18) and key!=last_attempt_hour:
-                day=(now.date()-timedelta(days=1)).isoformat()
-                with db() as con:
-                    pending=con.execute("""SELECT COUNT(*) AS n FROM oekofen_plants p
-                        LEFT JOIN oekofen_csv_imports i ON i.plant_id=p.plant_id AND i.day=?
-                        WHERE i.status IS NULL OR i.status!='SUCCESS'""",(day,)).fetchone()["n"]
-                if pending:
-                    last_attempt_hour=key
-                    result=import_oekofen_previous_day(False)
-                    print(f"OEKOFEN CSV day={result['day']} plants={result['plants']} success={result['success']} skipped={result['skipped']} errors={len(result['errors'])}",flush=True)
+            day=now.date().isoformat()
+            with db() as con:
+                plants=[dict(r) for r in con.execute(
+                    "SELECT plant_id,plant_name FROM oekofen_plants ORDER BY plant_name COLLATE NOCASE"
+                )]
+            spacing=max(1.0,cycle_seconds/max(1,len(plants)))
+            success=errors=0
+            for plant in plants:
+                started=time.monotonic()
+                try:
+                    # Today's file is intentionally forced: it grows during the day.
+                    import_oekofen_csv_day(plant["plant_id"],day,True)
+                    success+=1
+                except Exception as exc:
+                    errors+=1
+                    print(f"OEKOFEN CSV current day={day} plant={plant['plant_id']} error={exc}",flush=True)
+                remaining=spacing-(time.monotonic()-started)
+                if remaining>0:time.sleep(remaining)
+            print(f"OEKOFEN CSV current day={day} plants={len(plants)} success={success} errors={errors}",flush=True)
         except Exception as exc:
             print(f"OEKOFEN CSV worker error: {exc}",flush=True)
-        time.sleep(300)
+        remaining=cycle_seconds-(time.monotonic()-cycle_started)
+        if remaining>0:time.sleep(remaining)
 
 
 def oekofen_worker():
