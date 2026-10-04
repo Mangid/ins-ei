@@ -6759,7 +6759,7 @@ def portal_admin_dashboard_preview_data(config_id:int,period:str="24h",ins_porta
                     except ValueError:continue
                     history.setdefault(f"{si}:{r.get('_field','')}",[]).append({"time":r.get("_time"),"value":v})
             except Exception:pass
-    return {"id":row["id"],"name":row["name"],"description":cfg.get("description",""),"blocks":cfg.get("blocks",[]),"sources":sources,"live":live,"history":history,"period":period,"last_history":last_history}
+    return {"id":row["id"],"name":row["name"],"description":cfg.get("description",""),"blocks":cfg.get("blocks",[]),"sources":sources,"live":live,"history":history,"period":period}
 
 @app.get("/dev-portal/preview/{config_id}")
 def customer_portal_dev_preview(config_id:int,ins_service_session: str | None = Cookie(default=None)):
