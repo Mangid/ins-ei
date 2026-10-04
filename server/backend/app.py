@@ -6474,7 +6474,7 @@ def portal_admin_dashboard_templates(ins_portal_session: str | None = Cookie(def
 @app.post("/portal/api/admin/dashboard-templates")
 def portal_admin_dashboard_template_create(item: PortalDashboardTemplateSave,ins_portal_session: str | None = Cookie(default=None)):
     _portal_admin(ins_portal_session)
-    if item.block_type not in ("card","chart"):raise HTTPException(400,"INVALID_TEMPLATE_TYPE")
+    if item.block_type not in ("card","chart","combo"):raise HTTPException(400,"INVALID_TEMPLATE_TYPE")
     now=datetime.now(timezone.utc).isoformat()
     with db() as con:
         cur=con.execute("INSERT INTO portal_dashboard_templates(name,block_type,source_type,template_json,created_at,updated_at) VALUES(?,?,?,?,?,?)",
