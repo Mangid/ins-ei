@@ -6723,10 +6723,14 @@ def portal_admin_dashboard_preview_data(config_id:int,period:str="24h",ins_porta
         queries=[]
         if analog:
             fields=" or ".join(['r._field=="'+k.replace('"','\\\"')+'"' for k in analog])
-            queries.append('from(bucket: "'+INFLUX_BUCKET+'") |> range(start:'+ranges[period]+') |> filter(fn:(r)=>r._measurement=="oekofen_csv" and r.plant_id=="'+safe+'") |> filter(fn:(r)=>'+fields+') |> filter(fn:(r)=>r._value > -3000.0) |> aggregateWindow(every:'+windows[period]+',fn:mean,createEmpty:false) |> keep(columns:["_time","_field","_value"])')
+            base='from(bucket: "'+INFLUX_BUCKET+'") |> range(start:'+ranges[period]+') |> filter(fn:(r)=>r._measurement=="oekofen_csv" and r.plant_id=="'+safe+'") |> filter(fn:(r)=>'+fields+') |> filter(fn:(r)=>r._value > -3000.0)'
+            if period=="30d": base+=' |> aggregateWindow(every:'+windows[period]+',fn:mean,createEmpty:false)'
+            queries.append(base+' |> keep(columns:["_time","_field","_value"])')
         if discrete:
             fields=" or ".join(['r._field=="'+k.replace('"','\\\"')+'"' for k in discrete])
-            queries.append('from(bucket: "'+INFLUX_BUCKET+'") |> range(start:'+ranges[period]+') |> filter(fn:(r)=>r._measurement=="oekofen_csv" and r.plant_id=="'+safe+'") |> filter(fn:(r)=>'+fields+') |> aggregateWindow(every:'+windows[period]+',fn:last,createEmpty:false) |> keep(columns:["_time","_field","_value"])')
+            base='from(bucket: "'+INFLUX_BUCKET+'") |> range(start:'+ranges[period]+') |> filter(fn:(r)=>r._measurement=="oekofen_csv" and r.plant_id=="'+safe+'") |> filter(fn:(r)=>'+fields+')'
+            if period=="30d": base+=' |> aggregateWindow(every:'+windows[period]+',fn:last,createEmpty:false)'
+            queries.append(base+' |> keep(columns:["_time","_field","_value"])')
         for flux in queries:
             try:
                 req=Request(INFLUX_URL+"/api/v2/query?org="+INFLUX_ORG,data=json.dumps({"query":flux,"type":"flux"}).encode(),method="POST",headers={"Authorization":f"Token {token}","Content-Type":"application/json","Accept":"application/csv"});raw=urlopen(req,timeout=20).read().decode()
