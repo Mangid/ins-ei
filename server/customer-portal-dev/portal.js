@@ -192,8 +192,8 @@ function signalFilters(it,ii,blockType){
  return '<div class="signal-filter-row">'+src+scope+'</div>'
 }
 let signalPickerState=null;
-function openSignalPicker(bi,ii,blockType){
- signalPickerState={bi,ii,blockType,source:"",scope:blockType==="chart"?"history":blockType==="card"?"live":"",query:""};
+function openSignalPicker(bi,ii,blockType,targetMode=false){
+ signalPickerState={bi,ii,blockType,targetMode,source:"",scope:blockType==="chart"?"history":blockType==="card"?"live":"",query:""};
  renderSignalPicker();
 }
 function renderSignalPicker(){
