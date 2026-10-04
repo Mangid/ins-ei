@@ -4076,7 +4076,7 @@ def oekofen_csv_worker():
                     "SELECT plant_id,plant_name FROM oekofen_plants ORDER BY plant_name COLLATE NOCASE"
                 )]
             spacing=max(1.0,cycle_seconds/max(1,len(plants)))
-            success=errors=0
+            success=errors=offline=unavailable=timeouts=0
             for plant in plants:
                 started=time.monotonic()
                 try:
@@ -4084,11 +4084,16 @@ def oekofen_csv_worker():
                     import_oekofen_csv_day(plant["plant_id"],day,True)
                     success+=1
                 except Exception as exc:
-                    errors+=1
-                    print(f"OEKOFEN CSV current day={day} plant={plant['plant_id']} error={exc}",flush=True)
+                    msg=str(exc)
+                    if "OEKOFEN_CSV_HTTP_412" in msg or "connectionError" in msg:offline+=1
+                    elif "OEKOFEN_CSV_HTTP_404" in msg:unavailable+=1
+                    elif "timed out" in msg.lower():timeouts+=1
+                    else:
+                        errors+=1
+                        print(f"OEKOFEN CSV current day={day} plant={plant['plant_id']} error={exc}",flush=True)
                 remaining=spacing-(time.monotonic()-started)
                 if remaining>0:time.sleep(remaining)
-            print(f"OEKOFEN CSV current day={day} plants={len(plants)} success={success} errors={errors}",flush=True)
+            print(f"OEKOFEN CSV current day={day} plants={len(plants)} success={success} offline={offline} unavailable={unavailable} timeout={timeouts} errors={errors}",flush=True)
         except Exception as exc:
             print(f"OEKOFEN CSV worker error: {exc}",flush=True)
         remaining=cycle_seconds-(time.monotonic()-cycle_started)
