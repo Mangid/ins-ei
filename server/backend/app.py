@@ -6759,21 +6759,6 @@ def portal_admin_dashboard_preview_data(config_id:int,period:str="24h",ins_porta
                     except ValueError:continue
                     history.setdefault(f"{si}:{r.get('_field','')}",[]).append({"time":r.get("_time"),"value":v})
             except Exception:pass
-    now_iso=datetime.now(timezone.utc).isoformat()
-    # Extend history to "now" with matching live signals when the same technical key exists.
-    # This avoids a stale-looking graph between CSV/history imports.
-    for b in cfg.get("blocks",[]):
-        for it in b.get("items",[]):
-            if it.get("scope")!="history" or not it.get("key"):continue
-            si=int(it.get("source_index",0));hist_key=f"{si}:{it['key']}"
-            live_key=hist_key
-            if live_key in live:
-                raw=live[live_key]
-                try:
-                    num=float(str(raw).replace(" °C","").replace(" %","").replace(",","."))
-                    history.setdefault(hist_key,[]).append({"time":now_iso,"value":num})
-                except Exception:pass
-    last_history=max((p.get("time","") for pts in history.values() for p in pts),default=None)
     return {"id":row["id"],"name":row["name"],"description":cfg.get("description",""),"blocks":cfg.get("blocks",[]),"sources":sources,"live":live,"history":history,"period":period,"last_history":last_history}
 
 @app.get("/dev-portal/preview/{config_id}")
