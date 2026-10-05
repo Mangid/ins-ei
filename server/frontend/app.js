@@ -601,12 +601,6 @@ function openMypvDialog(item=null){
 document.getElementById("newMypv")?.addEventListener("click",()=>openMypvDialog());
 document.getElementById("mypvSearch")?.addEventListener("input",renderMypv);
 document.getElementById("navMypv")?.addEventListener("click",()=>setTimeout(loadMypv,0));
-document.querySelectorAll(".nav-group-toggle").forEach(btn=>btn.addEventListener("click",e=>{
- e.preventDefault();e.stopPropagation();
- const group=btn.closest(".nav-group");if(!group)return;
- group.classList.toggle("open");
- group.dataset.userToggled=group.classList.contains("open")?"open":"closed";
-}));
 function openActiveNavGroup(){
  document.querySelectorAll(".nav-group").forEach(g=>{
    if(g.querySelector("a.active"))g.classList.add("open");
