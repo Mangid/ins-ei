@@ -1574,6 +1574,8 @@ def init_customer_db():
             con.execute("ALTER TABLE devices ADD COLUMN oekofen_plant_id TEXT")
         if not column_exists(con, "devices", "ins_installation_id"):
             con.execute("ALTER TABLE devices ADD COLUMN ins_installation_id TEXT")
+        if not column_exists(con, "devices", "mypv_device_id"):
+            con.execute("ALTER TABLE devices ADD COLUMN mypv_device_id INTEGER")
         if not column_exists(con, "devices", "source"):
             con.execute("ALTER TABLE devices ADD COLUMN source TEXT")
         if not column_exists(con, "devices", "source_notes"):
@@ -1650,6 +1652,24 @@ def init_customer_db():
             )
         """)
         con.execute("CREATE INDEX IF NOT EXISTS idx_customer_credentials_customer ON customer_credentials (customer_id)")
+
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS mypv_devices (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                serial_number TEXT NOT NULL UNIQUE,
+                api_token_encrypted TEXT NOT NULL,
+                device_id INTEGER,
+                model TEXT,
+                last_online INTEGER,
+                last_check_at TEXT,
+                last_error TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (device_id) REFERENCES devices(id)
+            )
+        """)
+        con.execute("CREATE INDEX IF NOT EXISTS idx_mypv_device_id ON mypv_devices(device_id)")
 
         con.execute(
             """
@@ -5355,6 +5375,108 @@ def list_customers(q: str | None = None):
             )
             customers.append(item)
     return {"count": len(customers), "customers": customers}
+
+
+MYPV_API_BASE = "https://api.my-pv.com/api/v1/device"
+
+def mypv_api_get(serial: str, token: str, endpoint: str) -> Any:
+    url=f"{MYPV_API_BASE}/{serial}/{endpoint}"
+    # my-PV Swagger uses a device-specific API token. Keep auth server-side.
+    attempts=[
+        {"Authorization":f"Bearer {token}","Accept":"application/json"},
+        {"Authorization":token,"Accept":"application/json"},
+        {"x-api-key":token,"Accept":"application/json"},
+    ]
+    last=None
+    for headers in attempts:
+        try:
+            req=Request(url,method="GET",headers=headers)
+            with urlopen(req,timeout=20) as response:
+                raw=response.read().decode("utf-8")
+                return json.loads(raw) if raw else {}
+        except urllib.error.HTTPError as exc:
+            last=exc
+            if exc.code not in (401,403): raise
+    if last: raise last
+    raise RuntimeError("my-PV API authentication failed")
+
+class MypvDeviceSave(BaseModel):
+    name: str
+    serial_number: str
+    api_token: str | None = None
+    device_id: int | None = None
+    model: str | None = None
+
+def _mypv_public(row) -> dict[str,Any]:
+    x=dict(row)
+    x["token_configured"]=bool(x.pop("api_token_encrypted",None))
+    return x
+
+@app.get("/api/v1/mypv")
+def api_mypv_list():
+    with db() as con:
+        rows=con.execute("""SELECT m.*,d.model linked_model,d.serial_number linked_serial,
+            i.customer_id,c.name customer_name,i.name installation_name
+            FROM mypv_devices m LEFT JOIN devices d ON d.id=m.device_id
+            LEFT JOIN installations i ON i.id=d.installation_id
+            LEFT JOIN customers c ON c.id=i.customer_id ORDER BY m.name COLLATE NOCASE""").fetchall()
+    return {"devices":[_mypv_public(r) for r in rows]}
+
+@app.post("/api/v1/mypv")
+def api_mypv_create(item:MypvDeviceSave):
+    if not item.api_token: raise HTTPException(400,"API_TOKEN_REQUIRED")
+    now=datetime.now(timezone.utc).isoformat()
+    with db() as con:
+        cur=con.execute("""INSERT INTO mypv_devices(name,serial_number,api_token_encrypted,device_id,model,created_at,updated_at)
+            VALUES(?,?,?,?,?,?,?)""",(item.name.strip(),item.serial_number.strip(),encrypt_credential(item.api_token.strip()),
+            item.device_id,item.model,now,now))
+        mid=cur.lastrowid
+        if item.device_id: con.execute("UPDATE devices SET mypv_device_id=?,manufacturer='my-PV',online_capable=1,updated_at=? WHERE id=?",(mid,now,item.device_id))
+    return {"id":mid,"created":True}
+
+@app.put("/api/v1/mypv/{mypv_id}")
+def api_mypv_update(mypv_id:int,item:MypvDeviceSave):
+    now=datetime.now(timezone.utc).isoformat()
+    with db() as con:
+        old=con.execute("SELECT * FROM mypv_devices WHERE id=?",(mypv_id,)).fetchone()
+        if old is None:raise HTTPException(404,"MYPV_NOT_FOUND")
+        token=encrypt_credential(item.api_token.strip()) if item.api_token else old["api_token_encrypted"]
+        con.execute("UPDATE devices SET mypv_device_id=NULL,updated_at=? WHERE mypv_device_id=?",(now,mypv_id))
+        con.execute("""UPDATE mypv_devices SET name=?,serial_number=?,api_token_encrypted=?,device_id=?,model=?,updated_at=? WHERE id=?""",
+            (item.name.strip(),item.serial_number.strip(),token,item.device_id,item.model,now,mypv_id))
+        if item.device_id: con.execute("UPDATE devices SET mypv_device_id=?,manufacturer='my-PV',online_capable=1,updated_at=? WHERE id=?",(mypv_id,now,item.device_id))
+    return {"updated":True}
+
+@app.post("/api/v1/mypv/{mypv_id}/test")
+def api_mypv_test(mypv_id:int):
+    with db() as con:
+        row=con.execute("SELECT * FROM mypv_devices WHERE id=?",(mypv_id,)).fetchone()
+    if row is None:raise HTTPException(404,"MYPV_NOT_FOUND")
+    try:
+        result=mypv_api_get(row["serial_number"],decrypt_credential(row["api_token_encrypted"]),"isOnline")
+        online=bool(result if isinstance(result,bool) else result.get("online",result.get("isOnline",False)) if isinstance(result,dict) else False)
+        err=None
+    except Exception as exc:
+        online=False;err=str(exc)[:500]
+    now=datetime.now(timezone.utc).isoformat()
+    with db() as con:con.execute("UPDATE mypv_devices SET last_online=?,last_check_at=?,last_error=? WHERE id=?",(int(online),now,err,mypv_id))
+    return {"id":mypv_id,"online":online,"checked_at":now,"error":err}
+
+@app.delete("/api/v1/mypv/{mypv_id}")
+def api_mypv_delete(mypv_id:int):
+    with db() as con:
+        con.execute("UPDATE devices SET mypv_device_id=NULL WHERE mypv_device_id=?",(mypv_id,))
+        cur=con.execute("DELETE FROM mypv_devices WHERE id=?",(mypv_id,))
+        if not cur.rowcount:raise HTTPException(404,"MYPV_NOT_FOUND")
+    return {"deleted":True}
+
+@app.get("/api/v1/mypv/link-options")
+def api_mypv_link_options():
+    with db() as con:
+        rows=con.execute("""SELECT d.id,d.manufacturer,d.model,d.serial_number,i.name installation_name,
+            c.id customer_id,c.name customer_name FROM devices d JOIN installations i ON i.id=d.installation_id
+            JOIN customers c ON c.id=i.customer_id ORDER BY c.name COLLATE NOCASE,d.id""").fetchall()
+    return {"devices":[dict(r) for r in rows]}
 
 
 class DeviceCreate(BaseModel):
