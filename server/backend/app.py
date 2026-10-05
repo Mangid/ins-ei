@@ -5439,6 +5439,14 @@ def _mypv_public(row) -> dict[str,Any]:
     x["token_configured"]=bool(x.pop("api_token_encrypted",None))
     return x
 
+@app.get("/api/v1/mypv/{mypv_id}/fields")
+def api_mypv_fields(mypv_id:int):
+    try:
+        data=mypv_read_device(mypv_id,"data")
+        return {"id":mypv_id,"signals":mypv_flatten_signals(data)}
+    except Exception as exc:
+        raise HTTPException(502,str(exc))
+
 @app.get("/api/v1/mypv")
 def api_mypv_list():
     with db() as con:
