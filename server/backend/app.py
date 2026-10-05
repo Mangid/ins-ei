@@ -2092,6 +2092,24 @@ def init_oekofen_db():
             )
         """)
 
+        for column, definition in (
+            ("complete", "INTEGER NOT NULL DEFAULT 0"),
+            ("feed_minutes_per_combustion_hour", "REAL"),
+            ("short_cycle_count", "INTEGER"),
+            ("short_cycle_percent", "REAL"),
+        ):
+            if not column_exists(con, "oekofen_daily_metrics", column):
+                con.execute(f"ALTER TABLE oekofen_daily_metrics ADD COLUMN {column} {definition}")
+
+        if not column_exists(con, "oekofen_plants", "hydraulic_class"):
+            con.execute("ALTER TABLE oekofen_plants ADD COLUMN hydraulic_class TEXT")
+        if not column_exists(con, "oekofen_plants", "buffer_volume_l"):
+            con.execute("ALTER TABLE oekofen_plants ADD COLUMN buffer_volume_l INTEGER")
+        if not column_exists(con, "oekofen_plants", "nominal_power_kw"):
+            con.execute("ALTER TABLE oekofen_plants ADD COLUMN nominal_power_kw REAL")
+        if not column_exists(con, "oekofen_plants", "solar_thermal"):
+            con.execute("ALTER TABLE oekofen_plants ADD COLUMN solar_thermal INTEGER")
+
         con.execute("""
             CREATE TABLE IF NOT EXISTS oekofen_csv_imports (
                 plant_id TEXT NOT NULL,
@@ -3206,7 +3224,16 @@ def store_oekofen_daily_metrics(analysis: dict[str, Any]) -> dict[str, Any]:
             buffer_pump_minutes=excluded.buffer_pump_minutes,solar_collector_avg_c=excluded.solar_collector_avg_c,
             solar_storage_avg_c=excluded.solar_storage_avg_c,solar_pump_minutes=excluded.solar_pump_minutes,
             source_rows=excluded.source_rows,calculated_at=excluded.calculated_at""", values)
-    return {"plant_id": analysis["plant_id"], "day": analysis["day"], "stored": True}
+    full_day = int((analysis.get("source", {}).get("rows") or 0) >= 1400)
+    short_count = sum(1 for value in combustion_lengths if value < 30)
+    short_percent = round(short_count * 100 / starts, 1) if starts else None
+    feed_per_hour = round((material.get("feed_motor_minutes") or 0) / (combustion / 60), 1) if combustion else None
+    with db() as con:
+        con.execute("""UPDATE oekofen_daily_metrics SET complete=?,
+            feed_minutes_per_combustion_hour=?,short_cycle_count=?,short_cycle_percent=?
+            WHERE plant_id=? AND day=?""",
+            (full_day,feed_per_hour,short_count,short_percent,analysis["plant_id"],analysis["day"]))
+    return {"plant_id": analysis["plant_id"], "day": analysis["day"], "stored": True, "complete": bool(full_day)}
 
 
 def calculate_and_store_oekofen_daily_metrics(plant_id: str, day: str) -> dict[str, Any]:
@@ -3218,13 +3245,21 @@ def oekofen_metrics_range(plant_id: str, days: int) -> dict[str, Any]:
     cutoff=(datetime.now(ZoneInfo("Europe/Vienna")).date()-timedelta(days=max(1,days)-1)).isoformat()
     with db() as con:
         rows=[dict(r) for r in con.execute(
-            "SELECT * FROM oekofen_daily_metrics WHERE plant_id=? AND day>=? ORDER BY day",
+            "SELECT * FROM oekofen_daily_metrics WHERE plant_id=? AND day>=? AND complete=1 ORDER BY day",
             (plant_id,cutoff)
         ).fetchall()]
+        if not rows and days == 1:
+            latest=con.execute(
+                "SELECT * FROM oekofen_daily_metrics WHERE plant_id=? AND complete=1 ORDER BY day DESC LIMIT 1",
+                (plant_id,)
+            ).fetchone()
+            rows=[dict(latest)] if latest else []
     if not rows:
         return {"days":0,"values":{}}
     total=lambda key: sum((r.get(key) or 0) for r in rows)
     starts=int(total("burner_starts")); combustion=total("combustion_minutes")
+    short_count=int(total("short_cycle_count"))
+    feed_per_hour=round(total("feed_motor_minutes")/(combustion/60),1) if combustion else None
     values={
         "burner_starts": str(starts),
         "combustion_hours": f"{combustion/60:.1f} h",
@@ -3232,6 +3267,8 @@ def oekofen_metrics_range(plant_id: str, days: int) -> dict[str, Any]:
         "suction_events": str(int(total("suction_events"))),
         "suction_minutes": f"{total('suction_minutes'):.0f} min",
         "feed_motor_minutes": f"{total('feed_motor_minutes'):.0f} min",
+        "feed_minutes_per_combustion_hour": f"{feed_per_hour:.1f} min/h" if feed_per_hour is not None else "–",
+        "short_cycle_percent": f"{(short_count*100/starts):.0f} %" if starts else "–",
     }
     return {"days":len(rows),"values":values,"daily":rows}
 
@@ -4515,6 +4552,24 @@ def api_oekofen_plants():
             result.append(x)
     return {"plants":result,"sync_interval_seconds":300}
 
+
+class OekofenPlantClassification(BaseModel):
+    hydraulic_class: str | None = None
+    buffer_volume_l: int | None = None
+    nominal_power_kw: float | None = None
+    solar_thermal: bool | None = None
+
+@app.put("/api/v1/oekofen/plants/{plant_id}/classification")
+def api_oekofen_classification(plant_id: str,item: OekofenPlantClassification):
+    allowed={None,"DIRECT_HEATING","BUFFER","BUFFER_SOLAR","OTHER"}
+    if item.hydraulic_class not in allowed:raise HTTPException(400,"INVALID_HYDRAULIC_CLASS")
+    with db() as con:
+        cur=con.execute("""UPDATE oekofen_plants SET hydraulic_class=?,buffer_volume_l=?,
+            nominal_power_kw=?,solar_thermal=? WHERE plant_id=?""",
+            (item.hydraulic_class,item.buffer_volume_l,item.nominal_power_kw,
+             None if item.solar_thermal is None else int(item.solar_thermal),plant_id))
+        if not cur.rowcount:raise HTTPException(404,"OekoFEN plant not found")
+    return {"plant_id":plant_id,"updated":True}
 
 class OekofenPlantSettings(BaseModel):
     visible_in_overview: bool = True
@@ -6742,6 +6797,8 @@ def portal_admin_dashboard_templates(ins_portal_session: str | None = Cookie(def
                 {"source_type":"oekofen","scope":"metric","key":"suction_events","label":"Saugvorgänge","live_display":"value"},
                 {"source_type":"oekofen","scope":"metric","key":"suction_minutes","label":"Turbinenlaufzeit","live_display":"value"},
                 {"source_type":"oekofen","scope":"metric","key":"feed_motor_minutes","label":"Einschubmotor","live_display":"value"},
+                {"source_type":"oekofen","scope":"metric","key":"feed_minutes_per_combustion_hour","label":"Einschub / Brennstunde","live_display":"value"},
+                {"source_type":"oekofen","scope":"metric","key":"short_cycle_percent","label":"Kurzstartquote < 30 min","live_display":"value"},
             ],
         },
     }
@@ -6843,6 +6900,8 @@ def portal_admin_source_samples(source_type: str, source_ref: str, ins_portal_se
         {"scope":"metric","key":"suction_events","label":"Saugvorgänge","sample":"Zeitraum"},
         {"scope":"metric","key":"suction_minutes","label":"Turbinenlaufzeit","sample":"Zeitraum"},
         {"scope":"metric","key":"feed_motor_minutes","label":"Einschubmotor","sample":"Zeitraum"},
+        {"scope":"metric","key":"feed_minutes_per_combustion_hour","label":"Einschub / Brennstunde","sample":"Zeitraum"},
+        {"scope":"metric","key":"short_cycle_percent","label":"Kurzstartquote < 30 min","sample":"Zeitraum"},
     ])
     return {"source_type":"oekofen","source_ref":source_ref,"signals":signals}
 
