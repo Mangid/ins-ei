@@ -5407,6 +5407,25 @@ class MypvDeviceSave(BaseModel):
     device_id: int | None = None
     model: str | None = None
 
+def mypv_read_device(mypv_id: int, endpoint: str="data") -> Any:
+    with db() as con:
+        row=con.execute("SELECT * FROM mypv_devices WHERE id=?",(mypv_id,)).fetchone()
+    if row is None: raise HTTPException(404,"MYPV_NOT_FOUND")
+    return mypv_api_get(row["serial_number"],decrypt_credential(row["api_token_encrypted"]),endpoint)
+
+def mypv_flatten_signals(value: Any, prefix: str="") -> list[dict[str,Any]]:
+    out=[]
+    if isinstance(value,dict):
+        for key,val in value.items():
+            path=f"{prefix}.{key}" if prefix else str(key)
+            out.extend(mypv_flatten_signals(val,path))
+    elif isinstance(value,list):
+        for idx,val in enumerate(value):
+            out.extend(mypv_flatten_signals(val,f"{prefix}[{idx}]"))
+    elif isinstance(value,(str,int,float,bool)) or value is None:
+        out.append({"scope":"live","key":prefix,"label":prefix.replace("_"," ").replace("."," · "),"sample":value})
+    return out
+
 def _mypv_public(row) -> dict[str,Any]:
     x=dict(row)
     x["token_configured"]=bool(x.pop("api_token_encrypted",None))
@@ -7030,7 +7049,8 @@ def portal_admin_dashboard_builder_data(ins_portal_session: str | None = Cookie(
     with db() as con:
         users=[dict(r) for r in con.execute("SELECT id,username,display_name,is_admin FROM portal_users WHERE active=1 ORDER BY display_name")]
         plants=[dict(r) for r in con.execute("SELECT plant_id,plant_name,serial_number FROM oekofen_plants ORDER BY plant_name COLLATE NOCASE")]
-    return {"users":users,"source_types":[{"id":"oekofen","name":"ÖkoFEN"},{"id":"mypv","name":"my-PV"},{"id":"goodwe","name":"GoodWe"},{"id":"mqtt","name":"MQTT / INS-EI"},{"id":"home_assistant","name":"Home Assistant"}],"oekofen_plants":plants}
+        mypv=[dict(r) for r in con.execute("SELECT id,name,serial_number,model,last_online,last_check_at FROM mypv_devices ORDER BY name COLLATE NOCASE")]
+    return {"users":users,"source_types":[{"id":"oekofen","name":"ÖkoFEN"},{"id":"mypv","name":"my-PV"},{"id":"goodwe","name":"GoodWe"},{"id":"mqtt","name":"MQTT / INS-EI"},{"id":"home_assistant","name":"Home Assistant"}],"oekofen_plants":plants,"mypv_devices":mypv}
 
 @app.get("/portal/api/admin/source-history")
 def portal_admin_source_history(source_type:str,source_ref:str,keys:str,period:str="24h",ins_portal_session: str | None = Cookie(default=None)):
@@ -7054,6 +7074,13 @@ def portal_admin_source_history(source_type:str,source_ref:str,keys:str,period:s
 @app.get("/portal/api/admin/source-samples")
 def portal_admin_source_samples(source_type: str, source_ref: str, ins_portal_session: str | None = Cookie(default=None)):
     _portal_admin(ins_portal_session)
+    if source_type=="mypv":
+        try:
+            data=mypv_read_device(int(source_ref),"data")
+            signals=mypv_flatten_signals(data)
+            return {"source_type":"mypv","source_ref":source_ref,"signals":signals}
+        except Exception as exc:
+            return {"source_type":"mypv","source_ref":source_ref,"signals":[],"note":str(exc)}
     if source_type!="oekofen":return {"source_type":source_type,"source_ref":source_ref,"signals":[],"note":"Connector noch nicht implementiert"}
     signals=[];names=[]
     for label,actual,target in OEKOFEN_MEASUREMENTS:
@@ -7254,6 +7281,15 @@ def _dashboard_preview_payload(config_id:int,period:str="24h"):
                     tsi=source_index if target_source_index is None else target_source_index
                     if tsi is not None and int(tsi)==si:
                         needed.append(it["target_key"])
+        if src["source_type"]=="mypv" and needed:
+            try:
+                raw=mypv_read_device(int(src["source_ref"]),"data")
+                flat={x["key"]:x.get("sample") for x in mypv_flatten_signals(raw)}
+                for key in needed:
+                    if key in flat: live[f"{si}:{key}"]=flat[key]
+            except Exception:
+                pass
+            continue
         if src["source_type"]!="oekofen" or not needed:continue
         metric_keys=set()
         for b in cfg.get("blocks",[]):
