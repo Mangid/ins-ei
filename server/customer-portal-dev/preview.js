@@ -1,10 +1,10 @@
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));const id=location.pathname.split("/").filter(Boolean).pop();let period=new URLSearchParams(location.search).get("period")||"24h";
 const fmtTime=ts=>new Date(ts).toLocaleString("de-AT",period==="24h"?{hour:"2-digit",minute:"2-digit"}:{day:"2-digit",month:"2-digit",hour:"2-digit"});
 function chartInner(block,d,ci){
- const datasets=[],bands=[],items=block.items||[],setpointKeys=new Set(items.filter(x=>x.target_key).map(x=>(x.target_source_index??x.source_index??0)+":"+x.target_key));for(const it of items){const pts=d.history[(it.source_index??0)+":"+it.key]||[],label=(it.label&&it.label.trim())?it.label.trim():it.key;if(!pts.length)continue;
+ const datasets=[],bands=[],items=block.items||[];for(const it of items){const pts=d.history[(it.source_index??0)+":"+it.key]||[],label=(it.label&&it.label.trim())?it.label.trim():it.key;if(!pts.length)continue;
   if(["binary","percent_binary"].includes(it.display)){bands.push({label,kind:"state",pts});continue}
   if(it.display==="mixer"){bands.push({label,kind:"mixer",pts});continue}
-  const isPct=it.display==="percent"||String(it.key||"").includes("[%]");datasets.push({label,data:pts.map(p=>({x:Date.parse(p.time),y:p.value})),yAxisID:isPct?"yPct":"y",borderWidth:setpointKeys.has((it.source_index??0)+":"+it.key)?1.5:2,borderDash:setpointKeys.has((it.source_index??0)+":"+it.key)?[7,5]:[],pointRadius:0,tension:setpointKeys.has((it.source_index??0)+":"+it.key)?.12:.15,spanGaps:true})
+  const isPct=it.display==="percent"||String(it.key||"").includes("[%]");datasets.push({label,data:pts.map(p=>({x:Date.parse(p.time),y:p.value})),yAxisID:isPct?"yPct":"y",borderWidth:2,borderDash:[],pointRadius:0,tension:.15,spanGaps:true});if(it.target_key){const targetPts=d.history[(it.target_source_index??it.source_index??0)+":"+it.target_key]||[];if(targetPts.length)datasets.push({label:(it.label||label).replace(/\s+Ist$/i,"")+" Soll",data:targetPts.map(p=>({x:Date.parse(p.time),y:p.value})),yAxisID:isPct?"yPct":"y",borderWidth:1.5,borderDash:[7,5],pointRadius:0,tension:.12,spanGaps:true})}
  }
  if(!datasets.length&&!bands.length)return'<div class="pv-empty">Keine Daten im gewählten Zeitraum.</div>';
  window.__chartConfigs=window.__chartConfigs||{};window.__chartConfigs[String(ci)]={datasets,bands};
