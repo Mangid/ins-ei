@@ -23,7 +23,7 @@ async function load(){
 }
 function render(){
   const q=($("inventorySearch")?.value||"").trim().toLowerCase();
-  const filtered=items.filter(x=>(!q||[x.article_number,x.name,x.manufacturer,x.category,x.supplier,x.sevdesk_article_number,x.notes].some(v=>String(v||"").toLowerCase().includes(q)))&&(inventoryFilter==="all"||inventoryFilter==="reorder"&&x.needs_reorder||inventoryFilter==="transfer"&&x.needs_bus_refill||inventoryFilter==="check"&&x.needs_stock_check));
+  const filtered=items.filter(x=>(!q||[x.article_number,x.name,x.manufacturer,x.category,x.supplier,x.sevdesk_article_number,x.notes].some(v=>String(v||"").toLowerCase().includes(q)))&&(inventoryFilter==="all"||inventoryFilter==="reorder"&&x.needs_reorder||inventoryFilter==="transfer"&&x.needs_bus_refill||inventoryFilter==="check"&&x.needs_stock_check||inventoryFilter==="consumable"&&x.is_consumable));
   const low=items.filter(x=>x.needs_reorder);
   const busLow=items.filter(x=>x.needs_bus_refill);
   const checkLow=items.filter(x=>x.needs_stock_check);
