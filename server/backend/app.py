@@ -6221,9 +6221,16 @@ def _portal_bootstrap(user: dict[str, Any]) -> dict[str, Any]:
     dashboards = [{**dict(r), "config": json.loads(r["config_json"] or "{}")} for r in rows]
     for d in dashboards:
         d.pop("config_json", None)
+    with db() as con:
+        custom_dashboards=[dict(r) for r in con.execute("""SELECT c.id,c.name FROM portal_dashboard_configs c
+            LEFT JOIN portal_dashboard_access a ON a.dashboard_config_id=c.id AND a.user_id=?
+            LEFT JOIN portal_users u ON u.id=?
+            WHERE c.active=1 AND (a.user_id IS NOT NULL OR u.custom_dashboard_id=c.id)
+            ORDER BY c.name""",(user["id"],user["id"]))]
     return {
         "display_name": user["display_name"],
         "is_admin": bool(user["is_admin"]),
+        "custom_dashboards": custom_dashboards,
         "status": "Pilot" if not user["is_admin"] else "Administrator",
         "message": "Kundenportal aktiv.",
         "dashboards": dashboards,
