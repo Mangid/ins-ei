@@ -9,6 +9,7 @@
 
 
 <button data-page="service">Service</button>
+<button id="dashboardsNav" class="hidden" data-page="dashboards">Dashboards</button>
 <button id="adminNav" class="hidden" data-page="admin">Benutzer</button>
 <button id="dashboardConfigNav" class="hidden" data-page="dashboardConfig">Dashboard konfigurieren</button>
 </nav><main>
@@ -26,6 +27,7 @@
 
 <section id="oekofen" class="page"><div id="oekofenAdminPicker" class="card dev-plant-picker hidden"><div class="dev-picker-title">DEV Testanlage</div><div class="dev-plant-search-wrap"><input id="oekofenPlantSearch" type="search" placeholder="Kunde, Anlage, Ort, Seriennummer …" autocomplete="off"><select id="oekofenPlantSelect"><option value="">Anlage auswählen …</option></select></div><small>Nur für Administratoren im DEV-Portal. Kunden sehen später ausschließlich ihre zugeordneten Anlagen.</small></div><div class="portal-page-head"><div><h1 id="oekofenTitle">Meine Heizung</h1><p class="lead" id="oekofenMeta">ÖkoFEN Anlage</p></div><span id="oekofenOnline" class="state-pill">Lade …</span></div><div id="oekofenLive" class="oek-live-grid"><div class="card">Aktuelle Werte werden geladen …</div></div><div class="history-head portal-history-head"><div><h2>Verlauf</h2><p class="lead">Historische Messwerte aus INS-EI.</p></div><div class="portal-periods"><button class="active" data-oek-period="24h">24 h</button><button data-oek-period="7d">7 Tage</button><button data-oek-period="30d">30 Tage</button></div></div><div id="oekofenCharts" class="oek-charts"><div class="card">Historie wird geladen …</div></div></section>
 <section id="service" class="page"><h1>Service</h1><p class="lead">Anlage, Kontakt und spätere Servicefunktionen.</p><div class="card"><h2>INS-Energietechnik</h2><p>Hier entsteht der direkte Servicebereich für Ihre Anlage.</p></div></section>
+<section id="dashboards" class="page"><h1>Dashboards</h1><p class="lead">Konfigurierte Dashboards auf einen Blick.</p><div id="dashboardList" class="dashboard-list"><div class="card">Dashboards werden geladen …</div></div></section>
 <section id="dashboardConfig" class="page"><h1>Custom Dashboard</h1><p class="lead">Dashboard, Zugriffe, Datenquellen und Darstellung konfigurieren.</p>
 <div class="card config-builder">
 <div class="builder-step"><b>1</b><div><h2>Dashboard</h2><div class="dashboard-load-row"><select id="existingDashboard"><option value="">Neues Dashboard …</option></select><button id="loadExistingDashboard" type="button">Öffnen</button><button id="deleteExistingDashboard" type="button">Löschen</button></div><div class="config-row"><label>Eindeutiger Name<input id="configName" placeholder="z. B. Sternig Wohnhaus"></label><label>Beschreibung<input id="configDescription" placeholder="optional"></label></div></div></div>
