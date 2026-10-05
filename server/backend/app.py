@@ -2059,6 +2059,40 @@ def init_oekofen_db():
         )
 
         con.execute("""
+            CREATE TABLE IF NOT EXISTS oekofen_daily_metrics (
+                plant_id TEXT NOT NULL,
+                day TEXT NOT NULL,
+                burner_starts INTEGER,
+                cycle_minutes REAL,
+                combustion_minutes REAL,
+                avg_combustion_minutes REAL,
+                shortest_combustion_minutes REAL,
+                longest_combustion_minutes REAL,
+                suction_events INTEGER,
+                suction_minutes REAL,
+                feed_motor_minutes REAL,
+                error_count INTEGER,
+                modulation_avg REAL,
+                modulation_max REAL,
+                outside_avg_c REAL,
+                boiler_avg_c REAL,
+                combustion_chamber_avg_c REAL,
+                buffer_top_avg_c REAL,
+                buffer_middle_avg_c REAL,
+                hot_water_avg_c REAL,
+                heating_flow_avg_c REAL,
+                heating_pump_minutes REAL,
+                buffer_pump_minutes REAL,
+                solar_collector_avg_c REAL,
+                solar_storage_avg_c REAL,
+                solar_pump_minutes REAL,
+                source_rows INTEGER,
+                calculated_at TEXT NOT NULL,
+                PRIMARY KEY (plant_id, day)
+            )
+        """)
+
+        con.execute("""
             CREATE TABLE IF NOT EXISTS oekofen_csv_imports (
                 plant_id TEXT NOT NULL,
                 day TEXT NOT NULL,
@@ -2992,6 +3026,16 @@ def oekofen_daily_analysis(
         "feed_motor_minutes": active_runtime_minutes("PE1 Motor ES"),
     }
 
+    daily_runtimes = {
+        "heating_pump_minutes": active_runtime_minutes("HK1 Pumpe"),
+        "buffer_pump_minutes": active_runtime_minutes("PU1 Pumpe[%]"),
+        "solar_pump_minutes": active_runtime_minutes("SK1 Pumpe"),
+    }
+    solar = {
+        "collector": _oekofen_stats(numeric("SK1 Kollektor[°C]")),
+        "storage": _oekofen_stats(numeric("SK1 Speicher[°C]")),
+    }
+
     error_counts: dict[str, int] = {}
 
     for column in (
@@ -3046,6 +3090,8 @@ def oekofen_daily_analysis(
             ),
         },
         "material_handling": material_handling,
+        "daily_runtimes": daily_runtimes,
+        "solar": solar,
         "pellet_boiler": {
             "modulation_percent": modulation,
             "status_values": states(
@@ -3110,6 +3156,84 @@ def oekofen_daily_analysis(
             "OekoFEN status codes yet."
         ),
     }
+
+
+def store_oekofen_daily_metrics(analysis: dict[str, Any]) -> dict[str, Any]:
+    cycles = analysis.get("burner_cycles", {}).get("cycles", [])
+    combustion_lengths = [x.get("combustion_minutes") for x in cycles if x.get("combustion_minutes") is not None]
+    combustion = analysis.get("burner_cycles", {}).get("total_combustion_minutes", 0) or 0
+    starts = analysis.get("burner_cycles", {}).get("count", 0) or 0
+    temps = analysis.get("temperatures_c", {})
+    pellet = analysis.get("pellet_boiler", {})
+    material = analysis.get("material_handling", {})
+    runtimes = analysis.get("daily_runtimes", {})
+    solar = analysis.get("solar", {})
+    values = (
+        analysis["plant_id"], analysis["day"], starts,
+        analysis.get("burner_cycles", {}).get("total_cycle_minutes"),
+        combustion, round(combustion / starts, 1) if starts else None,
+        min(combustion_lengths) if combustion_lengths else None,
+        max(combustion_lengths) if combustion_lengths else None,
+        material.get("suction_events"), material.get("suction_minutes"), material.get("feed_motor_minutes"),
+        analysis.get("errors", {}).get("count"),
+        pellet.get("modulation_percent", {}).get("avg"), pellet.get("modulation_percent", {}).get("max"),
+        temps.get("outside", {}).get("avg"), temps.get("pellet_boiler", {}).get("avg"),
+        temps.get("combustion_chamber", {}).get("avg"), temps.get("buffer_top", {}).get("avg"),
+        temps.get("buffer_middle", {}).get("avg"), temps.get("hot_water_1", {}).get("avg"),
+        temps.get("heating_circuit_1_flow", {}).get("avg"),
+        runtimes.get("heating_pump_minutes"), runtimes.get("buffer_pump_minutes"),
+        solar.get("collector", {}).get("avg"), solar.get("storage", {}).get("avg"), runtimes.get("solar_pump_minutes"),
+        analysis.get("source", {}).get("rows"), datetime.now(timezone.utc).isoformat(),
+    )
+    with db() as con:
+        con.execute("""INSERT INTO oekofen_daily_metrics (
+            plant_id,day,burner_starts,cycle_minutes,combustion_minutes,avg_combustion_minutes,
+            shortest_combustion_minutes,longest_combustion_minutes,suction_events,suction_minutes,
+            feed_motor_minutes,error_count,modulation_avg,modulation_max,outside_avg_c,boiler_avg_c,
+            combustion_chamber_avg_c,buffer_top_avg_c,buffer_middle_avg_c,hot_water_avg_c,heating_flow_avg_c,
+            heating_pump_minutes,buffer_pump_minutes,solar_collector_avg_c,solar_storage_avg_c,solar_pump_minutes,
+            source_rows,calculated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(plant_id,day) DO UPDATE SET
+            burner_starts=excluded.burner_starts,cycle_minutes=excluded.cycle_minutes,
+            combustion_minutes=excluded.combustion_minutes,avg_combustion_minutes=excluded.avg_combustion_minutes,
+            shortest_combustion_minutes=excluded.shortest_combustion_minutes,longest_combustion_minutes=excluded.longest_combustion_minutes,
+            suction_events=excluded.suction_events,suction_minutes=excluded.suction_minutes,feed_motor_minutes=excluded.feed_motor_minutes,
+            error_count=excluded.error_count,modulation_avg=excluded.modulation_avg,modulation_max=excluded.modulation_max,
+            outside_avg_c=excluded.outside_avg_c,boiler_avg_c=excluded.boiler_avg_c,
+            combustion_chamber_avg_c=excluded.combustion_chamber_avg_c,buffer_top_avg_c=excluded.buffer_top_avg_c,
+            buffer_middle_avg_c=excluded.buffer_middle_avg_c,hot_water_avg_c=excluded.hot_water_avg_c,
+            heating_flow_avg_c=excluded.heating_flow_avg_c,heating_pump_minutes=excluded.heating_pump_minutes,
+            buffer_pump_minutes=excluded.buffer_pump_minutes,solar_collector_avg_c=excluded.solar_collector_avg_c,
+            solar_storage_avg_c=excluded.solar_storage_avg_c,solar_pump_minutes=excluded.solar_pump_minutes,
+            source_rows=excluded.source_rows,calculated_at=excluded.calculated_at""", values)
+    return {"plant_id": analysis["plant_id"], "day": analysis["day"], "stored": True}
+
+
+def calculate_and_store_oekofen_daily_metrics(plant_id: str, day: str) -> dict[str, Any]:
+    analysis = oekofen_daily_analysis(plant_id, day)
+    return store_oekofen_daily_metrics(analysis)
+
+
+def oekofen_metrics_range(plant_id: str, days: int) -> dict[str, Any]:
+    cutoff=(datetime.now(ZoneInfo("Europe/Vienna")).date()-timedelta(days=max(1,days)-1)).isoformat()
+    with db() as con:
+        rows=[dict(r) for r in con.execute(
+            "SELECT * FROM oekofen_daily_metrics WHERE plant_id=? AND day>=? ORDER BY day",
+            (plant_id,cutoff)
+        ).fetchall()]
+    if not rows:
+        return {"days":0,"values":{}}
+    total=lambda key: sum((r.get(key) or 0) for r in rows)
+    starts=int(total("burner_starts")); combustion=total("combustion_minutes")
+    values={
+        "burner_starts": str(starts),
+        "combustion_hours": f"{combustion/60:.1f} h",
+        "avg_combustion_minutes": f"{combustion/starts:.0f} min" if starts else "–",
+        "suction_events": str(int(total("suction_events"))),
+        "suction_minutes": f"{total('suction_minutes'):.0f} min",
+        "feed_motor_minutes": f"{total('feed_motor_minutes'):.0f} min",
+    }
+    return {"days":len(rows),"values":values,"daily":rows}
 
 
 def oekofen_csv_field_inventory(day: str) -> dict[str, Any]:
@@ -3275,7 +3399,13 @@ def import_oekofen_csv_day(plant_id: str, day: str, force: bool=False) -> dict[s
             con.execute("""UPDATE oekofen_csv_imports SET status='SUCCESS',rows_imported=?,columns_found=?,
                 bytes_downloaded=?,encoding=?,completed_at=?,error=NULL WHERE plant_id=? AND day=?""",
                 (result["rows"],result["columns"],result["bytes"],result["encoding"],completed,plant_id,day))
-        return {"plant_id":plant_id,"plant_name":plant["plant_name"],"day":day,"status":"SUCCESS",**result}
+        metric_error=None
+        try:
+            calculate_and_store_oekofen_daily_metrics(plant_id,day)
+        except Exception as exc:
+            metric_error=str(exc)
+            print(f"OEKOFEN metric calculation plant={plant_id} day={day} error={exc}",flush=True)
+        return {"plant_id":plant_id,"plant_name":plant["plant_name"],"day":day,"status":"SUCCESS","metric_error":metric_error,**result}
     except Exception as exc:
         with db() as con:
             con.execute("UPDATE oekofen_csv_imports SET status='ERROR',completed_at=?,error=? WHERE plant_id=? AND day=?",
@@ -4313,6 +4443,29 @@ def health():
     }
 
 
+
+
+@app.post("/api/v1/oekofen/metrics/calculate/{plant_id}")
+def api_oekofen_metrics_calculate(plant_id: str, day: str):
+    try:return calculate_and_store_oekofen_daily_metrics(plant_id,day)
+    except Exception as exc:raise HTTPException(502,str(exc))
+
+@app.post("/api/v1/oekofen/metrics/backfill/{plant_id}")
+def api_oekofen_metrics_backfill(plant_id: str, days: int=30):
+    days=max(1,min(days,365))
+    end=datetime.now(ZoneInfo("Europe/Vienna")).date()-timedelta(days=1)
+    results=[];errors=[]
+    for offset in range(days-1,-1,-1):
+        day=(end-timedelta(days=offset)).isoformat()
+        try:
+            results.append(calculate_and_store_oekofen_daily_metrics(plant_id,day))
+        except Exception as exc:
+            errors.append({"day":day,"error":str(exc)[:300]})
+    return {"plant_id":plant_id,"requested_days":days,"stored":len(results),"errors":errors}
+
+@app.get("/api/v1/oekofen/metrics/{plant_id}")
+def api_oekofen_metrics(plant_id: str, days: int=30):
+    return oekofen_metrics_range(plant_id,max(1,min(days,3650)))
 
 
 @app.get("/api/v1/oekofen/csv-imports")
@@ -6831,29 +6984,8 @@ def customer_portal_asset(asset_name: str):
     return FileResponse(path)
 
 def _oekofen_dashboard_metrics(plant_id: str, period: str) -> dict[str, str]:
-    days = {"24h": 1, "7d": 7, "30d": 30}.get(period, 1)
-    end = datetime.now(ZoneInfo("Europe/Vienna")).date()
-    results = []
-    for offset in range(days - 1, -1, -1):
-        day = (end - timedelta(days=offset)).isoformat()
-        try:
-            results.append(oekofen_daily_analysis(plant_id, day))
-        except Exception:
-            continue
-    starts = sum(x.get("burner_cycles", {}).get("count", 0) for x in results)
-    combustion = sum(x.get("burner_cycles", {}).get("total_combustion_minutes", 0) or 0 for x in results)
-    suction_events = sum(x.get("material_handling", {}).get("suction_events", 0) or 0 for x in results)
-    suction_minutes = sum(x.get("material_handling", {}).get("suction_minutes", 0) or 0 for x in results)
-    feed_minutes = sum(x.get("material_handling", {}).get("feed_motor_minutes", 0) or 0 for x in results)
-    return {
-        "burner_starts": str(starts),
-        "combustion_hours": f"{combustion / 60:.1f} h",
-        "avg_combustion_minutes": f"{combustion / starts:.0f} min" if starts else "–",
-        "suction_events": str(suction_events),
-        "suction_minutes": f"{suction_minutes:.0f} min",
-        "feed_motor_minutes": f"{feed_minutes:.0f} min",
-    }
-
+    days={"24h":1,"7d":7,"30d":30}.get(period,1)
+    return oekofen_metrics_range(plant_id,days).get("values",{})
 
 def _dashboard_preview_payload(config_id:int,period:str="24h"):
     ranges={"24h":"-24h","7d":"-7d","30d":"-30d"};windows={"24h":"10m","7d":"1h","30d":"4h"}
