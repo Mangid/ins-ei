@@ -5379,8 +5379,10 @@ def list_customers(q: str | None = None):
 
 MYPV_API_BASE = "https://api.my-pv.com/api/v1/device"
 
-def mypv_api_get(serial: str, token: str, endpoint: str) -> Any:
+def mypv_api_get(serial: str, token: str, endpoint: str, params: dict[str,str] | None=None) -> Any:
     url=f"{MYPV_API_BASE}/{serial}/{endpoint}"
+    if params:
+        url += "?" + urlencode(params)
     # my-PV Swagger uses a device-specific API token. Keep auth server-side.
     attempts=[
         {"Authorization":f"Bearer {token}","Accept":"application/json"},
@@ -5473,10 +5475,19 @@ def _mypv_public(row) -> dict[str,Any]:
     return x
 
 @app.get("/api/v1/mypv/{mypv_id}/logdata")
-def api_mypv_logdata(mypv_id:int):
+def api_mypv_logdata(mypv_id:int,beginDate:str,endDate:str,timezone_name:str="Europe/Vienna",interval:str="1h"):
+    if interval not in ("15m","1h","1d","1mo","1y"):raise HTTPException(400,"INVALID_INTERVAL")
     try:
-        data=mypv_read_device(mypv_id,"logdata")
-        return {"id":mypv_id,"data":data}
+        date.fromisoformat(beginDate);date.fromisoformat(endDate)
+    except ValueError:raise HTTPException(400,"INVALID_DATE")
+    with db() as con:
+        row=con.execute("SELECT * FROM mypv_devices WHERE id=?",(mypv_id,)).fetchone()
+    if row is None:raise HTTPException(404,"MYPV_NOT_FOUND")
+    try:
+        data=mypv_api_get(row["serial_number"],decrypt_credential(row["api_token_encrypted"]),"logdata",{
+            "beginDate":beginDate,"endDate":endDate,"timezone":timezone_name,"interval":interval
+        })
+        return {"id":mypv_id,"beginDate":beginDate,"endDate":endDate,"timezone":timezone_name,"interval":interval,"data":data}
     except urllib.error.HTTPError as exc:
         detail=exc.read().decode("utf-8","replace")[:1000]
         raise HTTPException(exc.code,detail or str(exc))
