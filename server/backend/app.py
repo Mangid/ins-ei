@@ -5411,12 +5411,20 @@ def mypv_read_device(mypv_id: int, endpoint: str="data") -> Any:
     with db() as con:
         row=con.execute("SELECT * FROM mypv_devices WHERE id=?",(mypv_id,)).fetchone()
     if row is None: raise HTTPException(404,"MYPV_NOT_FOUND")
-    return mypv_api_get(row["serial_number"],decrypt_credential(row["api_token_encrypted"]),endpoint)
+    token=decrypt_credential(row["api_token_encrypted"])
+    result=mypv_api_get(row["serial_number"],token,endpoint)
+    if endpoint=="data" and isinstance(result,dict) and int(result.get("status") or 0)==202:
+        # First data call wakes/initializes cloud communication for the device.
+        time.sleep(11)
+        result=mypv_api_get(row["serial_number"],token,endpoint)
+    return result
 
 def mypv_flatten_signals(value: Any, prefix: str="") -> list[dict[str,Any]]:
     out=[]
     if isinstance(value,dict):
         for key,val in value.items():
+            if not prefix and str(key) in ("status","msg","message"):
+                continue
             path=f"{prefix}.{key}" if prefix else str(key)
             out.extend(mypv_flatten_signals(val,path))
     elif isinstance(value,list):
@@ -7077,6 +7085,8 @@ def portal_admin_source_samples(source_type: str, source_ref: str, ins_portal_se
     if source_type=="mypv":
         try:
             data=mypv_read_device(int(source_ref),"data")
+            if isinstance(data,dict) and int(data.get("status") or 0)==202:
+                return {"source_type":"mypv","source_ref":source_ref,"signals":[],"note":"my-PV Gerät wird aktiviert. Signale in wenigen Sekunden erneut laden."}
             signals=mypv_flatten_signals(data)
             return {"source_type":"mypv","source_ref":source_ref,"signals":signals}
         except Exception as exc:
