@@ -2097,6 +2097,9 @@ def init_oekofen_db():
             ("feed_minutes_per_combustion_hour", "REAL"),
             ("short_cycle_count", "INTEGER"),
             ("short_cycle_percent", "REAL"),
+            ("hot_water_pump_minutes", "REAL"),
+            ("heating_circuit_2_flow_avg_c", "REAL"),
+            ("heating_circuit_2_pump_minutes", "REAL"),
         ):
             if not column_exists(con, "oekofen_daily_metrics", column):
                 con.execute(f"ALTER TABLE oekofen_daily_metrics ADD COLUMN {column} {definition}")
@@ -2841,6 +2844,9 @@ def oekofen_daily_analysis(
         "heating_circuit_1_flow": _oekofen_stats(
             numeric("HK1 VL Ist[°C]")
         ),
+        "heating_circuit_2_flow": _oekofen_stats(
+            numeric("HK2 VL Ist[°C]")
+        ),
         "hot_water_1": _oekofen_stats(
             numeric("WW1 EinT Ist[°C]")
         ),
@@ -3046,7 +3052,9 @@ def oekofen_daily_analysis(
 
     daily_runtimes = {
         "heating_pump_minutes": active_runtime_minutes("HK1 Pumpe"),
+        "heating_circuit_2_pump_minutes": active_runtime_minutes("HK2 Pumpe"),
         "buffer_pump_minutes": active_runtime_minutes("PU1 Pumpe[%]"),
+        "hot_water_pump_minutes": active_runtime_minutes("WW1 Pumpe"),
         "solar_pump_minutes": active_runtime_minutes("SK1 Pumpe[%]") + active_runtime_minutes("SK2 Pumpe[%]"),
     }
     solar = {
@@ -3245,6 +3253,13 @@ def store_oekofen_daily_metrics(analysis: dict[str, Any]) -> dict[str, Any]:
             feed_minutes_per_combustion_hour=?,short_cycle_count=?,short_cycle_percent=?
             WHERE plant_id=? AND day=?""",
             (full_day,feed_per_hour,short_count,short_percent,analysis["plant_id"],analysis["day"]))
+        con.execute("""UPDATE oekofen_daily_metrics SET hot_water_pump_minutes=?,
+            heating_circuit_2_flow_avg_c=?,heating_circuit_2_pump_minutes=?
+            WHERE plant_id=? AND day=?""",
+            (runtimes.get("hot_water_pump_minutes"),
+             temps.get("heating_circuit_2_flow",{}).get("avg"),
+             runtimes.get("heating_circuit_2_pump_minutes"),
+             analysis["plant_id"],analysis["day"]))
     return {"plant_id": analysis["plant_id"], "day": analysis["day"], "stored": True, "complete": bool(full_day)}
 
 
@@ -3281,6 +3296,18 @@ def oekofen_metrics_range(plant_id: str, days: int) -> dict[str, Any]:
         "feed_motor_minutes": f"{total('feed_motor_minutes'):.0f} min",
         "feed_minutes_per_combustion_hour": f"{feed_per_hour:.1f} min/h" if feed_per_hour is not None else "–",
         "short_cycle_percent": f"{(short_count*100/starts):.0f} %" if starts else "–",
+        "error_count": str(int(total("error_count"))),
+        "shortest_combustion_minutes": f"{min((r.get('shortest_combustion_minutes') for r in rows if r.get('shortest_combustion_minutes') is not None), default=0):.0f} min",
+        "longest_combustion_minutes": f"{max((r.get('longest_combustion_minutes') for r in rows if r.get('longest_combustion_minutes') is not None), default=0):.0f} min",
+        "buffer_top_avg_c": f"{sum(r['buffer_top_avg_c'] for r in rows if r.get('buffer_top_avg_c') is not None)/max(1,sum(1 for r in rows if r.get('buffer_top_avg_c') is not None)):.1f} °C" if any(r.get("buffer_top_avg_c") is not None for r in rows) else None,
+        "buffer_middle_avg_c": f"{sum(r['buffer_middle_avg_c'] for r in rows if r.get('buffer_middle_avg_c') is not None)/max(1,sum(1 for r in rows if r.get('buffer_middle_avg_c') is not None)):.1f} °C" if any(r.get("buffer_middle_avg_c") is not None for r in rows) else None,
+        "buffer_pump_hours": f"{total('buffer_pump_minutes')/60:.1f} h" if any(r.get("buffer_pump_minutes") is not None for r in rows) else None,
+        "hot_water_avg_c": f"{sum(r['hot_water_avg_c'] for r in rows if r.get('hot_water_avg_c') is not None)/max(1,sum(1 for r in rows if r.get('hot_water_avg_c') is not None)):.1f} °C" if any(r.get("hot_water_avg_c") is not None for r in rows) else None,
+        "hot_water_pump_hours": f"{total('hot_water_pump_minutes')/60:.1f} h" if any(r.get("hot_water_pump_minutes") is not None for r in rows) else None,
+        "hk1_flow_avg_c": f"{sum(r['heating_flow_avg_c'] for r in rows if r.get('heating_flow_avg_c') is not None)/max(1,sum(1 for r in rows if r.get('heating_flow_avg_c') is not None)):.1f} °C" if any(r.get("heating_flow_avg_c") is not None for r in rows) else None,
+        "hk1_pump_hours": f"{total('heating_pump_minutes')/60:.1f} h" if any(r.get("heating_pump_minutes") is not None for r in rows) else None,
+        "hk2_flow_avg_c": f"{sum(r['heating_circuit_2_flow_avg_c'] for r in rows if r.get('heating_circuit_2_flow_avg_c') is not None)/max(1,sum(1 for r in rows if r.get('heating_circuit_2_flow_avg_c') is not None)):.1f} °C" if any(r.get("heating_circuit_2_flow_avg_c") is not None for r in rows) else None,
+        "hk2_pump_hours": f"{total('heating_circuit_2_pump_minutes')/60:.1f} h" if any(r.get("heating_circuit_2_pump_minutes") is not None for r in rows) else None,
     }
     return {"days":len(rows),"values":values,"daily":rows}
 
@@ -6797,22 +6824,42 @@ def portal_admin_dashboard_templates(ins_portal_session: str | None = Cookie(def
     builtin = {
         "id": "builtin-oekofen-metrics",
         "name": "ÖkoFEN Metriken",
-        "block_type": "card",
+        "block_type": "template_group",
         "source_type": "oekofen",
         "builtin": True,
         "template": {
-            "title": "ÖkoFEN Metriken",
-            "items": [
-                {"source_type":"oekofen","scope":"metric","key":"burner_starts","label":"Brennerstarts","live_display":"value"},
-                {"source_type":"oekofen","scope":"metric","key":"combustion_hours","label":"Brennzeit","live_display":"value"},
-                {"source_type":"oekofen","scope":"metric","key":"avg_combustion_minutes","label":"Ø Brennzeit / Start","live_display":"value"},
-                {"source_type":"oekofen","scope":"metric","key":"suction_events","label":"Saugvorgänge","live_display":"value"},
-                {"source_type":"oekofen","scope":"metric","key":"suction_minutes","label":"Turbinenlaufzeit","live_display":"value"},
-                {"source_type":"oekofen","scope":"metric","key":"feed_motor_minutes","label":"Einschubmotor","live_display":"value"},
-                {"source_type":"oekofen","scope":"metric","key":"feed_minutes_per_combustion_hour","label":"Einschub / Brennstunde","live_display":"value"},
-                {"source_type":"oekofen","scope":"metric","key":"short_cycle_percent","label":"Kurzstartquote < 30 min","live_display":"value"},
-            ],
-        },
+            "blocks": [
+                {"type":"card","title":"Kessel","items":[
+                    {"source_type":"oekofen","scope":"metric","key":"burner_starts","label":"Brennerstarts"},
+                    {"source_type":"oekofen","scope":"metric","key":"combustion_hours","label":"Brennzeit"},
+                    {"source_type":"oekofen","scope":"metric","key":"avg_combustion_minutes","label":"Ø Brennzeit / Start"},
+                    {"source_type":"oekofen","scope":"metric","key":"shortest_combustion_minutes","label":"Kürzeste Brennphase"},
+                    {"source_type":"oekofen","scope":"metric","key":"longest_combustion_minutes","label":"Längste Brennphase"},
+                    {"source_type":"oekofen","scope":"metric","key":"short_cycle_percent","label":"Kurzstartquote < 30 min"},
+                    {"source_type":"oekofen","scope":"metric","key":"feed_motor_minutes","label":"Einschubmotor"},
+                    {"source_type":"oekofen","scope":"metric","key":"feed_minutes_per_combustion_hour","label":"Einschub / Brennstunde"},
+                    {"source_type":"oekofen","scope":"metric","key":"suction_events","label":"Saugvorgänge"},
+                    {"source_type":"oekofen","scope":"metric","key":"error_count","label":"Fehler"}
+                ]},
+                {"type":"card","title":"Puffer","optional_keys":["buffer_top_avg_c","buffer_middle_avg_c"],"items":[
+                    {"source_type":"oekofen","scope":"metric","key":"buffer_top_avg_c","label":"Puffer oben Ø"},
+                    {"source_type":"oekofen","scope":"metric","key":"buffer_middle_avg_c","label":"Puffer Mitte Ø"},
+                    {"source_type":"oekofen","scope":"metric","key":"buffer_pump_hours","label":"Pufferpumpe"}
+                ]},
+                {"type":"card","title":"Warmwasser","optional_keys":["hot_water_avg_c"],"items":[
+                    {"source_type":"oekofen","scope":"metric","key":"hot_water_avg_c","label":"WW Temperatur Ø"},
+                    {"source_type":"oekofen","scope":"metric","key":"hot_water_pump_hours","label":"WW-Pumpe"}
+                ]},
+                {"type":"card","title":"Heizkreis 1","optional_keys":["hk1_flow_avg_c"],"items":[
+                    {"source_type":"oekofen","scope":"metric","key":"hk1_flow_avg_c","label":"Vorlauf Ø"},
+                    {"source_type":"oekofen","scope":"metric","key":"hk1_pump_hours","label":"Pumpenlaufzeit"}
+                ]},
+                {"type":"card","title":"Heizkreis 2","optional_keys":["hk2_flow_avg_c"],"items":[
+                    {"source_type":"oekofen","scope":"metric","key":"hk2_flow_avg_c","label":"Vorlauf Ø"},
+                    {"source_type":"oekofen","scope":"metric","key":"hk2_pump_hours","label":"Pumpenlaufzeit"}
+                ]}
+            ]
+        }
     }
     return {"templates":[builtin, *result]}
 
@@ -6914,6 +6961,18 @@ def portal_admin_source_samples(source_type: str, source_ref: str, ins_portal_se
         {"scope":"metric","key":"feed_motor_minutes","label":"Einschubmotor","sample":"Zeitraum"},
         {"scope":"metric","key":"feed_minutes_per_combustion_hour","label":"Einschub / Brennstunde","sample":"Zeitraum"},
         {"scope":"metric","key":"short_cycle_percent","label":"Kurzstartquote < 30 min","sample":"Zeitraum"},
+        {"scope":"metric","key":"error_count","label":"Fehler","sample":"Zeitraum"},
+        {"scope":"metric","key":"shortest_combustion_minutes","label":"Kürzeste Brennphase","sample":"Zeitraum"},
+        {"scope":"metric","key":"longest_combustion_minutes","label":"Längste Brennphase","sample":"Zeitraum"},
+        {"scope":"metric","key":"buffer_top_avg_c","label":"Puffer oben Ø","sample":"Zeitraum"},
+        {"scope":"metric","key":"buffer_middle_avg_c","label":"Puffer Mitte Ø","sample":"Zeitraum"},
+        {"scope":"metric","key":"buffer_pump_hours","label":"Pufferpumpe","sample":"Zeitraum"},
+        {"scope":"metric","key":"hot_water_avg_c","label":"WW Temperatur Ø","sample":"Zeitraum"},
+        {"scope":"metric","key":"hot_water_pump_hours","label":"WW-Pumpe","sample":"Zeitraum"},
+        {"scope":"metric","key":"hk1_flow_avg_c","label":"HK1 Vorlauf Ø","sample":"Zeitraum"},
+        {"scope":"metric","key":"hk1_pump_hours","label":"HK1 Pumpenlaufzeit","sample":"Zeitraum"},
+        {"scope":"metric","key":"hk2_flow_avg_c","label":"HK2 Vorlauf Ø","sample":"Zeitraum"},
+        {"scope":"metric","key":"hk2_pump_hours","label":"HK2 Pumpenlaufzeit","sample":"Zeitraum"},
     ])
     return {"source_type":"oekofen","source_ref":source_ref,"signals":signals}
 
