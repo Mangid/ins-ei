@@ -1046,6 +1046,12 @@ def ins_ei_oekofen_daily_analysis(
 
 
 @mcp.tool()
+def ins_ei_oekofen_csv_field_inventory(day: str) -> dict[str, Any]:
+    """Inspect daily CSV field availability across all known OekoFEN plants."""
+    return oekofen_csv_field_inventory(day)
+
+
+@mcp.tool()
 def ins_ei_oekofen_csv_info(
     plant_id: str,
     day: str,
@@ -2953,6 +2959,39 @@ def oekofen_daily_analysis(
                 cycles.append(cycle)
                 current_cycle = None
 
+    def active_runtime_minutes(column: str) -> float:
+        total = 0.0
+        previous_time = None
+        previous_active = False
+        for row in rows:
+            timestamp = row_datetime(row)
+            value = _oekofen_float(row.get(column))
+            active = value is not None and value > 0
+            if previous_time is not None and previous_active and timestamp is not None:
+                delta = (timestamp - previous_time).total_seconds() / 60
+                if 0 < delta <= 5:
+                    total += delta
+            previous_time = timestamp
+            previous_active = active
+        return round(total, 1)
+
+    def rising_edges(column: str) -> int:
+        count = 0
+        previous_active = False
+        for row in rows:
+            value = _oekofen_float(row.get(column))
+            active = value is not None and value > 0
+            if active and not previous_active:
+                count += 1
+            previous_active = active
+        return count
+
+    material_handling = {
+        "suction_events": rising_edges("PE1 Motor TURBINE"),
+        "suction_minutes": active_runtime_minutes("PE1 Motor TURBINE"),
+        "feed_motor_minutes": active_runtime_minutes("PE1 Motor ES"),
+    }
+
     error_counts: dict[str, int] = {}
 
     for column in (
@@ -3006,6 +3045,7 @@ def oekofen_daily_analysis(
                 1,
             ),
         },
+        "material_handling": material_handling,
         "pellet_boiler": {
             "modulation_percent": modulation,
             "status_values": states(
@@ -3069,6 +3109,44 @@ def oekofen_daily_analysis(
             "INS-EI does not assign semantic meanings to unknown "
             "OekoFEN status codes yet."
         ),
+    }
+
+
+def oekofen_csv_field_inventory(day: str) -> dict[str, Any]:
+    """Inspect one daily CSV across all known OekoFEN plants and count available fields."""
+    with db() as con:
+        plants = [dict(r) for r in con.execute(
+            "SELECT plant_id, plant_name, serial_number, version FROM oekofen_plants ORDER BY plant_name COLLATE NOCASE"
+        ).fetchall()]
+    field_counts: dict[str, int] = {}
+    structures: dict[str, int] = {}
+    results = []
+    errors = []
+    for plant in plants:
+        try:
+            info = oekofen_csv_info(plant["plant_id"], day)
+            fields = [x for x in info["column_names"] if x and x not in ("Datum", "Zeit")]
+            for field in set(fields):
+                field_counts[field] = field_counts.get(field, 0) + 1
+            signature = " | ".join(fields)
+            structures[signature] = structures.get(signature, 0) + 1
+            results.append({
+                "plant_id": plant["plant_id"], "plant_name": plant["plant_name"],
+                "serial_number": plant["serial_number"], "version": plant["version"],
+                "columns": info["columns"], "rows": info["rows"], "fields": fields,
+            })
+        except Exception as exc:
+            errors.append({"plant_id": plant["plant_id"], "plant_name": plant["plant_name"], "error": str(exc)[:300]})
+    available = len(results)
+    fields = [
+        {"name": name, "plants": count, "percent": round(count * 100 / available, 1) if available else 0}
+        for name, count in sorted(field_counts.items(), key=lambda x: (-x[1], x[0].lower()))
+    ]
+    return {
+        "day": day, "known_plants": len(plants), "available_plants": available,
+        "error_plants": len(errors), "unique_fields": len(field_counts),
+        "unique_structures": len(structures), "fields": fields,
+        "plants": results, "errors": errors,
     }
 
 
@@ -6496,7 +6574,25 @@ def portal_admin_dashboard_templates(ins_portal_session: str | None = Cookie(def
     result=[]
     for r in rows:
         x=dict(r);x["template"]=json.loads(x.pop("template_json") or "{}");result.append(x)
-    return {"templates":result}
+    builtin = {
+        "id": "builtin-oekofen-metrics",
+        "name": "ÖkoFEN Metriken",
+        "block_type": "card",
+        "source_type": "oekofen",
+        "builtin": True,
+        "template": {
+            "title": "ÖkoFEN Metriken",
+            "items": [
+                {"source_type":"oekofen","scope":"metric","key":"burner_starts","label":"Brennerstarts","live_display":"value"},
+                {"source_type":"oekofen","scope":"metric","key":"combustion_hours","label":"Brennzeit","live_display":"value"},
+                {"source_type":"oekofen","scope":"metric","key":"avg_combustion_minutes","label":"Ø Brennzeit / Start","live_display":"value"},
+                {"source_type":"oekofen","scope":"metric","key":"suction_events","label":"Saugvorgänge","live_display":"value"},
+                {"source_type":"oekofen","scope":"metric","key":"suction_minutes","label":"Turbinenlaufzeit","live_display":"value"},
+                {"source_type":"oekofen","scope":"metric","key":"feed_motor_minutes","label":"Einschubmotor","live_display":"value"},
+            ],
+        },
+    }
+    return {"templates":[builtin, *result]}
 
 @app.post("/portal/api/admin/dashboard-templates")
 def portal_admin_dashboard_template_create(item: PortalDashboardTemplateSave,ins_portal_session: str | None = Cookie(default=None)):
@@ -6587,6 +6683,14 @@ def portal_admin_source_samples(source_type: str, source_ref: str, ins_portal_se
         for r in csv.DictReader(io.StringIO(raw)):
             if r.get("_field"):signals.append({"scope":"history","key":r["_field"],"label":r["_field"],"sample":r.get("_value")})
     except Exception:pass
+    signals.extend([
+        {"scope":"metric","key":"burner_starts","label":"Brennerstarts","sample":"Zeitraum"},
+        {"scope":"metric","key":"combustion_hours","label":"Brennzeit","sample":"Zeitraum"},
+        {"scope":"metric","key":"avg_combustion_minutes","label":"Ø Brennzeit / Start","sample":"Zeitraum"},
+        {"scope":"metric","key":"suction_events","label":"Saugvorgänge","sample":"Zeitraum"},
+        {"scope":"metric","key":"suction_minutes","label":"Turbinenlaufzeit","sample":"Zeitraum"},
+        {"scope":"metric","key":"feed_motor_minutes","label":"Einschubmotor","sample":"Zeitraum"},
+    ])
     return {"source_type":"oekofen","source_ref":source_ref,"signals":signals}
 
 @app.get("/portal/api/admin/oekofen/{plant_id}/available-signals")
@@ -6726,6 +6830,31 @@ def customer_portal_asset(asset_name: str):
         raise HTTPException(404, "CUSTOMER_PORTAL_NOT_DEPLOYED")
     return FileResponse(path)
 
+def _oekofen_dashboard_metrics(plant_id: str, period: str) -> dict[str, str]:
+    days = {"24h": 1, "7d": 7, "30d": 30}.get(period, 1)
+    end = datetime.now(ZoneInfo("Europe/Vienna")).date()
+    results = []
+    for offset in range(days - 1, -1, -1):
+        day = (end - timedelta(days=offset)).isoformat()
+        try:
+            results.append(oekofen_daily_analysis(plant_id, day))
+        except Exception:
+            continue
+    starts = sum(x.get("burner_cycles", {}).get("count", 0) for x in results)
+    combustion = sum(x.get("burner_cycles", {}).get("total_combustion_minutes", 0) or 0 for x in results)
+    suction_events = sum(x.get("material_handling", {}).get("suction_events", 0) or 0 for x in results)
+    suction_minutes = sum(x.get("material_handling", {}).get("suction_minutes", 0) or 0 for x in results)
+    feed_minutes = sum(x.get("material_handling", {}).get("feed_motor_minutes", 0) or 0 for x in results)
+    return {
+        "burner_starts": str(starts),
+        "combustion_hours": f"{combustion / 60:.1f} h",
+        "avg_combustion_minutes": f"{combustion / starts:.0f} min" if starts else "–",
+        "suction_events": str(suction_events),
+        "suction_minutes": f"{suction_minutes:.0f} min",
+        "feed_motor_minutes": f"{feed_minutes:.0f} min",
+    }
+
+
 def _dashboard_preview_payload(config_id:int,period:str="24h"):
     ranges={"24h":"-24h","7d":"-7d","30d":"-30d"};windows={"24h":"10m","7d":"1h","30d":"4h"}
     if period not in ranges:raise HTTPException(400,"INVALID_PERIOD")
@@ -6748,8 +6877,21 @@ def _dashboard_preview_payload(config_id:int,period:str="24h"):
                     if tsi is not None and int(tsi)==si:
                         needed.append(it["target_key"])
         if src["source_type"]!="oekofen" or not needed:continue
+        metric_keys=set()
+        for b in cfg.get("blocks",[]):
+            for it in b.get("items",[]):
+                if it.get("scope")=="metric" and int(it.get("source_index",-1))==si and it.get("key"):
+                    metric_keys.add(it["key"])
+        if metric_keys:
+            try:
+                metrics=_oekofen_dashboard_metrics(src["source_ref"],period)
+                for key in metric_keys:
+                    if key in metrics: live[f"{si}:{key}"]=metrics[key]
+            except Exception:
+                pass
+        real_needed=[key for key in needed if key not in metric_keys]
         try:
-            vals=oekofen_fetch_variables(src["source_ref"],list(dict.fromkeys(needed)))
+            vals=oekofen_fetch_variables(src["source_ref"],list(dict.fromkeys(real_needed))) if real_needed else []
             for x in vals:
                 if x.get("name") in needed:live[f"{si}:{x['name']}"]=oekofen_format_variable(x)
         except Exception:pass
@@ -6765,8 +6907,8 @@ def _dashboard_preview_payload(config_id:int,period:str="24h"):
                     tsi=source_index if target_source_index is None else target_source_index
                     if tsi is not None and int(tsi)==si:
                         displays[it["target_key"]]="line"
-        analog=[k for k in set(needed) if displays.get(k) not in ("binary","percent_binary","mixer")]
-        discrete=[k for k in set(needed) if displays.get(k) in ("binary","percent_binary","mixer")]
+        analog=[k for k in set(real_needed) if displays.get(k) not in ("binary","percent_binary","mixer")]
+        discrete=[k for k in set(real_needed) if displays.get(k) in ("binary","percent_binary","mixer")]
         queries=[]
         if analog:
             fields=" or ".join(['r._field=="'+k.replace('"','\\\"')+'"' for k in analog])
