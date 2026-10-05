@@ -223,7 +223,7 @@ async function hydrateDashboardSources(){
  }
 }
 function relinkSavedBlockSignals(){
- dashboardBlocks.forEach(b=>b.items.forEach(it=>{const idx=dashboardSignals.findIndex(sig=>sig.source_index===Number(it.source_index)&&sig.scope===it.scope&&sig.key===it.key);it.signal=idx>=0?String(idx):""}))
+ dashboardBlocks.forEach(b=>b.items.forEach(it=>{const idx=dashboardSignals.findIndex(sig=>sig.source_index===Number(it.source_index)&&sig.scope===it.scope&&sig.key===it.key);it.signal=idx>=0?String(idx):"";if(it.target_key){const ti=dashboardSignals.findIndex(sig=>sig.source_index===Number(it.target_source_index??it.source_index)&&sig.scope===it.target_scope&&sig.key===it.target_key);it.target_signal=ti>=0?String(ti):""}}))
 }
 loadExistingDashboard.onclick=async()=>{
  const d=dashboardConfigs.find(x=>String(x.id)===String(existingDashboard.value));if(!d)return;
