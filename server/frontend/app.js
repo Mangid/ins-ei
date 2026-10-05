@@ -87,6 +87,7 @@ function setView(view){
   instanceSection.classList.toggle("hidden",view!=="instances");systemPage.classList.toggle("hidden",view!=="system");
   document.querySelectorAll("nav a").forEach(x=>x.classList.remove("active"));
   (view==="customers"?navCustomers:(view==="tasks"?navTasks:(view==="projects"?navProjects:(view==="oekofen"?navOekofen:(view==="mypv"?navMypv:(view==="instances"?navInstances:(view==="system"?navSystem:navDashboard))))))).classList.add("active");
+  document.querySelector("nav a.active")?.closest(".nav-group")?.classList.add("open");
   if(view==="dashboard") loadMyDay();if(view==="system") loadSystemMetrics();if(view==="customers") loadCustomers(customerSearch.value.trim());if(view==="visits") loadVisitBoard();if(view==="maintenances") loadMaintenances();if(view==="tasks") loadTasks();if(view==="projects") loadProjects();if(view==="oekofen") loadOekofen();if(view==="mypv") loadMypv();
 }
 function navigate(view){setView(view);history.replaceState(null,"","#"+view)}
@@ -600,6 +601,15 @@ function openMypvDialog(item=null){
 document.getElementById("newMypv")?.addEventListener("click",()=>openMypvDialog());
 document.getElementById("mypvSearch")?.addEventListener("input",renderMypv);
 document.getElementById("navMypv")?.addEventListener("click",()=>setTimeout(loadMypv,0));
-document.querySelectorAll(".nav-group-toggle").forEach(btn=>btn.addEventListener("click",()=>btn.closest(".nav-group")?.classList.toggle("open")));
-function openActiveNavGroup(){document.querySelectorAll(".nav-group").forEach(g=>g.classList.toggle("open",!!g.querySelector("a.active")))}
-window.addEventListener("hashchange",openActiveNavGroup);setTimeout(openActiveNavGroup,0);
+document.querySelectorAll(".nav-group-toggle").forEach(btn=>btn.addEventListener("click",e=>{
+ e.preventDefault();e.stopPropagation();
+ const group=btn.closest(".nav-group");if(!group)return;
+ group.classList.toggle("open");
+ group.dataset.userToggled=group.classList.contains("open")?"open":"closed";
+}));
+function openActiveNavGroup(){
+ document.querySelectorAll(".nav-group").forEach(g=>{
+   if(g.querySelector("a.active"))g.classList.add("open");
+ });
+}
+setTimeout(openActiveNavGroup,0);
