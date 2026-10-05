@@ -5419,6 +5419,39 @@ def mypv_read_device(mypv_id: int, endpoint: str="data") -> Any:
         result=mypv_api_get(row["serial_number"],token,endpoint)
     return result
 
+MYPV_DASHBOARD_SIGNALS = {
+    "power_ac9": ("AC•THOR Leistung", "W", 1.0),
+    "power_solar_ac9": ("Leistung aus PV", "W", 1.0),
+    "power_grid_ac9": ("Leistung aus Netz", "W", 1.0),
+    "surplus": ("Überschuss", "W", 1.0),
+    "power_nominal": ("Nennleistung", "W", 1.0),
+    "power_max": ("Maximalleistung", "W", 1.0),
+    "error_state": ("Fehlerstatus", "", 1.0),
+    "blockactive": ("Sperre aktiv", "", 1.0),
+    "boostactive": ("Boost aktiv", "", 1.0),
+    "pump_pwm": ("Pumpenansteuerung", "%", 1.0),
+    "volt_mains": ("Netzspannung L1", "V", 1.0),
+    "curr_mains": ("Strom L1", "A", 1.0),
+    "fan_speed": ("Lüfterdrehzahl", "", 1.0),
+    "ctrlstate": ("Regelzustand", "", 1.0),
+}
+
+def mypv_dashboard_signals(value: Any) -> list[dict[str,Any]]:
+    if not isinstance(value,dict): return []
+    out=[]
+    for key,(label,unit,factor) in MYPV_DASHBOARD_SIGNALS.items():
+        raw=value.get(key)
+        if raw is None or raw=="null": continue
+        sample=raw
+        if isinstance(raw,(int,float)) and factor!=1.0: sample=round(raw*factor,2)
+        out.append({"scope":"live","key":key,"label":label,"sample":sample,"unit":unit})
+    # Device temperatures are only exposed when the API actually reports a value.
+    for idx in range(1,5):
+        key=f"temp{idx}";raw=value.get(key)
+        if raw is not None and raw!="null":
+            out.append({"scope":"live","key":key,"label":f"Temperatur {idx}","sample":raw,"unit":"°C"})
+    return out
+
 def mypv_flatten_signals(value: Any, prefix: str="") -> list[dict[str,Any]]:
     out=[]
     if isinstance(value,dict):
@@ -7095,7 +7128,7 @@ def portal_admin_source_samples(source_type: str, source_ref: str, ins_portal_se
             data=mypv_read_device(int(source_ref),"data")
             if isinstance(data,dict) and int(data.get("status") or 0)==202:
                 return {"source_type":"mypv","source_ref":source_ref,"signals":[],"note":"my-PV Gerät wird aktiviert. Signale in wenigen Sekunden erneut laden."}
-            signals=mypv_flatten_signals(data)
+            signals=mypv_dashboard_signals(data)
             return {"source_type":"mypv","source_ref":source_ref,"signals":signals}
         except Exception as exc:
             return {"source_type":"mypv","source_ref":source_ref,"signals":[],"note":str(exc)}
@@ -7302,7 +7335,7 @@ def _dashboard_preview_payload(config_id:int,period:str="24h"):
         if src["source_type"]=="mypv" and needed:
             try:
                 raw=mypv_read_device(int(src["source_ref"]),"data")
-                flat={x["key"]:x.get("sample") for x in mypv_flatten_signals(raw)}
+                flat={x["key"]:x.get("sample") for x in mypv_dashboard_signals(raw)}
                 for key in needed:
                     if key in flat: live[f"{si}:{key}"]=flat[key]
             except Exception:
