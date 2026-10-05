@@ -3047,11 +3047,23 @@ def oekofen_daily_analysis(
     daily_runtimes = {
         "heating_pump_minutes": active_runtime_minutes("HK1 Pumpe"),
         "buffer_pump_minutes": active_runtime_minutes("PU1 Pumpe[%]"),
-        "solar_pump_minutes": active_runtime_minutes("SK1 Pumpe"),
+        "solar_pump_minutes": active_runtime_minutes("SK1 Pumpe[%]") + active_runtime_minutes("SK2 Pumpe[%]"),
     }
     solar = {
-        "collector": _oekofen_stats(numeric("SK1 Kollektor[°C]")),
-        "storage": _oekofen_stats(numeric("SK1 Speicher[°C]")),
+        "collector": _oekofen_stats(numeric("SK1 Koll[°C]") + numeric("SK2 Koll[°C]")),
+        "storage": _oekofen_stats(numeric("SK1 SPUnten[°C]") + numeric("SK2 SPUnten[°C]")),
+        "circuit_1": {
+            "collector": _oekofen_stats(numeric("SK1 Koll[°C]")),
+            "storage": _oekofen_stats(numeric("SK1 SPUnten[°C]")),
+            "pump_percent": _oekofen_stats(numeric("SK1 Pumpe[%]")),
+            "pump_minutes": active_runtime_minutes("SK1 Pumpe[%]"),
+        },
+        "circuit_2": {
+            "collector": _oekofen_stats(numeric("SK2 Koll[°C]")),
+            "storage": _oekofen_stats(numeric("SK2 SPUnten[°C]")),
+            "pump_percent": _oekofen_stats(numeric("SK2 Pumpe[%]")),
+            "pump_minutes": active_runtime_minutes("SK2 Pumpe[%]"),
+        },
     }
 
     error_counts: dict[str, int] = {}
