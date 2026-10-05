@@ -6726,9 +6726,13 @@ def portal_admin_dashboard_preview_data(config_id:int,period:str="24h",ins_porta
         needed=[]
         for b in cfg.get("blocks",[]):
             for it in b.get("items",[]):
-                if int(it.get("source_index",-1))==si and it.get("key"):
+                source_index=it.get("source_index",-1)
+                target_source_index=it.get("target_source_index")
+                if source_index is not None and int(source_index)==si and it.get("key"):
                     needed.append(it["key"])
-                    if it.get("target_key") and int(it.get("target_source_index",it.get("source_index",-1)))==si:
+                if it.get("target_key"):
+                    tsi=source_index if target_source_index is None else target_source_index
+                    if tsi is not None and int(tsi)==si:
                         needed.append(it["target_key"])
         if src["source_type"]!="oekofen" or not needed:continue
         try:
@@ -6740,9 +6744,13 @@ def portal_admin_dashboard_preview_data(config_id:int,period:str="24h",ins_porta
         displays={}
         for b in cfg.get("blocks",[]):
             for it in b.get("items",[]):
-                if int(it.get("source_index",-1))==si and it.get("key"):
+                source_index=it.get("source_index",-1)
+                target_source_index=it.get("target_source_index")
+                if source_index is not None and int(source_index)==si and it.get("key"):
                     displays[it["key"]]=it.get("display","line")
-                    if it.get("target_key") and int(it.get("target_source_index",it.get("source_index",-1)))==si:
+                if it.get("target_key"):
+                    tsi=source_index if target_source_index is None else target_source_index
+                    if tsi is not None and int(tsi)==si:
                         displays[it["target_key"]]="line"
         analog=[k for k in set(needed) if displays.get(k) not in ("binary","percent_binary","mixer")]
         discrete=[k for k in set(needed) if displays.get(k) in ("binary","percent_binary","mixer")]
