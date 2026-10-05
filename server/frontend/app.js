@@ -87,12 +87,12 @@ function setView(view){
   instanceSection.classList.toggle("hidden",view!=="instances");systemPage.classList.toggle("hidden",view!=="system");
   document.querySelectorAll("nav a").forEach(x=>x.classList.remove("active"));
   (view==="customers"?navCustomers:(view==="tasks"?navTasks:(view==="projects"?navProjects:(view==="oekofen"?navOekofen:(view==="mypv"?navMypv:(view==="instances"?navInstances:(view==="system"?navSystem:navDashboard))))))).classList.add("active");
-  if(view==="dashboard") loadMyDay();if(view==="system") loadSystemMetrics();if(view==="customers") loadCustomers(customerSearch.value.trim());if(view==="visits") loadVisitBoard();if(view==="maintenances") loadMaintenances();if(view==="tasks") loadTasks();if(view==="projects") loadProjects();if(view==="oekofen") loadOekofen();
+  if(view==="dashboard") loadMyDay();if(view==="system") loadSystemMetrics();if(view==="customers") loadCustomers(customerSearch.value.trim());if(view==="visits") loadVisitBoard();if(view==="maintenances") loadMaintenances();if(view==="tasks") loadTasks();if(view==="projects") loadProjects();if(view==="oekofen") loadOekofen();if(view==="mypv") loadMypv();
 }
 function navigate(view){setView(view);history.replaceState(null,"","#"+view)}
 navDashboard.addEventListener("click",e=>{e.preventDefault();navigate("dashboard")});
 navInstances.addEventListener("click",e=>{e.preventDefault();navigate("instances")});navSystem.addEventListener("click",e=>{e.preventDefault();navigate("system")});
-navCustomers.addEventListener("click",e=>{e.preventDefault();navigate("customers")});navOekofen.addEventListener("click",e=>{e.preventDefault();navigate("oekofen")});navProjects.addEventListener("click",e=>{e.preventDefault();navigate("projects")});navTasks.addEventListener("click",e=>{e.preventDefault();navigate("tasks")});
+navCustomers.addEventListener("click",e=>{e.preventDefault();navigate("customers")});navOekofen.addEventListener("click",e=>{e.preventDefault();navigate("oekofen")});navMypv.addEventListener("click",e=>{e.preventDefault();navigate("mypv")});navProjects.addEventListener("click",e=>{e.preventDefault();navigate("projects")});navTasks.addEventListener("click",e=>{e.preventDefault();navigate("tasks")});
 window.addEventListener("hashchange",()=>setView(location.hash.slice(1)||"dashboard"));
 function bytesHuman(n){if(n==null)return "–";const units=["B","KB","MB","GB","TB"];let v=Number(n),i=0;while(v>=1024&&i<units.length-1){v/=1024;i++}return (i<2?v.toFixed(0):v.toFixed(1))+" "+units[i]}
 function uptimeHuman(s){if(s==null)return "–";const d=Math.floor(s/86400),h=Math.floor((s%86400)/3600);return d?d+" Tage "+h+" h":h+" h"}
@@ -505,7 +505,7 @@ async function taskForm(task=null,projectContext=null){
 newTask.onclick=()=>taskForm();
 async function routeFromHash(){
   const hash=location.hash.slice(1),parts=hash.split("/");
-  const view=["customers","instances","visits","maintenances","tasks","projects","oekofen","inventory"].includes(parts[0])?parts[0]:"dashboard";
+  const view=["customers","instances","visits","maintenances","tasks","projects","oekofen","mypv","inventory","system"].includes(parts[0])?parts[0]:"dashboard";
   setView(view);
   if(parts[0]==="tasks"&&parts[1]==="task"&&parts[2]){
     try{const r=await fetch("/api/v1/tasks?t="+Date.now(),{cache:"no-store"});if(r.ok){const d=await r.json(),task=(d.tasks||[]).find(x=>String(x.id)===parts[2]);if(task)await taskForm(task)}}catch(e){}
@@ -594,7 +594,7 @@ function openMypvDialog(item=null){
  const options=mypvLinkDevices.map(d=>'<option value="'+d.id+'" '+(item?.device_id===d.id?"selected":"")+'>'+esc(d.customer_name)+' · '+esc(d.installation_name)+' · '+esc(d.manufacturer||"Gerät")+' '+esc(d.model||"")+(d.serial_number?" · "+esc(d.serial_number):"")+'</option>').join("");
  box.innerHTML='<div class="detail"><div class="detail-nav"><button class="detail-back" data-close>← Zurück</button></div><div class="detail-head"><div><h2>'+(item?"my-PV bearbeiten":"my-PV Instanz hinzufügen")+'</h2><p>API-Zugang bleibt verschlüsselt auf dem INS-EI Server.</p></div></div><form id="mypvForm" class="customer-form"><label>Bezeichnung<input name="name" required value="'+esc(item?.name||"")+'" placeholder="z. B. AC•THOR Kaufmann"></label><div class="form-row"><label>Seriennummer<input name="serial" required value="'+esc(item?.serial_number||"")+'"></label><label>Gerät / Modell<input name="model" value="'+esc(item?.model||"")+'" placeholder="AC•THOR 9s"></label></div><label>API-Token<input name="token" type="password" '+(item?"":"required")+' placeholder="'+(item?"Leer lassen = bestehenden Token behalten":"API Zugriffstoken")+'" autocomplete="new-password"></label><label>Kundenanlage / Gerät<select name="device"><option value="">Noch nicht zuordnen</option>'+options+'</select></label><div class="form-actions">'+(item?'<button type="button" class="secondary" data-delete>Löschen</button>':'')+'<button class="primary" type="submit">Speichern</button></div></form></div>';
  box.querySelector("[data-close]").onclick=()=>box.remove();
- const form=box.querySelector("#mypvForm");form.onsubmit=async e=>{e.preventDefault();const fd=new FormData(form),body={name:fd.get("name"),serial_number:fd.get("serial"),model:fd.get("model")||null,api_token:fd.get("token")||null,device_id:fd.get("device")?Number(fd.get("device")):null};await apiFetch(item?"/api/v1/mypv/"+item.id:"/api/v1/mypv",{method:item?"PUT":"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});box.remove();loadMypv()};
+ const form=box.querySelector("#mypvForm");form.onsubmit=async e=>{e.preventDefault();const fd=new FormData(form),body={name:fd.get("name"),serial_number:fd.get("serial"),model:fd.get("model")||null,api_token:fd.get("token")||null,device_id:fd.get("device")?Number(fd.get("device")):null};await mypvFetch(item?"/api/v1/mypv/"+item.id:"/api/v1/mypv",{method:item?"PUT":"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});box.remove();loadMypv()};
  box.querySelector("[data-delete]")?.addEventListener("click",async()=>{if(!confirm("my-PV Instanz wirklich löschen?"))return;await mypvFetch("/api/v1/mypv/"+item.id,{method:"DELETE"});box.remove();loadMypv()});
 }
 document.getElementById("newMypv")?.addEventListener("click",()=>openMypvDialog());
