@@ -4,7 +4,7 @@ function chartInner(block,d,ci){
  const datasets=[],bands=[];for(const it of block.items||[]){const pts=d.history[(it.source_index??0)+":"+it.key]||[],label=(it.label&&it.label.trim())?it.label.trim():it.key;if(!pts.length)continue;
   if(["binary","percent_binary"].includes(it.display)){bands.push({label,kind:"state",pts});continue}
   if(it.display==="mixer"){bands.push({label,kind:"mixer",pts});continue}
-  const isPct=it.display==="percent"||String(it.key||"").includes("[%]");datasets.push({label,data:pts.map(p=>({x:Date.parse(p.time),y:p.value})),yAxisID:isPct?"yPct":"y",borderWidth:it._internal_setpoint?1.5:2,borderDash:it._internal_setpoint?[7,5]:undefined,pointRadius:0,tension:it._internal_setpoint?.12:.15,spanGaps:true})
+  const isPct=it.display==="percent"||String(it.key||"").includes("[%]");datasets.push({label,data:pts.map(p=>({x:Date.parse(p.time),y:p.value})),yAxisID:isPct?"yPct":"y",borderWidth:(it._internal_setpoint||it._setpoint_for)?1.5:2,borderDash:(it._internal_setpoint||it._setpoint_for)?[7,5]:undefined,pointRadius:0,tension:(it._internal_setpoint||it._setpoint_for)?.12:.15,spanGaps:true})
  }
  if(!datasets.length&&!bands.length)return'<div class="pv-empty">Keine Daten im gewählten Zeitraum.</div>';
  window.__chartConfigs=window.__chartConfigs||{};window.__chartConfigs[String(ci)]={datasets,bands};
