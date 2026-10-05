@@ -5421,6 +5421,38 @@ def mypv_read_device(mypv_id: int, endpoint: str="data") -> Any:
         result=mypv_api_get(row["serial_number"],token,endpoint)
     return result
 
+def mypv_logdata(mypv_id:int,begin_day:date,end_day:date,interval:str="15m",timezone_name:str="Europe/Vienna") -> Any:
+    with db() as con:
+        row=con.execute("SELECT * FROM mypv_devices WHERE id=?",(mypv_id,)).fetchone()
+    if row is None: raise HTTPException(404,"MYPV_NOT_FOUND")
+    return mypv_api_get(row["serial_number"],decrypt_credential(row["api_token_encrypted"]),"logdata",{
+        "beginDate":begin_day.isoformat(),"endDate":end_day.isoformat(),"timezone":timezone_name,"interval":interval
+    })
+
+def mypv_log_rows(payload:Any) -> dict[str,Any]:
+    if not isinstance(payload,dict): return {}
+    # API payload may be the timestamp map itself or wrap it in one object.
+    candidates=[payload]
+    candidates.extend(v for v in payload.values() if isinstance(v,dict))
+    for candidate in candidates:
+        if candidate and any("T" in str(k) for k in candidate.keys()):
+            return candidate
+    return {}
+
+def mypv_energy_kwh(rows:dict[str,Any],field:str="i_power",interval_minutes:int=15) -> float:
+    total_w=0.0
+    for row in rows.values():
+        if not isinstance(row,dict): continue
+        value=row.get(field)
+        value=value.get("sum") if isinstance(value,dict) else None
+        if isinstance(value,(int,float)): total_w += max(0.0,float(value))
+    return round(total_w*(interval_minutes/60.0)/1000.0,3)
+
+def mypv_today_energy_kwh(mypv_id:int) -> float:
+    today=datetime.now(ZoneInfo("Europe/Vienna")).date()
+    rows=mypv_log_rows(mypv_logdata(mypv_id,today,today+timedelta(days=1),"15m"))
+    return mypv_energy_kwh(rows)
+
 MYPV_DASHBOARD_SIGNALS = {
     "power_ac9": ("AC•THOR Leistung", "W", 1.0),
     "power_solar_ac9": ("Leistung aus PV", "W", 1.0),
@@ -7151,6 +7183,12 @@ def portal_admin_source_samples(source_type: str, source_ref: str, ins_portal_se
             if isinstance(data,dict) and int(data.get("status") or 0)==202:
                 return {"source_type":"mypv","source_ref":source_ref,"signals":[],"note":"my-PV Gerät wird aktiviert. Signale in wenigen Sekunden erneut laden."}
             signals=mypv_dashboard_signals(data)
+            try:
+                energy=mypv_today_energy_kwh(int(source_ref))
+                signals.append({"scope":"metric","key":"energy_today_kwh","label":"Energie heute","sample":energy,"unit":"kWh"})
+            except Exception:
+                pass
+            signals.append({"scope":"history","key":"power","label":"AC•THOR Leistung","sample":"Zeitraum","unit":"W"})
             return {"source_type":"mypv","source_ref":source_ref,"signals":signals}
         except Exception as exc:
             return {"source_type":"mypv","source_ref":source_ref,"signals":[],"note":str(exc)}
@@ -7358,6 +7396,7 @@ def _dashboard_preview_payload(config_id:int,period:str="24h"):
             try:
                 raw=mypv_read_device(int(src["source_ref"]),"data")
                 flat={x["key"]:x.get("sample") for x in mypv_dashboard_signals(raw)}
+                if "energy_today_kwh" in needed: flat["energy_today_kwh"]=mypv_today_energy_kwh(int(src["source_ref"]))
                 for key in needed:
                     if key in flat: live[f"{si}:{key}"]=flat[key]
             except Exception:
