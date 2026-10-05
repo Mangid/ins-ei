@@ -1046,6 +1046,12 @@ def ins_ei_oekofen_daily_analysis(
 
 
 @mcp.tool()
+def ins_ei_oekofen_csv_field_inventory(day: str) -> dict[str, Any]:
+    """Inspect daily CSV field availability across all known OekoFEN plants."""
+    return oekofen_csv_field_inventory(day)
+
+
+@mcp.tool()
 def ins_ei_oekofen_csv_info(
     plant_id: str,
     day: str,
@@ -3069,6 +3075,44 @@ def oekofen_daily_analysis(
             "INS-EI does not assign semantic meanings to unknown "
             "OekoFEN status codes yet."
         ),
+    }
+
+
+def oekofen_csv_field_inventory(day: str) -> dict[str, Any]:
+    """Inspect one daily CSV across all known OekoFEN plants and count available fields."""
+    with db() as con:
+        plants = [dict(r) for r in con.execute(
+            "SELECT plant_id, plant_name, serial_number, version FROM oekofen_plants ORDER BY plant_name COLLATE NOCASE"
+        ).fetchall()]
+    field_counts: dict[str, int] = {}
+    structures: dict[str, int] = {}
+    results = []
+    errors = []
+    for plant in plants:
+        try:
+            info = oekofen_csv_info(plant["plant_id"], day)
+            fields = [x for x in info["column_names"] if x and x not in ("Datum", "Zeit")]
+            for field in set(fields):
+                field_counts[field] = field_counts.get(field, 0) + 1
+            signature = " | ".join(fields)
+            structures[signature] = structures.get(signature, 0) + 1
+            results.append({
+                "plant_id": plant["plant_id"], "plant_name": plant["plant_name"],
+                "serial_number": plant["serial_number"], "version": plant["version"],
+                "columns": info["columns"], "rows": info["rows"], "fields": fields,
+            })
+        except Exception as exc:
+            errors.append({"plant_id": plant["plant_id"], "plant_name": plant["plant_name"], "error": str(exc)[:300]})
+    available = len(results)
+    fields = [
+        {"name": name, "plants": count, "percent": round(count * 100 / available, 1) if available else 0}
+        for name, count in sorted(field_counts.items(), key=lambda x: (-x[1], x[0].lower()))
+    ]
+    return {
+        "day": day, "known_plants": len(plants), "available_plants": available,
+        "error_plants": len(errors), "unique_fields": len(field_counts),
+        "unique_structures": len(structures), "fields": fields,
+        "plants": results, "errors": errors,
     }
 
 
