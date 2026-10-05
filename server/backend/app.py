@@ -7183,13 +7183,17 @@ def portal_admin_source_samples(source_type: str, source_ref: str, ins_portal_se
             if isinstance(data,dict) and int(data.get("status") or 0)==202:
                 return {"source_type":"mypv","source_ref":source_ref,"signals":[],"note":"my-PV Gerät wird aktiviert. Signale in wenigen Sekunden erneut laden."}
             signals=mypv_dashboard_signals(data)
+            energy_note=None
             try:
                 energy=mypv_today_energy_kwh(int(source_ref))
-                signals.append({"scope":"live","key":"energy_today_kwh","label":"Energie heute","sample":energy,"unit":"kWh","calculated":True})
-            except Exception:
-                pass
+            except Exception as exc:
+                energy=None
+                energy_note=f"Energie heute konnte nicht berechnet werden: {exc}"
+            signals.append({"scope":"live","key":"energy_today_kwh","label":"Energie heute","sample":energy,"unit":"kWh","calculated":True})
             signals.append({"scope":"history","key":"power","label":"AC•THOR Leistung","sample":"Zeitraum","unit":"W"})
-            return {"source_type":"mypv","source_ref":source_ref,"signals":signals}
+            result={"source_type":"mypv","source_ref":source_ref,"signals":signals}
+            if energy_note: result["note"]=energy_note
+            return result
         except Exception as exc:
             return {"source_type":"mypv","source_ref":source_ref,"signals":[],"note":str(exc)}
     if source_type!="oekofen":return {"source_type":source_type,"source_ref":source_ref,"signals":[],"note":"Connector noch nicht implementiert"}
