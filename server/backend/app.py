@@ -6711,9 +6711,7 @@ def customer_portal_asset(asset_name: str):
         raise HTTPException(404, "CUSTOMER_PORTAL_NOT_DEPLOYED")
     return FileResponse(path)
 
-@app.get("/dev-portal/api/admin/dashboard-configs/{config_id}/preview-data")
-def portal_admin_dashboard_preview_data(config_id:int,period:str="24h",ins_portal_session: str | None = Cookie(default=None)):
-    _portal_admin(ins_portal_session)
+def _dashboard_preview_payload(config_id:int,period:str="24h"):
     ranges={"24h":"-24h","7d":"-7d","30d":"-30d"};windows={"24h":"10m","7d":"1h","30d":"4h"}
     if period not in ranges:raise HTTPException(400,"INVALID_PERIOD")
     with db() as con:
@@ -6774,6 +6772,27 @@ def portal_admin_dashboard_preview_data(config_id:int,period:str="24h",ins_porta
                     history.setdefault(f"{si}:{r.get('_field','')}",[]).append({"time":r.get("_time"),"value":v})
             except Exception:pass
     return {"id":row["id"],"name":row["name"],"description":cfg.get("description",""),"blocks":cfg.get("blocks",[]),"sources":sources,"live":live,"history":history,"period":period}
+
+@app.get("/dev-portal/api/admin/dashboard-configs/{config_id}/preview-data")
+def portal_admin_dashboard_preview_data(config_id:int,period:str="24h",ins_portal_session: str | None = Cookie(default=None)):
+    _portal_admin(ins_portal_session)
+    return _dashboard_preview_payload(config_id,period)
+
+def _portal_dashboard_access(config_id:int, user:dict[str,Any]) -> None:
+    if user.get("is_admin"): return
+    with db() as con:
+        row=con.execute("""SELECT c.id FROM portal_dashboard_configs c
+            LEFT JOIN portal_dashboard_access a ON a.dashboard_config_id=c.id AND a.user_id=?
+            LEFT JOIN portal_users u ON u.id=?
+            WHERE c.id=? AND c.active=1 AND (a.user_id IS NOT NULL OR u.custom_dashboard_id=c.id)""",
+            (user["id"],user["id"],config_id)).fetchone()
+    if row is None: raise HTTPException(403,"PORTAL_DASHBOARD_FORBIDDEN")
+
+@app.get("/portal/api/dashboard/{config_id}/data")
+def customer_portal_dashboard_data(config_id:int,period:str="24h",ins_portal_session: str | None = Cookie(default=None)):
+    user=_portal_session(ins_portal_session)
+    _portal_dashboard_access(config_id,user)
+    return _dashboard_preview_payload(config_id,period)
 
 @app.get("/dev-portal/preview/{config_id}")
 def customer_portal_dev_preview(config_id:int,ins_service_session: str | None = Cookie(default=None)):
