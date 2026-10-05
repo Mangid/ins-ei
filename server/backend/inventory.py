@@ -412,9 +412,8 @@ def configure_inventory(db_path) -> None:
             check_id=cur.lastrowid
             rows=con.execute("SELECT id,minimum_stock,target_stock FROM inventory_items WHERE active=1 AND is_consumable=1 ORDER BY name COLLATE NOCASE").fetchall()
             for row in rows:
-                # Quantitative if either total or bus minimum is configured; otherwise qualitative.
-                mode="count" if float(row["minimum_stock"] or 0)>0 or float(row["target_stock"] or 0)>0 else "sufficient"
-                con.execute("INSERT INTO inventory_check_items(check_id,item_id,mode) VALUES(?,?,?)",(check_id,row["id"],mode))
+                # Consumables are intentionally not quantity-tracked during stock checks.
+                con.execute("INSERT INTO inventory_check_items(check_id,item_id,mode) VALUES(?,?,?)",(check_id,row["id"],"sufficient"))
         return {"id":check_id,"existing":False}
 
     @router.get("/checks/{check_id}")
@@ -441,14 +440,13 @@ def configure_inventory(db_path) -> None:
         now=_now()
         result=str(payload.get("result") or "")
         counted=payload.get("counted") or {}
-        if result not in {"sufficient","counted"}:
+        if result not in {"sufficient","reorder"}:
             raise HTTPException(400,"INVENTORY_CHECK_RESULT_INVALID")
         with connect() as con:
             row=con.execute("SELECT mode FROM inventory_check_items WHERE id=? AND check_id=?",(check_item_id,check_id)).fetchone()
             if row is None: raise HTTPException(404,"INVENTORY_CHECK_ITEM_NOT_FOUND")
-            if row["mode"]=="count" and result!="counted": raise HTTPException(400,"INVENTORY_CHECK_COUNT_REQUIRED")
             con.execute("UPDATE inventory_check_items SET result=?,counted_json=?,checked_at=? WHERE id=?",
-                        (result,json.dumps(counted),now,check_item_id))
+                        (result,json.dumps({}),now,check_item_id))
         return {"updated":True}
 
     @router.post("/checks/{check_id}/complete")
@@ -461,17 +459,18 @@ def configure_inventory(db_path) -> None:
             if pending: raise HTTPException(409,f"INVENTORY_CHECK_INCOMPLETE:{pending}")
             rows=con.execute("SELECT * FROM inventory_check_items WHERE check_id=?",(check_id,)).fetchall()
             for row in rows:
-                if row["mode"]=="count":
-                    counted=json.loads(row["counted_json"] or "{}")
-                    for location_id,value in counted.items():
-                        qty=max(0,float(value or 0))
-                        con.execute("""INSERT INTO inventory_stock(item_id,location_id,quantity,updated_at)
-                            VALUES(?,?,?,?) ON CONFLICT(item_id,location_id)
-                            DO UPDATE SET quantity=excluded.quantity,updated_at=excluded.updated_at""",
-                            (row["item_id"],int(location_id),qty,now))
                 con.execute("UPDATE inventory_items SET last_stock_check_at=?,updated_at=? WHERE id=?",(now,now,row["item_id"]))
             con.execute("UPDATE inventory_checks SET status='completed',completed_at=? WHERE id=?",(now,check_id))
         return {"completed":True,"id":check_id}
+
+    @router.get("/checks/{check_id}/order-list")
+    def inventory_check_order_list(check_id: int):
+        with connect() as con:
+            rows=con.execute("""SELECT i.id,i.article_number,i.name,i.manufacturer,i.supplier,i.unit
+                FROM inventory_check_items ci JOIN inventory_items i ON i.id=ci.item_id
+                WHERE ci.check_id=? AND ci.result='reorder'
+                ORDER BY COALESCE(i.supplier,''),i.name COLLATE NOCASE""",(check_id,)).fetchall()
+        return [dict(r) for r in rows]
 
     @router.post("/items/{item_id}/files")
     async def inventory_file_upload(item_id: int, file: UploadFile = File(...),
