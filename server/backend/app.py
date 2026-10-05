@@ -6702,9 +6702,17 @@ def customer_portal_index():
     return FileResponse(path)
 
 
+@app.get("/portal/dashboard/{config_id}")
+def customer_portal_dashboard(config_id:int,ins_portal_session: str | None = Cookie(default=None)):
+    user=_portal_session(ins_portal_session)
+    _portal_dashboard_access(config_id,user)
+    path=CUSTOMER_PORTAL_DIR/"dashboard.html"
+    if not path.exists(): raise HTTPException(404,"CUSTOMER_DASHBOARD_NOT_DEPLOYED")
+    return FileResponse(path)
+
 @app.get("/portal/{asset_name}")
 def customer_portal_asset(asset_name: str):
-    if asset_name not in {"portal.css", "portal.js"}:
+    if asset_name not in {"portal.css", "portal.js", "dashboard.js"}:
         raise HTTPException(404, "PORTAL_ASSET_NOT_FOUND")
     path = CUSTOMER_PORTAL_DIR / asset_name
     if not path.exists():
