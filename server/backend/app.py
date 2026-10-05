@@ -7158,6 +7158,22 @@ def portal_admin_dashboard_builder_data(ins_portal_session: str | None = Cookie(
 @app.get("/portal/api/admin/source-history")
 def portal_admin_source_history(source_type:str,source_ref:str,keys:str,period:str="24h",ins_portal_session: str | None = Cookie(default=None)):
     _portal_admin(ins_portal_session)
+    if source_type=="mypv":
+        if period not in ("24h","7d","30d"):raise HTTPException(400,"INVALID_PERIOD")
+        wanted=[x for x in keys.split(",") if x][:20]
+        if "power" not in wanted:return {"series":{}}
+        local_now=datetime.now(ZoneInfo("Europe/Vienna"))
+        days={"24h":1,"7d":7,"30d":30}[period]
+        begin=local_now.date()-timedelta(days=days-1)
+        end=local_now.date()+timedelta(days=1)
+        interval={"24h":"15m","7d":"1h","30d":"1d"}[period]
+        payload=mypv_logdata(int(source_ref),begin,end,interval)
+        rows=mypv_log_rows(payload);points=[]
+        for ts,row in rows.items():
+            if not isinstance(row,dict):continue
+            val=row.get("i_power");val=val.get("sum") if isinstance(val,dict) else None
+            if isinstance(val,(int,float)):points.append({"time":ts,"value":float(val)})
+        return {"series":{"power":points}}
     if source_type!="oekofen":return {"series":{}}
     ranges={"24h":"-24h","7d":"-7d","30d":"-30d"};windows={"24h":"10m","7d":"1h","30d":"4h"}
     if period not in ranges:raise HTTPException(400,"INVALID_PERIOD")
