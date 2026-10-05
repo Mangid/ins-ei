@@ -77,16 +77,16 @@ function customerPicker(customers,name="customer_id",selected="",required=false,
 function bindCustomerPickers(root=document){
   root.querySelectorAll(".customer-picker").forEach(box=>{const input=box.querySelector(".customer-picker-search"),hidden=box.querySelector('input[type="hidden"]'),list=document.getElementById(input.getAttribute("list"));const sync=()=>{const opt=[...list.options].find(o=>o.value===input.value);hidden.value=opt?.dataset.id||"";box.querySelector(".customer-picker-hint").textContent=opt?"Kunde ausgewählt":"Bitte Kunde aus der Trefferliste wählen"};input.addEventListener("input",sync);input.addEventListener("change",sync)});
 }
-const pageTitles={dashboard:["Mein Tag","INS-EI Arbeitsübersicht"],instances:["INS-EI Instanzen","Live-Status"],customers:["Kunden","Kundenverwaltung"],visits:["Einsätze","Service & Dokumentation"],maintenances:["Wartungen","Wartungsverwaltung"],tasks:["Aufgaben","Offene Arbeiten & Termine"],projects:["Projekte","Projektübersicht"],oekofen:["ÖkoFEN Anlagen","Überwachung · automatischer Sync alle 5 Minuten"],system:["System","Server & Plattform"]};
+const pageTitles={dashboard:["Mein Tag","INS-EI Arbeitsübersicht"],instances:["INS-EI Instanzen","Live-Status"],customers:["Kunden","Kundenverwaltung"],visits:["Einsätze","Service & Dokumentation"],maintenances:["Wartungen","Wartungsverwaltung"],tasks:["Aufgaben","Offene Arbeiten & Termine"],projects:["Projekte","Projektübersicht"],oekofen:["ÖkoFEN Anlagen","Überwachung · automatischer Sync alle 5 Minuten"],mypv:["my-PV","Cloud-API Instanzen & Kundenzuordnung"],system:["System","Server & Plattform"]};
 function setPageTitle(view){const x=pageTitles[view]||["INS-EI","Servicezentrale"];document.getElementById("pageTitle").textContent=x[0];document.getElementById("todayLabel").textContent=x[1]}
 function setView(view){
   if(view==="dev-portal"){window.location.href="/dev-portal/";return}
   detail.classList.add("hidden");setPageTitle(view);
-  customerPage.classList.toggle("hidden",view!=="customers");visitsPage.classList.toggle("hidden",view!=="visits");maintenancesPage.classList.toggle("hidden",view!=="maintenances");tasksPage.classList.toggle("hidden",view!=="tasks");projectsPage.classList.toggle("hidden",view!=="projects");oekofenPage.classList.toggle("hidden",view!=="oekofen");
+  customerPage.classList.toggle("hidden",view!=="customers");visitsPage.classList.toggle("hidden",view!=="visits");maintenancesPage.classList.toggle("hidden",view!=="maintenances");tasksPage.classList.toggle("hidden",view!=="tasks");projectsPage.classList.toggle("hidden",view!=="projects");oekofenPage.classList.toggle("hidden",view!=="oekofen");document.getElementById("mypv")?.classList.toggle("hidden",view!=="mypv");
   dashboardSection.classList.toggle("hidden",view!=="dashboard");
   instanceSection.classList.toggle("hidden",view!=="instances");systemPage.classList.toggle("hidden",view!=="system");
   document.querySelectorAll("nav a").forEach(x=>x.classList.remove("active"));
-  (view==="customers"?navCustomers:(view==="tasks"?navTasks:(view==="projects"?navProjects:(view==="oekofen"?navOekofen:(view==="instances"?navInstances:(view==="system"?navSystem:navDashboard)))))).classList.add("active");
+  (view==="customers"?navCustomers:(view==="tasks"?navTasks:(view==="projects"?navProjects:(view==="oekofen"?navOekofen:(view==="mypv"?navMypv:(view==="instances"?navInstances:(view==="system"?navSystem:navDashboard))))))).classList.add("active");
   if(view==="dashboard") loadMyDay();if(view==="system") loadSystemMetrics();if(view==="customers") loadCustomers(customerSearch.value.trim());if(view==="visits") loadVisitBoard();if(view==="maintenances") loadMaintenances();if(view==="tasks") loadTasks();if(view==="projects") loadProjects();if(view==="oekofen") loadOekofen();
 }
 function navigate(view){setView(view);history.replaceState(null,"","#"+view)}
@@ -568,3 +568,7 @@ if(pushButton){pushButton.remove()}
 async function requestUpdate(id,target){if(!confirm(id+" auf "+target+" aktualisieren?"))return;try{const r=await fetch("/api/v1/fleet/"+encodeURIComponent(id)+"/update",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({target_version:target})});const j=await r.json();if(!r.ok)throw new Error(j.detail||("HTTP "+r.status));alert("Update für "+id+" auf "+target+" vorgemerkt. Die Instanz holt den Auftrag selbst ab.")}catch(e){alert("Update konnte nicht vorgemerkt werden: "+e.message)}}
 
 const refreshSystem=document.getElementById("refreshSystem");if(refreshSystem)refreshSystem.onclick=loadSystemMetrics;
+
+document.querySelectorAll(".nav-group-toggle").forEach(btn=>btn.addEventListener("click",()=>btn.closest(".nav-group")?.classList.toggle("open")));
+function openActiveNavGroup(){document.querySelectorAll(".nav-group").forEach(g=>g.classList.toggle("open",!!g.querySelector("a.active")))}
+window.addEventListener("hashchange",openActiveNavGroup);setTimeout(openActiveNavGroup,0);
