@@ -131,6 +131,8 @@ def init_inventory_db(db_path) -> None:
         CREATE INDEX IF NOT EXISTS idx_inventory_movements_customer ON inventory_movements(customer_id, occurred_at DESC);
         """)
         cols={row[1] for row in con.execute("PRAGMA table_info(inventory_items)").fetchall()}
+        if "ean" not in cols:
+            con.execute("ALTER TABLE inventory_items ADD COLUMN ean TEXT")
         if "is_consumable" not in cols:
             con.execute("ALTER TABLE inventory_items ADD COLUMN is_consumable INTEGER NOT NULL DEFAULT 0")
         if "check_interval_days" not in cols:
@@ -150,6 +152,7 @@ class InventoryLocationCreate(BaseModel):
 class InventoryItemCreate(BaseModel):
     name: str = Field(min_length=1)
     article_number: str | None = None
+    ean: str | None = None
     manufacturer: str | None = None
     category: str | None = None
     supplier: str | None = None
@@ -252,11 +255,11 @@ def configure_inventory(db_path) -> None:
         with connect() as con:
             try:
                 cur=con.execute("""INSERT INTO inventory_items
-                    (article_number,name,manufacturer,category,supplier,unit,sevdesk_object_id,
+                    (article_number,ean,name,manufacturer,category,supplier,unit,sevdesk_object_id,
                      sevdesk_article_number,purchase_price_net,sales_price_net,minimum_stock,
                      target_stock,is_consumable,check_interval_days,last_stock_check_at,notes,created_at,updated_at)
-                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                    (payload.article_number,payload.name,payload.manufacturer,payload.category,
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (payload.article_number,payload.ean,payload.name,payload.manufacturer,payload.category,
                      payload.supplier,payload.unit,payload.sevdesk_object_id,payload.sevdesk_article_number,
                      purchase_price_net,sales_price_net,payload.minimum_stock,
                      payload.target_stock,int(payload.is_consumable),payload.check_interval_days,payload.last_stock_check_at,payload.notes,now,now))
@@ -274,11 +277,11 @@ def configure_inventory(db_path) -> None:
                 raise HTTPException(404,"INVENTORY_ITEM_NOT_FOUND")
             try:
                 con.execute("""UPDATE inventory_items SET
-                    article_number=?,name=?,manufacturer=?,category=?,supplier=?,unit=?,
+                    article_number=?,ean=?,name=?,manufacturer=?,category=?,supplier=?,unit=?,
                     sevdesk_object_id=?,sevdesk_article_number=?,purchase_price_net=?,sales_price_net=?,
                     minimum_stock=?,target_stock=?,is_consumable=?,check_interval_days=?,last_stock_check_at=?,active=?,notes=?,updated_at=?
                     WHERE id=?""",
-                    (payload.article_number,payload.name,payload.manufacturer,payload.category,
+                    (payload.article_number,payload.ean,payload.name,payload.manufacturer,payload.category,
                      payload.supplier,payload.unit,payload.sevdesk_object_id,payload.sevdesk_article_number,
                      purchase_price_net,sales_price_net,payload.minimum_stock,
                      payload.target_stock,int(payload.is_consumable),payload.check_interval_days,payload.last_stock_check_at,int(payload.active),payload.notes,now,item_id))
@@ -381,7 +384,7 @@ def configure_inventory(db_path) -> None:
             needle=str(search or "").strip().casefold()
             for row in rows:
                 item=dict(row)
-                if needle and needle not in " ".join(str(item.get(k) or "") for k in ("article_number","name","manufacturer","category","supplier","sevdesk_article_number","notes")).casefold():
+                if needle and needle not in " ".join(str(item.get(k) or "") for k in ("article_number","ean","name","manufacturer","category","supplier","sevdesk_article_number","notes")).casefold():
                     continue
                 item["stocks"]=[dict(x) for x in con.execute("""SELECT l.id location_id,l.name,l.code,COALESCE(s.quantity,0) quantity
                     FROM inventory_locations l LEFT JOIN inventory_stock s ON s.location_id=l.id AND s.item_id=?
