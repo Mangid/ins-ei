@@ -571,10 +571,12 @@ const refreshSystem=document.getElementById("refreshSystem");if(refreshSystem)re
 
 
 let mypvDevices=[],mypvLinkDevices=[];
+async function mypvFetch(url,options={}){const r=await fetch(url,{cache:"no-store",...options});let d={};try{d=await r.json()}catch{}if(!r.ok)throw Error(d.detail||d.error||("HTTP "+r.status));return d}
+const mypvDateTime=v=>v?new Date(v).toLocaleString("de-AT"):"–";
 async function loadMypv(){
  const board=document.getElementById("mypvBoard");if(!board)return;
  try{
-  const [a,b]=await Promise.all([apiFetch("/api/v1/mypv"),apiFetch("/api/v1/mypv/link-options")]);
+  const [a,b]=await Promise.all([mypvFetch("/api/v1/mypv"),mypvFetch("/api/v1/mypv/link-options")]);
   mypvDevices=a.devices||[];mypvLinkDevices=b.devices||[];
   document.getElementById("mypvCount").textContent=mypvDevices.length+" Instanzen";
   renderMypv();
@@ -583,8 +585,8 @@ async function loadMypv(){
 function renderMypv(){
  const q=(document.getElementById("mypvSearch")?.value||"").toLowerCase();
  const rows=mypvDevices.filter(x=>!q||((x.name||"")+" "+(x.serial_number||"")+" "+(x.customer_name||"")+" "+(x.model||"")).toLowerCase().includes(q));
- mypvBoard.innerHTML=rows.map(x=>'<article class="service-card mypv-card"><div class="device-title"><div><strong>'+esc(x.name)+'</strong><small>'+esc(x.model||"my-PV")+' · SN '+esc(x.serial_number)+'</small></div><span class="status '+(x.last_online===1?"online":x.last_online===0?"offline":"")+'">'+(x.last_online===1?"Online":x.last_online===0?"Offline":"Nicht geprüft")+'</span></div><div class="task-meta"><span>Token: '+(x.token_configured?"hinterlegt":"fehlt")+'</span><span>'+(x.customer_name?esc(x.customer_name)+(x.installation_name?" · "+esc(x.installation_name):""):"Noch keiner Kundenanlage zugeordnet")+'</span>'+(x.last_check_at?'<span>Geprüft: '+fmtDateTime(x.last_check_at)+'</span>':'')+'</div>'+(x.last_error?'<div class="day-warning">'+esc(x.last_error)+'</div>':'')+'<div class="form-actions"><button class="secondary" data-mypv-test="'+x.id+'">Verbindung testen</button><button class="secondary" data-mypv-edit="'+x.id+'">Bearbeiten</button></div></article>').join("")||'<div class="card">Keine my-PV Instanzen vorhanden.</div>';
- mypvBoard.querySelectorAll("[data-mypv-test]").forEach(b=>b.onclick=async()=>{b.disabled=true;b.textContent="Prüfe …";try{const r=await apiFetch("/api/v1/mypv/"+b.dataset.mypvTest+"/test",{method:"POST"});await loadMypv();if(r.error)alert("my-PV: "+r.error)}finally{b.disabled=false}});
+ mypvBoard.innerHTML=rows.map(x=>'<article class="service-card mypv-card"><div class="device-title"><div><strong>'+esc(x.name)+'</strong><small>'+esc(x.model||"my-PV")+' · SN '+esc(x.serial_number)+'</small></div><span class="status '+(x.last_online===1?"online":x.last_online===0?"offline":"")+'">'+(x.last_online===1?"Online":x.last_online===0?"Offline":"Nicht geprüft")+'</span></div><div class="task-meta"><span>Token: '+(x.token_configured?"hinterlegt":"fehlt")+'</span><span>'+(x.customer_name?esc(x.customer_name)+(x.installation_name?" · "+esc(x.installation_name):""):"Noch keiner Kundenanlage zugeordnet")+'</span>'+(x.last_check_at?'<span>Geprüft: '+mypvDateTime(x.last_check_at)+'</span>':'')+'</div>'+(x.last_error?'<div class="day-warning">'+esc(x.last_error)+'</div>':'')+'<div class="form-actions"><button class="secondary" data-mypv-test="'+x.id+'">Verbindung testen</button><button class="secondary" data-mypv-edit="'+x.id+'">Bearbeiten</button></div></article>').join("")||'<div class="card">Keine my-PV Instanzen vorhanden.</div>';
+ mypvBoard.querySelectorAll("[data-mypv-test]").forEach(b=>b.onclick=async()=>{b.disabled=true;b.textContent="Prüfe …";try{const r=await mypvFetch("/api/v1/mypv/"+b.dataset.mypvTest+"/test",{method:"POST"});await loadMypv();if(r.error)alert("my-PV: "+r.error)}finally{b.disabled=false}});
  mypvBoard.querySelectorAll("[data-mypv-edit]").forEach(b=>b.onclick=()=>openMypvDialog(mypvDevices.find(x=>String(x.id)===b.dataset.mypvEdit)));
 }
 function openMypvDialog(item=null){
@@ -593,7 +595,7 @@ function openMypvDialog(item=null){
  box.innerHTML='<div class="detail"><div class="detail-nav"><button class="detail-back" data-close>← Zurück</button></div><div class="detail-head"><div><h2>'+(item?"my-PV bearbeiten":"my-PV Instanz hinzufügen")+'</h2><p>API-Zugang bleibt verschlüsselt auf dem INS-EI Server.</p></div></div><form id="mypvForm" class="customer-form"><label>Bezeichnung<input name="name" required value="'+esc(item?.name||"")+'" placeholder="z. B. AC•THOR Kaufmann"></label><div class="form-row"><label>Seriennummer<input name="serial" required value="'+esc(item?.serial_number||"")+'"></label><label>Gerät / Modell<input name="model" value="'+esc(item?.model||"")+'" placeholder="AC•THOR 9s"></label></div><label>API-Token<input name="token" type="password" '+(item?"":"required")+' placeholder="'+(item?"Leer lassen = bestehenden Token behalten":"API Zugriffstoken")+'" autocomplete="new-password"></label><label>Kundenanlage / Gerät<select name="device"><option value="">Noch nicht zuordnen</option>'+options+'</select></label><div class="form-actions">'+(item?'<button type="button" class="secondary" data-delete>Löschen</button>':'')+'<button class="primary" type="submit">Speichern</button></div></form></div>';
  box.querySelector("[data-close]").onclick=()=>box.remove();
  const form=box.querySelector("#mypvForm");form.onsubmit=async e=>{e.preventDefault();const fd=new FormData(form),body={name:fd.get("name"),serial_number:fd.get("serial"),model:fd.get("model")||null,api_token:fd.get("token")||null,device_id:fd.get("device")?Number(fd.get("device")):null};await apiFetch(item?"/api/v1/mypv/"+item.id:"/api/v1/mypv",{method:item?"PUT":"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});box.remove();loadMypv()};
- box.querySelector("[data-delete]")?.addEventListener("click",async()=>{if(!confirm("my-PV Instanz wirklich löschen?"))return;await apiFetch("/api/v1/mypv/"+item.id,{method:"DELETE"});box.remove();loadMypv()});
+ box.querySelector("[data-delete]")?.addEventListener("click",async()=>{if(!confirm("my-PV Instanz wirklich löschen?"))return;await mypvFetch("/api/v1/mypv/"+item.id,{method:"DELETE"});box.remove();loadMypv()});
 }
 document.getElementById("newMypv")?.addEventListener("click",()=>openMypvDialog());
 document.getElementById("mypvSearch")?.addEventListener("input",renderMypv);
