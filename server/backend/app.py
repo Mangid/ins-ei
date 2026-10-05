@@ -7185,7 +7185,7 @@ def portal_admin_source_samples(source_type: str, source_ref: str, ins_portal_se
             signals=mypv_dashboard_signals(data)
             try:
                 energy=mypv_today_energy_kwh(int(source_ref))
-                signals.append({"scope":"metric","key":"energy_today_kwh","label":"Energie heute","sample":energy,"unit":"kWh"})
+                signals.append({"scope":"live","key":"energy_today_kwh","label":"Energie heute","sample":energy,"unit":"kWh","calculated":True})
             except Exception:
                 pass
             signals.append({"scope":"history","key":"power","label":"AC•THOR Leistung","sample":"Zeitraum","unit":"W"})
