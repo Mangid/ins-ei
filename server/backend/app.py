@@ -3303,11 +3303,11 @@ def oekofen_metrics_range(plant_id: str, days: int) -> dict[str, Any]:
         "buffer_middle_avg_c": f"{sum(r['buffer_middle_avg_c'] for r in rows if r.get('buffer_middle_avg_c') is not None)/max(1,sum(1 for r in rows if r.get('buffer_middle_avg_c') is not None)):.1f} °C" if any(r.get("buffer_middle_avg_c") is not None for r in rows) else None,
         "buffer_pump_hours": f"{total('buffer_pump_minutes')/60:.1f} h" if any(r.get("buffer_pump_minutes") is not None for r in rows) else None,
         "hot_water_avg_c": f"{sum(r['hot_water_avg_c'] for r in rows if r.get('hot_water_avg_c') is not None)/max(1,sum(1 for r in rows if r.get('hot_water_avg_c') is not None)):.1f} °C" if any(r.get("hot_water_avg_c") is not None for r in rows) else None,
-        "hot_water_pump_hours": f"{total('hot_water_pump_minutes')/60:.1f} h" if any(r.get("hot_water_pump_minutes") is not None for r in rows) else None,
+        "hot_water_pump_hours": f"{total('hot_water_pump_minutes')/60:.1f} h" if total("hot_water_pump_minutes") > 0 else None,
         "hk1_flow_avg_c": f"{sum(r['heating_flow_avg_c'] for r in rows if r.get('heating_flow_avg_c') is not None)/max(1,sum(1 for r in rows if r.get('heating_flow_avg_c') is not None)):.1f} °C" if any(r.get("heating_flow_avg_c") is not None for r in rows) else None,
         "hk1_pump_hours": f"{total('heating_pump_minutes')/60:.1f} h" if any(r.get("heating_pump_minutes") is not None for r in rows) else None,
         "hk2_flow_avg_c": f"{sum(r['heating_circuit_2_flow_avg_c'] for r in rows if r.get('heating_circuit_2_flow_avg_c') is not None)/max(1,sum(1 for r in rows if r.get('heating_circuit_2_flow_avg_c') is not None)):.1f} °C" if any(r.get("heating_circuit_2_flow_avg_c") is not None for r in rows) else None,
-        "hk2_pump_hours": f"{total('heating_circuit_2_pump_minutes')/60:.1f} h" if any(r.get("heating_circuit_2_pump_minutes") is not None for r in rows) else None,
+        "hk2_pump_hours": f"{total('heating_circuit_2_pump_minutes')/60:.1f} h" if total("heating_circuit_2_pump_minutes") > 0 else None,
     }
     return {"days":len(rows),"values":values,"daily":rows}
 
@@ -6836,7 +6836,6 @@ def portal_admin_dashboard_templates(ins_portal_session: str | None = Cookie(def
                     {"source_type":"oekofen","scope":"metric","key":"shortest_combustion_minutes","label":"Kürzeste Brennphase"},
                     {"source_type":"oekofen","scope":"metric","key":"longest_combustion_minutes","label":"Längste Brennphase"},
                     {"source_type":"oekofen","scope":"metric","key":"short_cycle_percent","label":"Kurzstartquote < 30 min"},
-                    {"source_type":"oekofen","scope":"metric","key":"feed_motor_minutes","label":"Einschubmotor"},
                     {"source_type":"oekofen","scope":"metric","key":"feed_minutes_per_combustion_hour","label":"Einschub / Brennstunde"},
                     {"source_type":"oekofen","scope":"metric","key":"suction_events","label":"Saugvorgänge"},
                     {"source_type":"oekofen","scope":"metric","key":"error_count","label":"Fehler"}
@@ -6952,28 +6951,23 @@ def portal_admin_source_samples(source_type: str, source_ref: str, ins_portal_se
         for r in csv.DictReader(io.StringIO(raw)):
             if r.get("_field"):signals.append({"scope":"history","key":r["_field"],"label":r["_field"],"sample":r.get("_value")})
     except Exception:pass
-    signals.extend([
-        {"scope":"metric","key":"burner_starts","label":"Brennerstarts","sample":"Zeitraum"},
-        {"scope":"metric","key":"combustion_hours","label":"Brennzeit","sample":"Zeitraum"},
-        {"scope":"metric","key":"avg_combustion_minutes","label":"Ø Brennzeit / Start","sample":"Zeitraum"},
-        {"scope":"metric","key":"suction_events","label":"Saugvorgänge","sample":"Zeitraum"},
-        {"scope":"metric","key":"suction_minutes","label":"Turbinenlaufzeit","sample":"Zeitraum"},
-        {"scope":"metric","key":"feed_motor_minutes","label":"Einschubmotor","sample":"Zeitraum"},
-        {"scope":"metric","key":"feed_minutes_per_combustion_hour","label":"Einschub / Brennstunde","sample":"Zeitraum"},
-        {"scope":"metric","key":"short_cycle_percent","label":"Kurzstartquote < 30 min","sample":"Zeitraum"},
-        {"scope":"metric","key":"error_count","label":"Fehler","sample":"Zeitraum"},
-        {"scope":"metric","key":"shortest_combustion_minutes","label":"Kürzeste Brennphase","sample":"Zeitraum"},
-        {"scope":"metric","key":"longest_combustion_minutes","label":"Längste Brennphase","sample":"Zeitraum"},
-        {"scope":"metric","key":"buffer_top_avg_c","label":"Puffer oben Ø","sample":"Zeitraum"},
-        {"scope":"metric","key":"buffer_middle_avg_c","label":"Puffer Mitte Ø","sample":"Zeitraum"},
-        {"scope":"metric","key":"buffer_pump_hours","label":"Pufferpumpe","sample":"Zeitraum"},
-        {"scope":"metric","key":"hot_water_avg_c","label":"WW Temperatur Ø","sample":"Zeitraum"},
-        {"scope":"metric","key":"hot_water_pump_hours","label":"WW-Pumpe","sample":"Zeitraum"},
-        {"scope":"metric","key":"hk1_flow_avg_c","label":"HK1 Vorlauf Ø","sample":"Zeitraum"},
-        {"scope":"metric","key":"hk1_pump_hours","label":"HK1 Pumpenlaufzeit","sample":"Zeitraum"},
-        {"scope":"metric","key":"hk2_flow_avg_c","label":"HK2 Vorlauf Ø","sample":"Zeitraum"},
-        {"scope":"metric","key":"hk2_pump_hours","label":"HK2 Pumpenlaufzeit","sample":"Zeitraum"},
-    ])
+    metric_values = oekofen_metrics_range(source_ref, 30).get("values", {})
+    metric_labels = {
+        "burner_starts":"Brennerstarts","combustion_hours":"Brennzeit",
+        "avg_combustion_minutes":"Ø Brennzeit / Start","suction_events":"Saugvorgänge",
+        "suction_minutes":"Turbinenlaufzeit","feed_motor_minutes":"Einschubmotor",
+        "feed_minutes_per_combustion_hour":"Einschub / Brennstunde",
+        "short_cycle_percent":"Kurzstartquote < 30 min","error_count":"Fehler",
+        "shortest_combustion_minutes":"Kürzeste Brennphase","longest_combustion_minutes":"Längste Brennphase",
+        "buffer_top_avg_c":"Puffer oben Ø","buffer_middle_avg_c":"Puffer Mitte Ø",
+        "buffer_pump_hours":"Pufferpumpe","hot_water_avg_c":"WW Temperatur Ø",
+        "hot_water_pump_hours":"WW-Pumpe","hk1_flow_avg_c":"HK1 Vorlauf Ø",
+        "hk1_pump_hours":"HK1 Pumpenlaufzeit","hk2_flow_avg_c":"HK2 Vorlauf Ø",
+        "hk2_pump_hours":"HK2 Pumpenlaufzeit",
+    }
+    for key,label in metric_labels.items():
+        value=metric_values.get(key)
+        signals.append({"scope":"metric","key":key,"label":label,"sample":value if value is not None else "–"})
     return {"source_type":"oekofen","source_ref":source_ref,"signals":signals}
 
 @app.get("/portal/api/admin/oekofen/{plant_id}/available-signals")
