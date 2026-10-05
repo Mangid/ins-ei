@@ -1,12 +1,12 @@
-loginForm.onsubmit=async e=>{e.preventDefault();loginError.textContent="";const r=await fetch("api/login",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({username:loginUser.value,password:loginPassword.value})});if(!r.ok){loginError.textContent="Anmeldung fehlgeschlagen.";return}await load()};
+loginForm.onsubmit=async e=>{e.preventDefault();loginError.textContent="";const r=await fetch("/dev-portal/api/login",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({username:loginUser.value,password:loginPassword.value})});if(!r.ok){loginError.textContent="Anmeldung fehlgeschlagen.";return}await load()};
 const pages=[...document.querySelectorAll(".page")];document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{document.querySelectorAll("nav button").forEach(x=>x.classList.remove("active"));pages.forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(b.dataset.page).classList.add("active")});
 const metric=(name,value)=>'<div class="card metric"><small>'+name+'</small><strong>'+value+'</strong></div>';
-async function load(){try{const r=await fetch("api/me",{cache:"no-store"});if(!r.ok)throw Error("HTTP "+r.status);const d=await r.json();loginView.classList.add("hidden");portalView.classList.remove("hidden");user.textContent=d.display_name||"Kunde";adminNav.classList.toggle("hidden",!d.is_admin);if(d.is_admin)loadUsers();if(!d.is_admin){document.querySelectorAll("nav button").forEach(x=>x.classList.remove("active"));pages.forEach(x=>x.classList.remove("active"));document.querySelector('nav button[data-page="systems"]')?.classList.add("active");document.getElementById("systems")?.classList.add("active")}summary.innerHTML=metric("Anlagen",d.systems.length)+metric("Status",d.status||"–");status.textContent=d.message||"Portal bereit.";if(!d.is_admin&&d.custom_dashboards?.length){const dash=d.custom_dashboards[0];window.location.href="/portal/dashboard/"+dash.id}}catch(e){portalView.classList.add("hidden");loginView.classList.remove("hidden");}}load();
-async function loadUsers(){const r=await fetch("api/admin/users",{cache:"no-store"});if(!r.ok)return;const d=await r.json();window.portalDashboards=d.dashboards;newDashboards.innerHTML=d.dashboards.map(x=>'<label><input type="checkbox" value="'+x.id+'"> '+x.name+'</label>').join(" ");userList.innerHTML=d.users.map(x=>'<div class="user-row"><div><strong>'+x.display_name+'</strong><small>'+x.username+(x.is_admin?" · Admin":"")+(x.active?"":" · deaktiviert")+'</small></div><div>'+x.dashboard_ids.map(id=>'<span class="tag">'+id+'</span>').join("")+'</div><button onclick="editUser('+x.id+')">Bearbeiten</button></div>').join("")}
-userCreate.onsubmit=async e=>{e.preventDefault();const dashboard_ids=[...newDashboards.querySelectorAll("input:checked")].map(x=>x.value);const r=await fetch("api/admin/users",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({username:newUsername.value,display_name:newDisplayName.value,password:newPassword.value,is_admin:newAdmin.checked,dashboard_ids})});userCreateResult.textContent=r.ok?" ✓ angelegt":" ✗ konnte nicht angelegt werden";if(r.ok){userCreate.reset();loadUsers()}};
-async function editUser(id){const r=await fetch("api/admin/users",{cache:"no-store"}),d=await r.json(),u=d.users.find(x=>x.id===id);if(!u)return;const name=prompt("Name",u.display_name);if(name===null)return;const password=prompt("Neues Passwort (leer = unverändert)","");if(password===null)return;const active=confirm("Benutzer aktiv lassen? OK = aktiv, Abbrechen = deaktivieren");const body={display_name:name,active,is_admin:!!u.is_admin,password:password||null,dashboard_ids:u.dashboard_ids};const x=await fetch("api/admin/users/"+id,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify(body)});if(!x.ok)alert("Änderung fehlgeschlagen");loadUsers()}
+async function load(){try{const r=await fetch("/dev-portal/api/me",{cache:"no-store"});if(!r.ok)throw Error("HTTP "+r.status);const d=await r.json();loginView.classList.add("hidden");portalView.classList.remove("hidden");user.textContent=d.display_name||"Kunde";adminNav.classList.toggle("hidden",!d.is_admin);dashboardConfigNav?.classList.toggle("hidden",!d.is_admin);if(d.is_admin)loadUsers();loadOekofenPortal();if(!d.is_admin){document.querySelectorAll("nav button").forEach(x=>x.classList.remove("active"));pages.forEach(x=>x.classList.remove("active"));document.querySelector('nav button[data-page="systems"]')?.classList.add("active");document.getElementById("systems")?.classList.add("active")}summary.innerHTML=metric("Anlagen",d.systems.length)+metric("Status",d.status||"–");status.textContent=d.message||"Portal bereit."}catch(e){portalView.classList.add("hidden");loginView.classList.remove("hidden");}}load();
+async function loadUsers(){const r=await fetch("/dev-portal/api/admin/users",{cache:"no-store"});if(!r.ok)return;const d=await r.json();window.portalDashboards=d.dashboards;newDashboards.innerHTML=d.dashboards.map(x=>'<label><input type="checkbox" value="'+x.id+'"> '+x.name+'</label>').join(" ");userList.innerHTML=d.users.map(x=>'<div class="user-row"><div><strong>'+x.display_name+'</strong><small>'+x.username+' · '+(x.role==="admin"?"Admin":x.role==="partner"?"Partner":"Endkunde")+(x.role==="end_customer"?" · "+(x.access_status==="trial"?"Test bis "+(x.trial_end||"–"):x.access_status==="suspended"?"Gesperrt":"Aktiv"):"")+(x.active?"":" · deaktiviert")+'</small></div><div>'+x.dashboard_ids.map(id=>'<span class="tag">'+id+'</span>').join("")+'</div><button onclick="editUser('+x.id+')">Bearbeiten</button></div>').join("")}
+userCreate.onsubmit=async e=>{e.preventDefault();const dashboard_ids=[...newDashboards.querySelectorAll("input:checked")].map(x=>x.value),role=newRole.value;const r=await fetch("/dev-portal/api/admin/users",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({username:newUsername.value,display_name:newDisplayName.value,password:newPassword.value,is_admin:role==="admin",role,access_status:newAccessStatus.value,trial_start:newTrialStart.value||null,trial_end:newTrialEnd.value||null,dashboard_ids})});userCreateResult.textContent=r.ok?" ✓ angelegt":" ✗ konnte nicht angelegt werden";if(r.ok){userCreate.reset();syncRoleFields();loadUsers()}};
+async function editUser(id){const r=await fetch("/dev-portal/api/admin/users",{cache:"no-store"}),d=await r.json(),u=d.users.find(x=>x.id===id);if(!u)return;const name=prompt("Name",u.display_name);if(name===null)return;const password=prompt("Neues Passwort (leer = unverändert)","");if(password===null)return;const active=confirm("Benutzer aktiv lassen? OK = aktiv, Abbrechen = deaktivieren");const body={display_name:name,active,is_admin:!!u.is_admin,password:password||null,dashboard_ids:u.dashboard_ids};const x=await fetch("/dev-portal/api/admin/users/"+id,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify(body)});if(!x.ok)alert("Änderung fehlgeschlagen");loadUsers()}
 
-async function sendHeatingCommand(body){const r=await fetch("api/oschmalz/heating/command",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});if(!r.ok)throw Error(await r.text());setTimeout(loadOschmalzHeating,500)}
+async function sendHeatingCommand(body){const r=await fetch("/dev-portal/api/oschmalz/heating/command",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});if(!r.ok)throw Error(await r.text());setTimeout(loadOschmalzHeating,500)}
 document.querySelectorAll(".mode-switch").forEach(group=>group.querySelectorAll("button").forEach(button=>button.onclick=async()=>{try{if(group.dataset.zone==="living"){await sendHeatingCommand({mode:button.dataset.mode==="on"?"HEIZEN":button.dataset.mode==="off"?"AUS":"ECO"})}else{await sendHeatingCommand({[group.dataset.zone]:button.dataset.mode==="on"})}}catch(e){alert("Befehl konnte nicht gesendet werden.")}}));
 livingSetpoint.addEventListener("change",()=>sendHeatingCommand({comfort_temperature:Number(livingSetpoint.value)}).catch(()=>alert("Solltemperatur konnte nicht gespeichert werden.")));
 livingEcoSetpoint.addEventListener("change",()=>sendHeatingCommand({eco_temperature:Number(livingEcoSetpoint.value)}).catch(()=>alert("ECO-Temperatur konnte nicht gespeichert werden.")));
@@ -22,7 +22,7 @@ function fmt1(v,u=""){return v===null||v===undefined?"–":(Math.round(Number(v)
 async function loadOschmalzHeating(){
   if(!document.getElementById("livingTemp"))return;
   try{
-    const r=await fetch("api/oschmalz/heating?t="+Date.now(),{cache:"no-store"});
+    const r=await fetch("/dev-portal/api/oschmalz/heating?t="+Date.now(),{cache:"no-store"});
     if(!r.ok)return;
     const d=await r.json(),v=d.values||{};
     livingTemp.textContent=fmt1(v.temperature," °C");
@@ -38,4 +38,215 @@ async function loadOschmalzHeating(){
 }
 loadOschmalzHeating();setInterval(loadOschmalzHeating,5000);
 
-logoutButton?.addEventListener("click",async()=>{try{await fetch("api/logout",{method:"POST"})}finally{document.body.classList.remove("nav-open");portalView.classList.add("hidden");loginView.classList.remove("hidden");loginPassword.value="";loginUser.focus()}});
+logoutButton?.addEventListener("click",async()=>{try{await fetch("/dev-portal/api/logout",{method:"POST"})}finally{document.body.classList.remove("nav-open");portalView.classList.add("hidden");loginView.classList.remove("hidden");loginPassword.value="";loginUser.focus()}});
+
+let oekofenPlant=null,oekofenLiveTimer=null,oekofenPeriod="24h";
+const escp=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function liveGroup(rows,title,match){const items=rows.filter(x=>match.test(x.label));if(!items.length)return"";return '<article class="card oek-live-card"><h2>'+title+'</h2>'+items.map(x=>'<div class="oek-live-row"><span>'+escp(x.label)+'</span><strong>'+escp(x.actual||"–")+(x.target?'<small>Soll '+escp(x.target)+'</small>':"")+'</strong></div>').join("")+'</article>'}
+function oekQuery(){return oekofenPlant?.plant_id?"&plant_id="+encodeURIComponent(oekofenPlant.plant_id):""}
+async function loadOekofenPortal(){
+ try{
+  const meResponse=await fetch("/dev-portal/api/me",{cache:"no-store"});
+  if(!meResponse.ok)throw Error("HTTP "+meResponse.status);
+  const me=await meResponse.json();
+  if(me.is_admin){
+   const pr=await fetch("/dev-portal/api/oekofen/plants",{cache:"no-store"});
+   if(pr.ok){
+    const pd=await pr.json();
+    const picker=document.getElementById("oekofenAdminPicker");
+    const sel=document.getElementById("oekofenPlantSelect");
+    const search=document.getElementById("oekofenPlantSearch");
+    picker.classList.remove("hidden");
+    const renderPlants=()=>{
+     const q=(search.value||"").trim().toLowerCase();
+     const filtered=pd.plants.filter(p=>!q||[p.plant_name,p.customer_name,p.customer_city,p.serial_number,p.plant_id].some(v=>String(v||"").toLowerCase().includes(q)));
+     const current=sel.value||localStorage.getItem("ins-dev-oekofen-plant")||"";
+     sel.innerHTML=filtered.map(p=>'<option value="'+escp(p.plant_id)+'">'+escp(p.plant_name||p.plant_id)+(p.customer_name?' · '+escp(p.customer_name):'')+(p.customer_city?' · '+escp(p.customer_city):'')+(p.serial_number?' · '+escp(p.serial_number):'')+'</option>').join("");
+     if(filtered.some(p=>p.plant_id===current))sel.value=current;
+    };
+    renderPlants();
+    const saved=localStorage.getItem("ins-dev-oekofen-plant");
+    if(saved&&pd.plants.some(p=>p.plant_id===saved))sel.value=saved;
+    sel.onchange=async()=>{
+     if(!sel.value)return;
+     localStorage.setItem("ins-dev-oekofen-plant",sel.value);
+     const p=pd.plants.find(x=>x.plant_id===sel.value);
+     oekofenPlant={plant_id:p.plant_id,name:p.plant_name,serial_number:p.serial_number,customer_name:p.customer_name};
+     oekofenNav?.classList.remove("hidden");
+     oekofenTitle.textContent=p.plant_name||"Meine Heizung";
+     oekofenMeta.textContent=[p.serial_number,p.customer_name,p.customer_city].filter(Boolean).join(" · ");
+     await refreshOekofenLive();
+     await loadOekofenHistory();
+    };
+    search.oninput=()=>{
+     renderPlants();
+     if(sel.options.length===1){
+      sel.selectedIndex=0;
+      sel.onchange();
+     }
+    };
+    oekofenNav?.classList.remove("hidden");
+    if(sel.value)await sel.onchange();
+    return;
+   }
+  }
+  const r=await fetch("/dev-portal/api/oekofen",{cache:"no-store"});
+  if(!r.ok){oekofenNav?.classList.add("hidden");return}
+  const d=await r.json();
+  oekofenPlant=d.plant;
+  oekofenNav?.classList.remove("hidden");
+  oekofenTitle.textContent=d.plant.name||"Meine Heizung";
+  oekofenMeta.textContent=[d.plant.serial_number,d.plant.customer_name].filter(Boolean).join(" · ");
+  await refreshOekofenLive();
+  await loadOekofenHistory();
+ }catch(e){
+  console.error("OekoFEN DEV portal",e);
+  oekofenNav?.classList.add("hidden");
+ }
+}
+async function refreshOekofenLive(){
+ if(!oekofenPlant)return;
+ try{
+  const r=await fetch("/dev-portal/api/oekofen/live?t="+Date.now()+oekQuery(),{cache:"no-store"});if(!r.ok)throw Error(r.status);const d=await r.json(),rows=d.rows||[];
+  oekofenOnline.textContent="● Online";oekofenOnline.classList.add("ok");
+  const groups=[
+   liveGroup(rows,"Übersicht",/Außentemperatur|Akt\. Temperatur|Bedienteil/),
+   liveGroup(rows,"Kessel",/Kesseltemperatur|Brenneranforderung|Kesselstatus|Modulation|Abgastemperatur|Feuerraumtemperatur|Pelletfüllstand|Aschemenge/),
+   liveGroup(rows,"Warmwasser",/^WW/),
+   liveGroup(rows,"Puffer",/^PU/),
+   liveGroup(rows,"Heizkreis 1",/^HK1/),
+   liveGroup(rows,"Heizkreis 2",/^HK2/)
+  ].filter(Boolean);
+  oekofenLive.innerHTML=groups.join("")||'<div class="card">Keine aktuellen Messwerte verfügbar.</div>';
+ }catch(e){oekofenOnline.textContent="● Keine Verbindung";oekofenOnline.classList.remove("ok")}
+}
+function friendlyField(name){
+ const map=[
+  [/^AT\[°C\]$/,"Außentemperatur"],[/^ATakt\[°C\]$/,"Außentemperatur aktuell"],
+  [/PE1 KT\[°C\]/,"Kesseltemperatur"],[/PE1 KT_SOLL\[°C\]/,"Kessel Soll"],
+  [/PU1 TPO Ist\[°C\]/,"Puffer oben"],[/PU1 TPM Ist\[°C\]/,"Puffer Mitte"],
+  [/PU1 TPO Soll\[°C\]/,"Puffer oben Soll"],[/PU1 TPM Soll\[°C\]/,"Puffer Mitte Soll"],
+  [/WW1 EinT Ist\[°C\]/,"Warmwasser"],[/WW1 Soll\[°C\]/,"Warmwasser Soll"],
+  [/HK1 VL Ist\[°C\]/,"Vorlauf"],[/HK1 VL Soll\[°C\]/,"Vorlauf Soll"],
+  [/HK2 VL Ist\[°C\]/,"Vorlauf"],[/HK2 VL Soll\[°C\]/,"Vorlauf Soll"]
+ ];for(const [re,label] of map)if(re.test(name))return label;return name.replace(/\[°C\]/g,"").replace(/ Ist/g,"");
+}
+function svgChart(title,series){
+ const entries=Object.entries(series).filter(([,v])=>v.length);if(!entries.length)return"";
+ const all=entries.flatMap(([,v])=>v.map(x=>x.value)).filter(Number.isFinite);if(!all.length)return"";
+ let dataMin=Math.min(...all),dataMax=Math.max(...all),pad=Math.max(1,(dataMax-dataMin)*.12);
+ let min=Math.floor((dataMin-pad)/5)*5,max=Math.ceil((dataMax+pad)/5)*5;if(max<=min)max=min+5;
+ const W=760,H=250,L=48,R=16,T=18,B=34;
+ const times=entries.flatMap(([,v])=>v.map(x=>Date.parse(x.time))).filter(Number.isFinite),t0=Math.min(...times),t1=Math.max(...times);
+ const x=ts=>L+(ts-t0)/Math.max(1,t1-t0)*(W-L-R),y=v=>T+(max-v)/(max-min)*(H-T-B);
+ const ticks=Array.from({length:5},(_,i)=>min+(max-min)*i/4);
+ const grid=ticks.map(v=>'<line x1="'+L+'" y1="'+y(v)+'" x2="'+(W-R)+'" y2="'+y(v)+'" class="chart-grid"/><text x="'+(L-7)+'" y="'+(y(v)+3)+'" class="chart-axis" text-anchor="end">'+v.toFixed(v%1?1:0)+'°</text>').join("");
+ const paths=entries.map(([name,pts],idx)=>{const d=pts.map((p,j)=>(j?"L":"M")+x(Date.parse(p.time)).toFixed(1)+" "+y(p.value).toFixed(1)).join(" ");return '<path class="chart-line line-'+(idx%6)+'" data-series="'+idx+'" d="'+d+'" fill="none"/>'}).join("");
+ const labels=Array.from({length:5},(_,i)=>{const ts=t0+(t1-t0)*i/4,d=new Date(ts);return '<text x="'+x(ts)+'" y="'+(H-8)+'" class="chart-axis" text-anchor="'+(i===0?"start":i===4?"end":"middle")+'">'+d.toLocaleString("de-AT",{day:t1-t0>86400000?"2-digit":undefined,month:t1-t0>86400000?"2-digit":undefined,hour:"2-digit",minute:"2-digit"})+'</text>'}).join("");
+ const id="chart-"+Math.random().toString(36).slice(2);
+ setTimeout(()=>bindChartHover(id,entries,{W,H,L,R,T,B,min,max,t0,t1}),0);
+ return '<article class="card chart-card" id="'+id+'"><div class="chart-head"><h2>'+title+'</h2><div class="chart-legend">'+entries.map(([n],i)=>'<span class="line-'+(i%6)+'">'+escp(friendlyField(n))+'</span>').join("")+'</div></div><div class="chart-svg-wrap"><svg viewBox="0 0 '+W+' '+H+'">'+grid+paths+labels+'<line class="chart-hover-line" x1="0" y1="'+T+'" x2="0" y2="'+(H-B)+'"/><circle class="chart-hover-dot" cx="0" cy="0" r="4"/></svg><div class="chart-tooltip"></div></div></article>'
+}
+function bindChartHover(id,entries,cfg){
+ const card=document.getElementById(id);if(!card)return;const svg=card.querySelector("svg"),tip=card.querySelector(".chart-tooltip"),line=card.querySelector(".chart-hover-line"),dot=card.querySelector(".chart-hover-dot");
+ svg.addEventListener("mousemove",e=>{const r=svg.getBoundingClientRect(),px=(e.clientX-r.left)/r.width*cfg.W,ratio=Math.max(0,Math.min(1,(px-cfg.L)/(cfg.W-cfg.L-cfg.R))),target=cfg.t0+ratio*(cfg.t1-cfg.t0);let best=null;
+  entries.forEach(([name,pts],idx)=>pts.forEach(p=>{const ts=Date.parse(p.time),dist=Math.abs(ts-target);if(!best||dist<best.dist)best={name,p,idx,dist}}));if(!best)return;
+  const ts=Date.parse(best.p.time),cx=cfg.L+(ts-cfg.t0)/Math.max(1,cfg.t1-cfg.t0)*(cfg.W-cfg.L-cfg.R),cy=cfg.T+(cfg.max-best.p.value)/(cfg.max-cfg.min)*(cfg.H-cfg.T-cfg.B);
+  line.setAttribute("x1",cx);line.setAttribute("x2",cx);dot.setAttribute("cx",cx);dot.setAttribute("cy",cy);line.classList.add("show");dot.classList.add("show");
+  tip.innerHTML='<strong>'+escp(friendlyField(best.name))+'</strong><br>'+Number(best.p.value).toFixed(1)+' °C<br><small>'+new Date(ts).toLocaleString("de-AT",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})+'</small>';tip.classList.add("show");tip.style.left=Math.min(r.width-150,Math.max(8,e.clientX-r.left+12))+"px";tip.style.top=Math.max(8,e.clientY-r.top-55)+"px";
+ });svg.addEventListener("mouseleave",()=>{tip.classList.remove("show");line.classList.remove("show");dot.classList.remove("show")});
+}
+async function loadOekofenHistory(){
+ if(!oekofenPlant)return;oekofenCharts.innerHTML='<div class="card">Historie wird geladen …</div>';
+ try{const r=await fetch("/dev-portal/api/oekofen/history?period="+oekofenPeriod+oekQuery(),{cache:"no-store"});if(!r.ok)throw Error(r.status);const d=await r.json(),s=d.series||{};
+ const pick=re=>Object.fromEntries(Object.entries(s).filter(([k])=>re.test(k)));
+ const tempOnly=obj=>Object.fromEntries(Object.entries(obj).filter(([k])=>/\[°C\]/.test(k)&&!/Status|Pumpe/.test(k)));
+ const cards=[svgChart("Kessel & Außentemperatur",tempOnly(pick(/AT|Kessel|PE1 KT/))),svgChart("Puffer",tempOnly(pick(/PU1/))),svgChart("Warmwasser",tempOnly(pick(/WW1/))),svgChart("Heizkreis 1",tempOnly(pick(/HK1 VL/))),svgChart("Heizkreis 2",tempOnly(pick(/HK2 VL/)))].filter(Boolean);
+ oekofenCharts.innerHTML=cards.join("")||'<div class="card">Für diesen Zeitraum sind noch keine historischen Daten vorhanden.</div>'}catch(e){oekofenCharts.innerHTML='<div class="card">Historie konnte nicht geladen werden.</div>'}
+}
+document.querySelectorAll("[data-oek-period]").forEach(b=>b.onclick=()=>{document.querySelectorAll("[data-oek-period]").forEach(x=>x.classList.toggle("active",x===b));oekofenPeriod=b.dataset.oekPeriod;loadOekofenHistory()});
+document.querySelector('nav button[data-page="oekofen"]')?.addEventListener("click",()=>{clearInterval(oekofenLiveTimer);refreshOekofenLive();oekofenLiveTimer=setInterval(()=>{if(document.getElementById("oekofen")?.classList.contains("active"))refreshOekofenLive();else clearInterval(oekofenLiveTimer)},45000)});
+
+
+let builderData={users:[],source_types:[],oekofen_plants:[]},dashboardSources=[],dashboardBlocks=[],dashboardSignals=[],dashboardTemplates=[],dashboardConfigs=[],editingDashboardId=null;
+function sourceTypeName(id){return builderData.source_types.find(x=>x.id===id)?.name||id}
+let dashboardAccess=[];
+function renderAccess(){
+ accessUser.innerHTML='<option value="">Benutzer auswählen …</option>'+builderData.users.filter(u=>!dashboardAccess.some(a=>a.user_id===u.id)).map(u=>'<option value="'+u.id+'">'+escp(u.display_name)+' · '+escp(u.username)+(u.is_admin?' · Admin':'')+'</option>').join("");
+ configAccess.innerHTML=dashboardAccess.map((a,i)=>{const u=builderData.users.find(x=>x.id===a.user_id)||{};return '<div class="access-row"><span><strong>'+escp(u.display_name||u.username)+'</strong><small>'+escp(u.username||"")+(u.is_admin?' · Admin':'')+'</small></span><span class="access-right">'+(a.permission==="write"?"Lesen & Schreiben":"Lesen")+'</span><button data-access-del="'+i+'" type="button">×</button></div>'}).join("");
+ configAccess.querySelectorAll("[data-access-del]").forEach(b=>b.onclick=()=>{dashboardAccess.splice(+b.dataset.accessDel,1);renderAccess()});
+}
+function renderSources(){configSources.innerHTML=dashboardSources.map((x,i)=>'<div class="source-row"><select data-si="'+i+'" data-p="type">'+builderData.source_types.map(t=>'<option value="'+t.id+'" '+(t.id===x.type?'selected':'')+'>'+escp(t.name)+'</option>').join("")+'</select><input data-si="'+i+'" data-p="name" value="'+escp(x.name||"")+'" placeholder="Bezeichnung">'+(x.type==="oekofen"?'<select data-si="'+i+'" data-p="ref"><option value="">ÖkoFEN Anlage …</option>'+builderData.oekofen_plants.map(p=>'<option value="'+escp(p.plant_id)+'" '+(p.plant_id===x.ref?'selected':'')+'>'+escp(p.plant_name||p.plant_id)+'</option>').join("")+'</select>':'<input data-si="'+i+'" data-p="ref" value="'+escp(x.ref||"")+'" placeholder="Instanz / Referenz">')+'<button data-source-samples="'+i+'" type="button">Signale laden</button><button data-source-del="'+i+'" type="button">×</button></div>').join("");
+ configSources.querySelectorAll("[data-p]").forEach(el=>el.onchange=e=>{const i=+e.target.dataset.si,p=e.target.dataset.p;dashboardSources[i][p]=e.target.value;if(p==="type"){dashboardSources[i].ref="";renderSources()}});
+ configSources.querySelectorAll("[data-source-del]").forEach(b=>b.onclick=()=>{dashboardSources.splice(+b.dataset.sourceDel,1);renderSources()});
+ configSources.querySelectorAll("[data-source-samples]").forEach(b=>b.onclick=async()=>{const src=dashboardSources[+b.dataset.sourceSamples];if(!src.ref)return;b.disabled=true;try{const d=await fetch("/dev-portal/api/admin/source-samples?source_type="+encodeURIComponent(src.type)+"&source_ref="+encodeURIComponent(src.ref),{cache:"no-store"}).then(r=>r.json());src.signals=d.signals||[];dashboardSignals=dashboardSources.flatMap((x,si)=>(x.signals||[]).map(v=>({...v,source_index:si,source_name:x.name||sourceTypeName(x.type)})));renderConfigBlocks()}finally{b.disabled=false}});
+}
+function signalOptions(current,blockType,sourceFilter="",scopeFilter=""){
+ const allowed=dashboardSignals.map((x,i)=>({...x,_i:i})).filter(x=>(blockType!=="chart"||x.scope==="history")&&(!sourceFilter||String(x.source_index)===String(sourceFilter))&&(!scopeFilter||x.scope===scopeFilter));
+ return '<option value="">Signal auswählen …</option>'+allowed.map(x=>'<option value="'+x._i+'" '+(String(x._i)===String(current)?'selected':'')+'>'+escp(x.source_name)+' · '+escp(x.label||x.key)+' · '+(x.scope==="history"?"Historie":"Live")+' · Sample: '+escp(x.sample??"–")+'</option>').join("")
+}
+function signalFilters(it,ii,blockType){
+ const src='<select class="signal-filter" data-filter-source="'+ii+'"><option value="">Alle Quellen</option>'+dashboardSources.map((x,i)=>'<option value="'+i+'" '+(String(it.filter_source??"")===String(i)?"selected":"")+'>'+escp(x.name||sourceTypeName(x.type))+'</option>').join("")+'</select>';
+ const forced=blockType==="chart"?"history":(blockType==="card"?"live":"");
+ const scope='<select class="signal-filter" data-filter-scope="'+ii+'" '+(forced?'disabled':'')+'><option value="">Live + Historie</option><option value="live" '+((it.filter_scope||forced)==="live"?"selected":"")+'>Live</option><option value="history" '+((it.filter_scope||forced)==="history"?"selected":"")+'>Historie</option></select>';
+ return '<div class="signal-filter-row">'+src+scope+'</div>'
+}
+let signalPickerState=null;
+function openSignalPicker(bi,ii,blockType,targetMode=false){
+ signalPickerState={bi,ii,blockType,targetMode,source:"",scope:blockType==="chart"?"history":blockType==="card"?"live":"",query:""};
+ renderSignalPicker();
+}
+function renderSignalPicker(){
+ const st=signalPickerState;if(!st)return;
+ let modal=document.getElementById("signalPickerModal");if(!modal){modal=document.createElement("div");modal.id="signalPickerModal";modal.className="signal-picker-modal";document.body.appendChild(modal)}
+ const q=(st.query||"").trim().toLowerCase();const allowed=dashboardSignals.map((x,i)=>({...x,_i:i})).filter(x=>(st.blockType!=="chart"||x.scope==="history")&&(st.blockType!=="card"||x.scope==="live")&&(!st.source||String(x.source_index)===st.source)&&(!st.scope||x.scope===st.scope)&&(!q||((x.label||"")+" "+(x.key||"")+" "+(x.source_name||"")).toLowerCase().includes(q)));
+ modal.innerHTML='<div class="signal-picker-shell"><div class="signal-picker-head"><div><strong>Signal auswählen</strong><small>Quelle und Art filtern</small></div><button data-close type="button">×</button></div><div class="signal-picker-filters"><select data-src><option value="">Alle Quellen</option>'+dashboardSources.map((x,i)=>'<option value="'+i+'" '+(String(i)===st.source?"selected":"")+'>'+escp(x.name||sourceTypeName(x.type))+'</option>').join("")+'</select><select data-scope '+(st.blockType!=="combo"?"disabled":"")+'><option value="">Live + Historie</option><option value="live" '+(st.scope==="live"?"selected":"")+'>Live</option><option value="history" '+(st.scope==="history"?"selected":"")+'>Historie</option></select><input data-search placeholder="Signal suchen …"></div><div class="signal-picker-list">'+allowed.map(x=>'<button type="button" data-sig="'+x._i+'" data-searchtext="'+escp(((x.label||"")+" "+(x.key||"")+" "+(x.source_name||"")).toLowerCase())+'"><span><strong>'+escp(x.label||x.key)+'</strong><small>'+escp(x.source_name)+' · '+(x.scope==="history"?"Historie":"Live")+'</small></span><em>'+escp(x.sample??"–")+'</em></button>').join("")+'</div></div>';
+ modal.classList.add("show");modal.querySelector("[data-close]").onclick=()=>modal.classList.remove("show");modal.onclick=e=>{if(e.target===modal)modal.classList.remove("show")};
+ modal.querySelector("[data-src]").onchange=e=>{st.source=e.target.value;renderSignalPicker()};modal.querySelector("[data-scope]").onchange=e=>{st.scope=e.target.value;renderSignalPicker()};
+ const search=modal.querySelector("[data-search]");search.value=st.query||"";search.oninput=e=>{st.query=e.target.value;const pos=e.target.selectionStart;renderSignalPicker();const n=document.querySelector("#signalPickerModal [data-search]");n?.focus();try{n?.setSelectionRange(pos,pos)}catch(_){}};
+ modal.querySelectorAll("[data-sig]").forEach(b=>b.onclick=()=>{const block=dashboardBlocks[st.bi],it=block.items[st.ii],sig=dashboardSignals[+b.dataset.sig];if(st.targetMode){it.target_signal=b.dataset.sig;if(sig){it.target_source_index=sig.source_index;it.target_scope=sig.scope;it.target_key=sig.key;it.target_sample=sig.sample}block.items=block.items.filter((x,j)=>j===st.ii||(!x._internal_setpoint&&!x._setpoint_for))}else{it.signal=b.dataset.sig;if(sig){if(!it.label)it.label=sig.label;if(block.type==="combo")it.section=sig.scope==="history"?"history":"live"}}modal.classList.remove("show");if(!st.targetMode&&block.type==="combo")block.items.sort((a,b)=>(a.section==="history")-(b.section==="history"));renderConfigBlocks()});
+}
+function renderConfigBlocks(){configBlocks.innerHTML=dashboardBlocks.map((b,bi)=>'<article class="config-block" data-bi="'+bi+'"><div class="config-block-head"><strong>'+(b.type==="card"?"Karte":b.type==="combo"?"Kombi":"Graph")+'</strong><input data-title value="'+escp(b.title)+'"><div class="block-actions"><button data-up="'+bi+'" type="button" title="Nach vorne">←</button><button data-down="'+bi+'" type="button" title="Nach hinten">→</button><button data-save-template="'+bi+'" type="button">Als Template speichern</button><button data-remove="'+bi+'" type="button">Entfernen</button></div></div><div>'+b.items.map((it,ii)=>{const sig=dashboardSignals[it.signal]||dashboardSignals.find(x=>x.source_index===Number(it.source_index)&&x.scope===it.scope&&x.key===it.key)||{};return (b.type==="combo"&&((ii===0)||(b.items[ii-1]?.section!==it.section))?'<div class="combo-section-title">'+(it.section==="live"?"Aktuelle Werte":"Verlauf")+'</div>':'')+'<div class="config-signal"><button class="signal-picker-btn" data-pick-signal="'+ii+'" type="button">'+(sig.key?escp(sig.source_name)+' · '+escp(sig.label||sig.key)+' · '+(sig.scope==="history"?"Historie":"Live"):'Signal auswählen …')+'</button><input data-label="'+ii+'" value="'+escp(it.label||"")+'" placeholder="Bezeichnung"><span class="signal-sample"><b>Sample</b> '+escp(sig.sample??"–")+(sig.raw!=null?'<small>Rohwert: '+escp(sig.raw)+'</small>':'')+'</span>'+((b.type==="card"||(b.type==="combo"&&it.section==="live"))?'<select data-live-display="'+ii+'"><option value="value">Wert</option><option value="binary" '+(it.live_display==="binary"?"selected":"")+'>EIN/AUS</option><option value="percent" '+(it.live_display==="percent"?"selected":"")+'>0–100 %</option></select><button class="signal-picker-btn target-picker-btn" data-pick-target="'+ii+'" type="button">'+(()=>{const t=dashboardSignals[it.target_signal]||dashboardSignals.find(x=>x.source_index===Number(it.target_source_index)&&x.scope===it.target_scope&&x.key===it.target_key)||{};return t.key?escp(t.source_name)+' · '+escp(t.label||t.key)+' · Live':'Soll-Signal optional …'})()+'</button>':'')+((b.type==="chart"||(b.type==="combo"&&it.section==="history"))?'<select data-display="'+ii+'"><option value="line">Kurve</option><option value="binary" '+(it.display==="binary"?"selected":"")+'>EIN/AUS</option><option value="percent" '+(it.display==="percent"?"selected":"")+'>0–100 %</option><option value="percent_binary" '+(it.display==="percent_binary"?"selected":"")+'>0/100 → EIN/AUS</option><option value="mixer" '+(it.display==="mixer"?"selected":"")+'>Mischer AUF/ZU</option><option value="auto" '+(it.display==="auto"?"selected":"")+'>Automatisch</option></select>'+(["line","auto"].includes(it.display||"line")?'<button class="signal-picker-btn target-picker-btn" data-pick-history-target="'+ii+'" type="button">'+(()=>{const t=dashboardSignals[it.target_signal]||dashboardSignals.find(x=>x.source_index===Number(it.target_source_index)&&x.scope===it.target_scope&&x.key===it.target_key)||{};return t.key?escp(t.source_name)+' · '+escp(t.label||t.key)+' · Historie':'Soll-Signal optional …'})()+'</button>':''):'')+(b.type==="card"||(b.type==="combo"&&it.section==="live")?'<div class="tile-order"><button data-item-up="'+ii+'" type="button" title="Kachel nach oben">↑</button><button data-item-down="'+ii+'" type="button" title="Kachel nach unten">↓</button><button data-del="'+ii+'" type="button" title="Entfernen">×</button></div>':'')+(b.type==="card"||(b.type==="combo"&&it.section==="live")?'':'<button data-del="'+ii+'" type="button">×</button>')+'</div>'}).join("")+'</div>'+(b.type==="combo"?'<div class="combo-add-actions"><button data-add-live="'+bi+'" type="button">+ Livewert</button><button data-add-history="'+bi+'" type="button">+ Verlaufwert</button></div>':'<button data-add="'+bi+'" type="button">+ Wert</button>')+'</article>').join("");
+ configBlocks.querySelectorAll(".config-block").forEach(el=>{const bi=+el.dataset.bi;el.querySelector("[data-title]").oninput=e=>dashboardBlocks[bi].title=e.target.value;el.querySelector("[data-up]").onclick=()=>{if(bi>0){[dashboardBlocks[bi-1],dashboardBlocks[bi]]=[dashboardBlocks[bi],dashboardBlocks[bi-1]];renderConfigBlocks()}};el.querySelector("[data-down]").onclick=()=>{if(bi<dashboardBlocks.length-1){[dashboardBlocks[bi+1],dashboardBlocks[bi]]=[dashboardBlocks[bi],dashboardBlocks[bi+1]];renderConfigBlocks()}};el.querySelector("[data-remove]").onclick=()=>{dashboardBlocks.splice(bi,1);renderConfigBlocks()};el.querySelector("[data-save-template]").onclick=async()=>{const block=dashboardBlocks[bi],name=prompt("Name des Templates",block.title);if(!name)return;const items=block.items.map(it=>{const sig=dashboardSignals[it.signal]||dashboardSignals.find(x=>x.source_index===Number(it.source_index)&&x.scope===it.scope&&x.key===it.key)||{};const src=dashboardSources[sig.source_index]||{};const target=dashboardSignals[it.target_signal]||dashboardSignals.find(x=>x.source_index===Number(it.target_source_index)&&x.scope===it.target_scope&&x.key===it.target_key)||{};const targetSrc=dashboardSources[target.source_index]||{};return {label:it.label,display:it.display||"line",live_display:it.live_display||"value",section:it.section||sig.scope,source_type:src.type||null,scope:sig.scope||null,key:sig.key||null,target_source_type:targetSrc.type||null,target_scope:target.scope||null,target_key:target.key||null}});const types=[...new Set(items.map(x=>x.source_type).filter(Boolean))];const body={name,block_type:block.type,source_type:types.length===1?types[0]:null,template:{title:block.title,items}};const r=await fetch("/dev-portal/api/admin/dashboard-templates",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});if(r.ok){await loadDashboardTemplates();alert("Template gespeichert.")}else alert("Template konnte nicht gespeichert werden.")};if(dashboardBlocks[bi].type==="combo"){
+ const addLive=el.querySelector("[data-add-live]"),addHistory=el.querySelector("[data-add-history]");
+ if(addLive)addLive.onclick=e=>{e.preventDefault();const items=dashboardBlocks[bi].items,at=items.findIndex(x=>x.section==="history"),item={signal:"",label:"",display:"line",section:"live"};if(at<0)items.push(item);else items.splice(at,0,item);renderConfigBlocks()};
+ if(addHistory)addHistory.onclick=e=>{e.preventDefault();dashboardBlocks[bi].items.push({signal:"",label:"",display:"line",section:"history"});renderConfigBlocks()}
+}else{const add=el.querySelector("[data-add]");if(add)add.onclick=e=>{e.preventDefault();dashboardBlocks[bi].items.push({signal:"",label:"",display:"line"});renderConfigBlocks()}};el.querySelectorAll(".config-signal").forEach((row,ii)=>{row.querySelector("[data-pick-signal]").onclick=e=>{e.preventDefault();const block=dashboardBlocks[bi],type=block.type==="combo"?(block.items[ii].section==="live"?"card":"chart"):block.type;openSignalPicker(bi,ii,type)};row.querySelector("[data-label]").oninput=e=>dashboardBlocks[bi].items[ii].label=e.target.value;row.querySelector("[data-live-display]")?.addEventListener("change",e=>dashboardBlocks[bi].items[ii].live_display=e.target.value);row.querySelector("[data-pick-target]")?.addEventListener("click",e=>{e.preventDefault();openSignalPicker(bi,ii,"card",true)});row.querySelector("[data-pick-history-target]")?.addEventListener("click",e=>{e.preventDefault();openSignalPicker(bi,ii,"chart",true)});row.querySelector("[data-display]")?.addEventListener("change",e=>{dashboardBlocks[bi].items[ii].display=e.target.value;renderConfigBlocks()});row.querySelector("[data-item-up]")?.addEventListener("click",e=>{e.preventDefault();const items=dashboardBlocks[bi].items,section=items[ii].section,prev=items.map((x,j)=>({x,j})).filter(o=>o.j<ii&&(section?o.x.section===section:true)).pop();if(prev){[items[prev.j],items[ii]]=[items[ii],items[prev.j]];renderConfigBlocks()}});row.querySelector("[data-item-down]")?.addEventListener("click",e=>{e.preventDefault();const items=dashboardBlocks[bi].items,section=items[ii].section,next=items.map((x,j)=>({x,j})).find(o=>o.j>ii&&(section?o.x.section===section:true));if(next){[items[next.j],items[ii]]=[items[ii],items[next.j]];renderConfigBlocks()}});row.querySelector("[data-del]")?.addEventListener("click",e=>{e.preventDefault();dashboardBlocks[bi].items.splice(ii,1);renderConfigBlocks()})})})}
+async function loadDashboardTemplates(){try{const d=await fetch("/dev-portal/api/admin/dashboard-templates",{cache:"no-store"}).then(r=>r.json());dashboardTemplates=d.templates||[];templateSelect.innerHTML='<option value="">Template auswählen …</option>'+dashboardTemplates.map(t=>'<option value="'+t.id+'">'+escp(t.name)+' · '+(t.block_type==="card"?"Karte":t.block_type==="combo"?"Kombi":"Graph")+(t.source_type?' · '+escp(sourceTypeName(t.source_type)):'')+'</option>').join("")}catch(e){}}
+async function loadDashboardConfigs(){const d=await fetch("/dev-portal/api/admin/dashboard-configs",{cache:"no-store"}).then(r=>r.json());dashboardConfigs=d.dashboards||[];existingDashboard.innerHTML='<option value="">Neues Dashboard …</option>'+dashboardConfigs.map(x=>'<option value="'+x.id+'">#'+x.id+' · '+escp(x.name)+'</option>').join("")}
+async function initDashboardConfigurator(){try{builderData=await fetch("/dev-portal/api/admin/dashboard-builder-data",{cache:"no-store"}).then(r=>r.json());renderAccess();renderSources();await Promise.all([loadDashboardTemplates(),loadDashboardConfigs()])}catch(e){}}
+async function hydrateDashboardSources(){
+ dashboardSignals=[];
+ for(let si=0;si<dashboardSources.length;si++){
+  const src=dashboardSources[si];if(!src.ref)continue;
+  try{const d=await fetch("/dev-portal/api/admin/source-samples?source_type="+encodeURIComponent(src.type)+"&source_ref="+encodeURIComponent(src.ref),{cache:"no-store"}).then(r=>r.json());src.signals=d.signals||[];dashboardSignals.push(...src.signals.map(v=>({...v,source_index:si,source_name:src.name||sourceTypeName(src.type)})))}catch(e){}
+ }
+}
+function relinkSavedBlockSignals(){
+ dashboardBlocks.forEach(b=>b.items.forEach(it=>{const idx=dashboardSignals.findIndex(sig=>sig.source_index===Number(it.source_index)&&sig.scope===it.scope&&sig.key===it.key);it.signal=idx>=0?String(idx):"";if(it.target_key){const ti=dashboardSignals.findIndex(sig=>sig.source_index===Number(it.target_source_index??it.source_index)&&sig.scope===it.target_scope&&sig.key===it.target_key);it.target_signal=ti>=0?String(ti):""}}))
+}
+loadExistingDashboard.onclick=async()=>{
+ const d=dashboardConfigs.find(x=>String(x.id)===String(existingDashboard.value));if(!d)return;
+ editingDashboardId=d.id;configName.value=d.name||"";configDescription.value=d.config?.description||"";
+ dashboardAccess=(d.access||[]).map(x=>({user_id:x.user_id,permission:x.permission}));
+ dashboardSources=(d.sources||[]).map(x=>({type:x.source_type,name:x.name,ref:x.source_ref,config:x.config||{},signals:[]}));
+ dashboardBlocks=(d.config?.blocks||[]).map(x=>{const b=structuredClone(x);b.items=(b.items||[]).filter(it=>!it._internal_setpoint&&!it._setpoint_for);if(b.type==="combo"){b.items.forEach(it=>{if(it.scope==="history")it.section="history";else if(it.scope==="live")it.section="live"});b.items.sort((a,c)=>(a.section==="history")-(c.section==="history"))}return b});
+ renderAccess();renderSources();configSaveResult.textContent=" Lade Dashboard …";
+ await hydrateDashboardSources();relinkSavedBlockSignals();renderConfigBlocks();configSaveResult.textContent="";
+};
+deleteExistingDashboard.onclick=async()=>{if(!existingDashboard.value||!confirm("Dashboard wirklich löschen?"))return;const r=await fetch("/dev-portal/api/admin/dashboard-configs/"+existingDashboard.value,{method:"DELETE"});if(r.ok){editingDashboardId=null;configName.value="";configDescription.value="";dashboardAccess=[];dashboardSources=[];dashboardBlocks=[];dashboardSignals=[];renderAccess();renderSources();renderConfigBlocks();await loadDashboardConfigs();configSaveResult.textContent=" ✓ gelöscht";setTimeout(()=>configSaveResult.textContent="",2200)}};
+addAccess.onclick=()=>{const id=Number(accessUser.value);if(!id||dashboardAccess.some(x=>x.user_id===id))return;dashboardAccess.push({user_id:id,permission:accessPermission.value});renderAccess()};
+addSource.onclick=()=>{dashboardSources.push({type:"oekofen",name:"",ref:"",signals:[]});renderSources()};
+addCard.onclick=()=>{dashboardBlocks.push({type:"card",title:"Neue Karte",items:[]});renderConfigBlocks()};
+addChart.onclick=()=>{dashboardBlocks.push({type:"chart",title:"Neuer Graph",items:[]});renderConfigBlocks()};
+addCombo.onclick=()=>{dashboardBlocks.push({type:"combo",title:"Neues Kombiwidget",items:[{signal:"",label:"",display:"line",section:"live"},{signal:"",label:"",display:"line",section:"history"}]});renderConfigBlocks()};
+addTemplate.onclick=()=>{const t=dashboardTemplates.find(x=>String(x.id)===String(templateSelect.value));if(!t)return;const items=(t.template.items||[]).map(item=>{let signal="",target_signal="";const idx=dashboardSignals.findIndex(sig=>{const src=dashboardSources[sig.source_index]||{};return src.type===item.source_type&&sig.scope===item.scope&&sig.key===item.key});if(idx>=0)signal=String(idx);const ti=dashboardSignals.findIndex(sig=>{const src=dashboardSources[sig.source_index]||{};return src.type===item.target_source_type&&sig.scope===item.target_scope&&sig.key===item.target_key});if(ti>=0)target_signal=String(ti);return {signal,target_signal,label:item.label||"",display:item.display||"line",live_display:item.live_display||"value",section:item.section||(item.scope==="history"?"history":"live"),scope:item.scope,key:item.key,target_scope:item.target_scope,target_key:item.target_key};});dashboardBlocks.push({type:t.block_type,title:t.template.title||t.name,items});renderConfigBlocks()};
+async function renderDashboardPreview(){
+ if(!editingDashboardId){alert("Dashboard zuerst speichern.");return}
+ window.open("/dev-portal/preview/"+editingDashboardId+"?period=24h","_blank");
+}
+previewDashboard.onclick=renderDashboardPreview;
+saveDashboardConfig.onclick=async()=>{const access=dashboardAccess.map(x=>({...x}));const sources=dashboardSources.map(x=>({type:x.type,name:x.name,ref:x.ref}));const blocks=dashboardBlocks.map(b=>({...b,items:b.items.map(it=>{const sig=dashboardSignals[it.signal]||dashboardSignals.find(x=>x.source_index===Number(it.source_index)&&x.scope===it.scope&&x.key===it.key)||{};const target=dashboardSignals[it.target_signal]||dashboardSignals.find(x=>x.source_index===Number(it.target_source_index)&&x.scope===it.target_scope&&x.key===it.target_key)||{};return {...it,source_index:sig.source_index,scope:sig.scope,key:sig.key,sample:sig.sample,raw:sig.raw,target_source_index:target.source_index??it.target_source_index,target_scope:target.scope??it.target_scope,target_key:target.key??it.target_key,target_sample:target.sample??it.target_sample}})}));const body={name:configName.value,description:configDescription.value,active:true,access,sources,config:{blocks}};const url=editingDashboardId?"/dev-portal/api/admin/dashboard-configs/"+editingDashboardId:"/dev-portal/api/admin/dashboard-configs";const r=await fetch(url,{method:editingDashboardId?"PUT":"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});if(r.ok){const result=await r.json();if(!editingDashboardId&&result.id)editingDashboardId=result.id;configSaveResult.textContent=" ✓ gespeichert";setTimeout(()=>{if(configSaveResult.textContent.includes("gespeichert"))configSaveResult.textContent=""},2200);await loadDashboardConfigs();existingDashboard.value=String(editingDashboardId)}else configSaveResult.textContent=" ✗ Fehler"};
+initDashboardConfigurator();
+
+function syncRoleFields(){newCustomerAccess?.classList.toggle("hidden",newRole?.value!=="end_customer")}newRole?.addEventListener("change",syncRoleFields);syncRoleFields();
