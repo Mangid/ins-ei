@@ -4451,6 +4451,9 @@ async def lifespan(app: FastAPI):
     )
     oekofen_csv_thread.start()
 
+    mypv_thread = threading.Thread(target=mypv_worker,daemon=True,name="mypv-worker")
+    mypv_thread.start()
+
     async with mcp.session_manager.run():
         yield
 
@@ -5453,6 +5456,91 @@ def mypv_today_energy_kwh(mypv_id:int) -> float:
     rows=mypv_log_rows(mypv_logdata(mypv_id,today,today+timedelta(days=1),"15m"))
     return mypv_energy_kwh(rows)
 
+def mypv_write_influx(mypv_id:int,serial:str,points:list[dict[str,Any]]) -> int:
+    if not points:return 0
+    tags="mypv_id="+_influx_escape_tag(str(mypv_id))+",serial="+_influx_escape_tag(serial)
+    lines=[]
+    for point in points:
+        ts=point.get("time");power=point.get("power_w");energy=point.get("energy_kwh")
+        if not isinstance(ts,datetime):continue
+        fields=[]
+        if isinstance(power,(int,float)):fields.append("power_w="+repr(float(power)))
+        if isinstance(energy,(int,float)):fields.append("energy_kwh="+repr(float(energy)))
+        if fields:lines.append("mypv,"+tags+" "+",".join(fields)+" "+str(int(ts.timestamp()*1_000_000_000)))
+    if not lines:return 0
+    token=INFLUX_TOKEN.read_text().strip();query=urlencode({"org":INFLUX_ORG,"bucket":INFLUX_BUCKET,"precision":"ns"})
+    for start in range(0,len(lines),250):
+        req=Request(INFLUX_URL+"/api/v2/write?"+query,data="\n".join(lines[start:start+250]).encode(),method="POST",
+            headers={"Authorization":f"Token {token}","Content-Type":"text/plain; charset=utf-8"})
+        with urlopen(req,timeout=20) as response:response.read()
+    return len(lines)
+
+def mypv_import_logdata(mypv_id:int,begin:date,end:date,interval:str="15m") -> dict[str,Any]:
+    with db() as con:
+        row=con.execute("SELECT id,serial_number FROM mypv_devices WHERE id=?",(mypv_id,)).fetchone()
+    if row is None:raise ValueError("my-PV device not found")
+    payload=mypv_logdata(mypv_id,begin,end,interval);rows=mypv_log_rows(payload);points=[]
+    hours={"15m":0.25,"1h":1.0,"1d":24.0}.get(interval)
+    if hours is None:raise ValueError("Unsupported energy interval")
+    for ts,item in rows.items():
+        if not isinstance(item,dict):continue
+        p=item.get("i_power");p=p.get("sum") if isinstance(p,dict) else None
+        if not isinstance(p,(int,float)):continue
+        try:stamp=datetime.fromisoformat(str(ts))
+        except ValueError:continue
+        power=max(0.0,float(p));points.append({"time":stamp,"power_w":power,"energy_kwh":power*hours/1000.0})
+    return {"mypv_id":mypv_id,"begin":begin.isoformat(),"end":end.isoformat(),"interval":interval,
+            "points":len(points),"written":mypv_write_influx(mypv_id,row["serial_number"],points)}
+
+def mypv_influx_today_energy(mypv_id:int) -> float:
+    local=ZoneInfo("Europe/Vienna");start=datetime.combine(datetime.now(local).date(),datetime.min.time(),local)
+    safe=_influx_escape_tag(str(mypv_id));token=INFLUX_TOKEN.read_text().strip()
+    flux=f'''from(bucket: "{INFLUX_BUCKET}") |> range(start: {start.astimezone(timezone.utc).isoformat()}) |> filter(fn:(r)=>r._measurement=="mypv" and r.mypv_id=="{safe}" and r._field=="energy_kwh") |> sum()'''
+    req=Request(INFLUX_URL+"/api/v2/query?org="+INFLUX_ORG,data=json.dumps({"query":flux,"type":"flux"}).encode(),method="POST",
+        headers={"Authorization":f"Token {token}","Content-Type":"application/json","Accept":"application/csv"})
+    raw=urlopen(req,timeout=10).read().decode()
+    for r in csv.DictReader(io.StringIO(raw)):
+        try:return round(float(r.get("_value","0")),3)
+        except ValueError:pass
+    return 0.0
+
+def mypv_influx_history(mypv_id:int,keys:list[str],period:str) -> dict[str,list[dict[str,Any]]]:
+    specs={"24h":("-24h","15m"),"7d":("-7d","1h"),"30d":("-30d","1d")}
+    if period not in specs:raise ValueError("INVALID_PERIOD")
+    start,window=specs[period];wanted=[k for k in keys if k in ("power_w","energy_kwh")]
+    if not wanted:return {}
+    fn="mean" if "power_w" in wanted and len(wanted)==1 else "sum"
+    safe=_influx_escape_tag(str(mypv_id));fields=" or ".join(f'r._field=="{k}"' for k in wanted)
+    # One field per request is the normal dashboard path; choose semantically correct aggregation.
+    if len(wanted)==1:fn="mean" if wanted[0]=="power_w" else "sum"
+    token=INFLUX_TOKEN.read_text().strip()
+    flux=f'''from(bucket: "{INFLUX_BUCKET}") |> range(start: {start}) |> filter(fn:(r)=>r._measurement=="mypv" and r.mypv_id=="{safe}") |> filter(fn:(r)=>{fields}) |> aggregateWindow(every: {window}, fn: {fn}, createEmpty: false) |> keep(columns:["_time","_field","_value"])'''
+    req=Request(INFLUX_URL+"/api/v2/query?org="+INFLUX_ORG,data=json.dumps({"query":flux,"type":"flux"}).encode(),method="POST",
+        headers={"Authorization":f"Token {token}","Content-Type":"application/json","Accept":"application/csv"})
+    raw=urlopen(req,timeout=15).read().decode();series={}
+    for r in csv.DictReader(io.StringIO(raw)):
+        try:v=float(r.get("_value",""))
+        except ValueError:continue
+        series.setdefault(r.get("_field",""),[]).append({"time":r.get("_time"),"value":round(v,4)})
+    return series
+
+def mypv_collector_once() -> dict[str,Any]:
+    local=datetime.now(ZoneInfo("Europe/Vienna"));begin=local.date()-timedelta(days=1);end=local.date()+timedelta(days=1)
+    with db() as con:devices=[dict(r) for r in con.execute("SELECT id,name FROM mypv_devices ORDER BY id")]
+    results=[];errors=[]
+    for d in devices:
+        try:results.append(mypv_import_logdata(d["id"],begin,end,"15m"))
+        except Exception as exc:errors.append({"id":d["id"],"name":d["name"],"error":str(exc)[:500]})
+    return {"devices":len(devices),"results":results,"errors":errors}
+
+def mypv_worker():
+    while True:
+        try:
+            result=mypv_collector_once()
+            print(f"MYPV collector devices={result['devices']} errors={len(result['errors'])}",flush=True)
+        except Exception as exc:print(f"MYPV collector error: {exc}",flush=True)
+        time.sleep(300)
+
 MYPV_DASHBOARD_SIGNALS = {
     "power_ac9": ("AC•THOR Leistung", "W", 1.0),
     "power_solar_ac9": ("Leistung aus PV", "W", 1.0),
@@ -5533,6 +5621,15 @@ def api_mypv_fields(mypv_id:int):
         return {"id":mypv_id,"signals":mypv_flatten_signals(data)}
     except Exception as exc:
         raise HTTPException(502,str(exc))
+
+@app.post("/api/v1/mypv/{mypv_id}/backfill")
+def api_mypv_backfill(mypv_id:int,days:int=30):
+    days=max(1,min(days,365));today=datetime.now(ZoneInfo("Europe/Vienna")).date()
+    return mypv_import_logdata(mypv_id,today-timedelta(days=days),today+timedelta(days=1),"15m")
+
+@app.post("/api/v1/mypv/collect")
+def api_mypv_collect():
+    return mypv_collector_once()
 
 @app.get("/api/v1/mypv")
 def api_mypv_list():
@@ -7159,30 +7256,8 @@ def portal_admin_dashboard_builder_data(ins_portal_session: str | None = Cookie(
 def portal_admin_source_history(source_type:str,source_ref:str,keys:str,period:str="24h",ins_portal_session: str | None = Cookie(default=None)):
     _portal_admin(ins_portal_session)
     if source_type=="mypv":
-        if period not in ("24h","7d","30d"):raise HTTPException(400,"INVALID_PERIOD")
         wanted=[x for x in keys.split(",") if x][:20]
-        if "power" not in wanted:return {"series":{}}
-        local_now=datetime.now(ZoneInfo("Europe/Vienna"))
-        days={"24h":1,"7d":7,"30d":30}[period]
-        # my-PV logdata accepts whole dates. Fetch one extra boundary day,
-        # then trim to the requested rolling period below.
-        begin=local_now.date()-timedelta(days=days)
-        end=local_now.date()+timedelta(days=1)
-        interval={"24h":"15m","7d":"1h","30d":"1d"}[period]
-        payload=mypv_logdata(int(source_ref),begin,end,interval)
-        rows=mypv_log_rows(payload);points=[]
-        cutoff=local_now-timedelta(hours=24) if period=="24h" else local_now-timedelta(days=days)
-        for ts,row in rows.items():
-            if not isinstance(row,dict):continue
-            try:
-                point_time=datetime.fromisoformat(str(ts))
-                if point_time < cutoff: continue
-            except ValueError:
-                pass
-            val=row.get("i_power");val=val.get("sum") if isinstance(val,dict) else None
-            if isinstance(val,(int,float)):points.append({"time":ts,"value":float(val)})
-        points.sort(key=lambda x:x["time"])
-        return {"series":{"power":points}}
+        return {"series":mypv_influx_history(int(source_ref),wanted,period)}
     if source_type!="oekofen":return {"series":{}}
     ranges={"24h":"-24h","7d":"-7d","30d":"-30d"};windows={"24h":"10m","7d":"1h","30d":"4h"}
     if period not in ranges:raise HTTPException(400,"INVALID_PERIOD")
@@ -7210,12 +7285,13 @@ def portal_admin_source_samples(source_type: str, source_ref: str, ins_portal_se
             signals=mypv_dashboard_signals(data)
             energy_note=None
             try:
-                energy=mypv_today_energy_kwh(int(source_ref))
+                energy=mypv_influx_today_energy(int(source_ref))
             except Exception as exc:
                 energy=None
                 energy_note=f"Energie heute konnte nicht berechnet werden: {exc}"
             signals.append({"scope":"live","key":"energy_today_kwh","label":"Energie heute","sample":energy,"unit":"kWh","calculated":True})
-            signals.append({"scope":"history","key":"power","label":"AC•THOR Leistung","sample":"Zeitraum","unit":"W"})
+            signals.append({"scope":"history","key":"power_w","label":"AC•THOR Leistung","sample":"Zeitraum","unit":"W"})
+            signals.append({"scope":"history","key":"energy_kwh","label":"Energie","sample":"Zeitraum","unit":"kWh"})
             result={"source_type":"mypv","source_ref":source_ref,"signals":signals}
             if energy_note: result["note"]=energy_note
             return result
