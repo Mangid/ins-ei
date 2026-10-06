@@ -7256,8 +7256,13 @@ def portal_admin_dashboard_builder_data(ins_portal_session: str | None = Cookie(
 def portal_admin_source_history(source_type:str,source_ref:str,keys:str,period:str="24h",ins_portal_session: str | None = Cookie(default=None)):
     _portal_admin(ins_portal_session)
     if source_type=="mypv":
-        wanted=[x for x in keys.split(",") if x][:20]
-        return {"series":mypv_influx_history(int(source_ref),wanted,period)}
+        requested=[x for x in keys.split(",") if x][:20]
+        wanted=["power_w" if x=="power" else x for x in requested]
+        series=mypv_influx_history(int(source_ref),wanted,period)
+        # Backward compatibility for dashboards saved before the Influx key rename.
+        if "power" in requested and "power_w" in series:
+            series["power"]=series["power_w"]
+        return {"series":series}
     if source_type!="oekofen":return {"series":{}}
     ranges={"24h":"-24h","7d":"-7d","30d":"-30d"};windows={"24h":"10m","7d":"1h","30d":"4h"}
     if period not in ranges:raise HTTPException(400,"INVALID_PERIOD")
