@@ -5505,23 +5505,27 @@ def mypv_influx_today_energy(mypv_id:int) -> float:
     return 0.0
 
 def mypv_influx_history(mypv_id:int,keys:list[str],period:str) -> dict[str,list[dict[str,Any]]]:
-    specs={"24h":("-24h","15m"),"7d":("-7d","1h"),"30d":("-30d","1d")}
-    if period not in specs:raise ValueError("INVALID_PERIOD")
-    start,window=specs[period];wanted=[k for k in keys if k in ("power_w","energy_kwh")]
+    if period not in ("24h","7d","30d"):raise ValueError("INVALID_PERIOD")
+    wanted=[k for k in keys if k in ("power_w","energy_kwh")]
     if not wanted:return {}
-    fn="mean" if "power_w" in wanted and len(wanted)==1 else "sum"
-    safe=_influx_escape_tag(str(mypv_id));fields=" or ".join(f'r._field=="{k}"' for k in wanted)
-    # One field per request is the normal dashboard path; choose semantically correct aggregation.
-    if len(wanted)==1:fn="mean" if wanted[0]=="power_w" else "sum"
-    token=INFLUX_TOKEN.read_text().strip()
-    flux=f'''from(bucket: "{INFLUX_BUCKET}") |> range(start: {start}) |> filter(fn:(r)=>r._measurement=="mypv" and r.mypv_id=="{safe}") |> filter(fn:(r)=>{fields}) |> aggregateWindow(every: {window}, fn: {fn}, createEmpty: false) |> keep(columns:["_time","_field","_value"])'''
-    req=Request(INFLUX_URL+"/api/v2/query?org="+INFLUX_ORG,data=json.dumps({"query":flux,"type":"flux"}).encode(),method="POST",
-        headers={"Authorization":f"Token {token}","Content-Type":"application/json","Accept":"application/csv"})
-    raw=urlopen(req,timeout=15).read().decode();series={}
-    for r in csv.DictReader(io.StringIO(raw)):
-        try:v=float(r.get("_value",""))
-        except ValueError:continue
-        series.setdefault(r.get("_field",""),[]).append({"time":r.get("_time"),"value":round(v,4)})
+    safe=_influx_escape_tag(str(mypv_id));token=INFLUX_TOKEN.read_text().strip();series={}
+    for field in wanted:
+        if field=="power_w":
+            start={"24h":"-24h","7d":"-7d","30d":"-30d"}[period]
+            window={"24h":"15m","7d":"1h","30d":"4h"}[period]
+            flux=f'''from(bucket: "{INFLUX_BUCKET}") |> range(start: {start}) |> filter(fn:(r)=>r._measurement=="mypv" and r.mypv_id=="{safe}" and r._field=="power_w") |> aggregateWindow(every: {window}, fn: mean, createEmpty: false) |> keep(columns:["_time","_field","_value"])'''
+        else:
+            start={"24h":"-24h","7d":"-7d","30d":"-30d"}[period]
+            window="1h" if period=="24h" else "1d"
+            option='import "timezone"\noption location = timezone.location(name: "Europe/Vienna")\n'
+            flux=option+f'''from(bucket: "{INFLUX_BUCKET}") |> range(start: {start}) |> filter(fn:(r)=>r._measurement=="mypv" and r.mypv_id=="{safe}" and r._field=="energy_kwh") |> aggregateWindow(every: {window}, fn: sum, createEmpty: false, location: location) |> keep(columns:["_time","_field","_value"])'''
+        req=Request(INFLUX_URL+"/api/v2/query?org="+INFLUX_ORG,data=json.dumps({"query":flux,"type":"flux"}).encode(),method="POST",
+            headers={"Authorization":f"Token {token}","Content-Type":"application/json","Accept":"application/csv"})
+        raw=urlopen(req,timeout=15).read().decode()
+        for r in csv.DictReader(io.StringIO(raw)):
+            try:v=float(r.get("_value",""))
+            except ValueError:continue
+            series.setdefault(field,[]).append({"time":r.get("_time"),"value":round(v,4)})
     return series
 
 def mypv_collector_once() -> dict[str,Any]:
