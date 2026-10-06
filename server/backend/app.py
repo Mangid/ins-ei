@@ -7506,11 +7506,28 @@ def _dashboard_preview_payload(config_id:int,period:str="24h"):
             try:
                 raw=mypv_read_device(int(src["source_ref"]),"data")
                 flat={x["key"]:x.get("sample") for x in mypv_dashboard_signals(raw)}
-                if "energy_today_kwh" in needed: flat["energy_today_kwh"]=mypv_today_energy_kwh(int(src["source_ref"]))
+                if "energy_today_kwh" in needed: flat["energy_today_kwh"]=mypv_influx_today_energy(int(src["source_ref"]))
                 for key in needed:
                     if key in flat: live[f"{si}:{key}"]=flat[key]
             except Exception:
                 pass
+            history_keys=[]
+            for b in cfg.get("blocks",[]):
+                for it in b.get("items",[]):
+                    try:belongs=int(it.get("source_index",-1))==si
+                    except (TypeError,ValueError):belongs=False
+                    if belongs and it.get("scope")=="history" and it.get("key"):
+                        history_keys.append("power_w" if it["key"]=="power" else it["key"])
+            if history_keys:
+                try:
+                    myseries=mypv_influx_history(int(src["source_ref"]),list(dict.fromkeys(history_keys)),period)
+                    for key,points in myseries.items():
+                        history[f"{si}:{key}"]=points
+                    # Existing dashboards may still reference the old key "power".
+                    if any(k=="power" for b in cfg.get("blocks",[]) for k in [*(str(it.get("key","")) for it in b.get("items",[]) if str(it.get("source_index",""))==str(si))]) and "power_w" in myseries:
+                        history[f"{si}:power"]=myseries["power_w"]
+                except Exception as exc:
+                    print(f"MYPV preview history id={src['source_ref']} error={exc}",flush=True)
             continue
         if src["source_type"]!="oekofen" or not needed:continue
         metric_keys=set()
