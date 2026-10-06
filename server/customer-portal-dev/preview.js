@@ -20,7 +20,7 @@ function renderChartJs(ci){
  window.__insEiCharts=window.__insEiCharts||{};window.__insEiCharts[String(ci)]=chartInstance;
 }
 
-function chart(block,d,ci){return '<article class="card preview-graph" data-graph-id="'+esc(ci)+'"><h2>'+esc(block.title)+'</h2><button class="graph-expand" type="button" data-expand="'+esc(ci)+'" title="Diagramm vergrößern">⛶</button>'+chartInner(block,d,ci)+'</article>'}
+function chart(block,d,ci){return '<article class="card preview-graph" data-graph-id="'+esc(ci)+'"><h2>'+esc(block.title)+'</h2><button class="graph-expand btn btn-icon btn-ghost-secondary" type="button" data-expand="'+esc(ci)+'" title="Diagramm vergrößern">⛶</button>'+chartInner(block,d,ci)+'</article>'}
 function nearest(pts,target){let b=null;for(const p of pts){const d=Math.abs(Date.parse(p.time)-target);if(!b||d<b.d)b={p,d}}return b?.p}
 
 let activeTab="overview",lastDashboard=null,modalChart=null,modalGraphId=null;
@@ -29,7 +29,7 @@ function blockArea(d,b){const types=new Set((b.items||[]).map(it=>sourceTypeForI
 function renderTabs(d){
  const blocks=d.blocks||[],available=[["overview","Übersicht"],["heating","Heizung"],["p2h","Power-to-Heat"],["pv","PV & Strom"]].filter(([id])=>id==="overview"||blocks.some(b=>blockArea(d,b)===id));
  if(!available.some(x=>x[0]===activeTab))activeTab="overview";
- dashboardTabs.innerHTML=available.map(([id,label])=>'<button type="button" data-tab="'+id+'" class="'+(activeTab===id?"active":"")+'">'+label+'</button>').join("");
+ dashboardTabs.className="nav nav-tabs dashboard-tabs";dashboardTabs.innerHTML=available.map(([id,label])=>'<button type="button" data-tab="'+id+'" class="nav-link '+(activeTab===id?"active":"")+'">'+label+'</button>').join("");
  dashboardTabs.querySelectorAll("[data-tab]").forEach(btn=>btn.onclick=()=>{activeTab=btn.dataset.tab;renderDashboard(lastDashboard)});
 }
 function filteredBlocks(d){const blocks=d.blocks||[];return activeTab==="overview"?blocks:blocks.filter(b=>blockArea(d,b)===activeTab)}
