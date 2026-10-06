@@ -27,4 +27,32 @@ body{background:var(--tblr-body-bg)}
 
 .preview-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem}.preview-graphs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}.combo-card{grid-column:span 2}.combo-live{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.625rem;padding:0 1rem 1rem}.combo-history{border-top:1px solid var(--tblr-border-color);padding:1rem}.live-tile{padding:.75rem .875rem;min-height:68px;display:flex;flex-direction:column;justify-content:center}.live-tile small{color:var(--tblr-secondary-color);margin-bottom:.25rem}.live-tile strong{font-size:1.2rem}.live-target{color:var(--tblr-secondary-color);font-size:.75rem;margin-top:.25rem}.chartjs-wrap{height:185px;position:relative;padding:.25rem .75rem .75rem}.pv-empty{height:160px;display:grid;place-items:center;color:var(--tblr-secondary-color)}#historyTitle{font-size:1.15rem;margin:1.5rem 0 .75rem}.state-legend{display:flex;justify-content:flex-end;gap:1rem;margin:.25rem .75rem 0;font-size:.7rem;color:var(--tblr-secondary-color)}
 @media(max-width:850px){.preview-grid,.preview-graphs{grid-template-columns:1fr}.combo-card{grid-column:span 1}.combo-live{grid-template-columns:1fr}}
-</style></head><body data-bs-theme="dark"><div class="page"><main class="page-wrapper"><div class="container-xl preview-page"><header><h1 id="ptitle">Dashboard</h1><p id="pdesc"></p><div class="preview-toolbar"><div class="devline">DEV · Dashboard Vorschau</div><div class="period-buttons"><button data-period="24h">24 h</button><button data-period="7d">7 Tage</button><button data-period="30d">30 Tage</button></div></div><nav id="dashboardTabs" class="dashboard-tabs"></nav></header><section id="dashboardContent"><div id="pcards" class="preview-grid"></div><h2 id="historyTitle">Verlauf</h2><div id="pgraphs" class="preview-graphs"></div></section></div></main></div><div id="chartModal" class="chart-modal" aria-hidden="true"><div class="chart-modal-shell"><div class="chart-modal-head"><div><small>Detailansicht</small><strong id="chartModalTitle">Diagramm</strong></div><button id="chartModalClose" type="button" aria-label="Schließen">×</button></div><div class="chart-modal-periods period-buttons"><button data-modal-period="24h">24 h</button><button data-modal-period="7d">7 Tage</button><button data-modal-period="30d">30 Tage</button></div><div class="chart-modal-body"><canvas id="chartModalCanvas"></canvas></div></div></div><script src="https://cdn.jsdelivr.net/npm/@tabler/core@1.6.1/dist/js/tabler.min.js"></script><script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js"></script><script src="/dev-portal/preview.js"></script></body></html>
+</style><style>
+/* INS-EI dashboard: full-width responsive canvas */
+.preview-page{width:100%;max-width:none!important;padding-left:clamp(12px,2vw,32px)!important;padding-right:clamp(12px,2vw,32px)!important}
+.preview-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr))!important}
+.preview-graphs{grid-template-columns:repeat(auto-fit,minmax(min(100%,520px),1fr))!important}
+.combo-card{grid-column:span 2}
+@media(min-width:1600px){
+ .preview-grid{grid-template-columns:repeat(auto-fit,minmax(400px,1fr))!important}
+ .preview-graphs{grid-template-columns:repeat(auto-fit,minmax(560px,1fr))!important}
+}
+@media(max-width:1100px){
+ .combo-card{grid-column:1/-1}
+}
+@media(max-width:760px){
+ .preview-page{padding-left:10px!important;padding-right:10px!important;padding-top:12px!important}
+ .preview-grid,.preview-graphs{grid-template-columns:1fr!important}
+ .combo-card{grid-column:1}
+ .dashboard-tabs{overflow-x:auto;flex-wrap:nowrap;-webkit-overflow-scrolling:touch}
+ .dashboard-tabs .nav-link{white-space:nowrap}
+ .preview-toolbar{flex-wrap:wrap}
+ .period-buttons{margin-left:auto}
+ .combo-live{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+}
+@media(max-width:480px){
+ .combo-live{grid-template-columns:1fr!important}
+ .period-buttons{width:100%;display:grid!important;grid-template-columns:repeat(3,1fr)}
+ .period-buttons button{padding-left:6px!important;padding-right:6px!important}
+}
+</style></head><body data-bs-theme="dark"><div class="page"><main class="page-wrapper"><div class="container-fluid preview-page"><header><h1 id="ptitle">Dashboard</h1><p id="pdesc"></p><div class="preview-toolbar"><div class="devline">DEV · Dashboard Vorschau</div><div class="period-buttons"><button data-period="24h">24 h</button><button data-period="7d">7 Tage</button><button data-period="30d">30 Tage</button></div></div><nav id="dashboardTabs" class="dashboard-tabs"></nav></header><section id="dashboardContent"><div id="pcards" class="preview-grid"></div><h2 id="historyTitle">Verlauf</h2><div id="pgraphs" class="preview-graphs"></div></section></div></main></div><div id="chartModal" class="chart-modal" aria-hidden="true"><div class="chart-modal-shell"><div class="chart-modal-head"><div><small>Detailansicht</small><strong id="chartModalTitle">Diagramm</strong></div><button id="chartModalClose" type="button" aria-label="Schließen">×</button></div><div class="chart-modal-periods period-buttons"><button data-modal-period="24h">24 h</button><button data-modal-period="7d">7 Tage</button><button data-modal-period="30d">30 Tage</button></div><div class="chart-modal-body"><canvas id="chartModalCanvas"></canvas></div></div></div><script src="https://cdn.jsdelivr.net/npm/@tabler/core@1.6.1/dist/js/tabler.min.js"></script><script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js"></script><script src="/dev-portal/preview.js"></script></body></html>
