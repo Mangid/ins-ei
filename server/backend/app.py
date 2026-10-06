@@ -7164,15 +7164,24 @@ def portal_admin_source_history(source_type:str,source_ref:str,keys:str,period:s
         if "power" not in wanted:return {"series":{}}
         local_now=datetime.now(ZoneInfo("Europe/Vienna"))
         days={"24h":1,"7d":7,"30d":30}[period]
-        begin=local_now.date()-timedelta(days=days-1)
+        # my-PV logdata accepts whole dates. Fetch one extra boundary day,
+        # then trim to the requested rolling period below.
+        begin=local_now.date()-timedelta(days=days)
         end=local_now.date()+timedelta(days=1)
         interval={"24h":"15m","7d":"1h","30d":"1d"}[period]
         payload=mypv_logdata(int(source_ref),begin,end,interval)
         rows=mypv_log_rows(payload);points=[]
+        cutoff=local_now-timedelta(hours=24) if period=="24h" else local_now-timedelta(days=days)
         for ts,row in rows.items():
             if not isinstance(row,dict):continue
+            try:
+                point_time=datetime.fromisoformat(str(ts))
+                if point_time < cutoff: continue
+            except ValueError:
+                pass
             val=row.get("i_power");val=val.get("sum") if isinstance(val,dict) else None
             if isinstance(val,(int,float)):points.append({"time":ts,"value":float(val)})
+        points.sort(key=lambda x:x["time"])
         return {"series":{"power":points}}
     if source_type!="oekofen":return {"series":{}}
     ranges={"24h":"-24h","7d":"-7d","30d":"-30d"};windows={"24h":"10m","7d":"1h","30d":"4h"}
