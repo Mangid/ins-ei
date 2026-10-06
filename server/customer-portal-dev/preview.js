@@ -49,4 +49,5 @@ async function load(){
  if(window.__insEiCharts){Object.values(window.__insEiCharts).forEach(ch=>{try{ch.destroy()}catch(_){}})}
  window.__insEiCharts={};window.__chartConfigs={};
  const r=await fetch("/dev-portal/api/admin/dashboard-configs/"+id+"/preview-data?period="+period,{cache:"no-store"});if(!r.ok){document.body.innerHTML="<pre>Vorschau konnte nicht geladen werden: "+r.status+"</pre>";return}const d=await r.json();ptitle.textContent=d.name;pdesc.textContent=d.description||"";document.querySelectorAll("[data-period]").forEach(b=>b.classList.toggle("active",b.dataset.period===period));renderDashboard(d)
+}
 load();document.querySelectorAll("[data-period]").forEach(b=>b.onclick=()=>{period=b.dataset.period;const u=new URL(location.href);u.searchParams.set("period",period);history.replaceState(null,"",u);load()});
