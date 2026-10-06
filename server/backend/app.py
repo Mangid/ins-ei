@@ -5655,7 +5655,15 @@ def api_mypv_create(item:MypvDeviceSave):
             item.device_id,item.model,now,now))
         mid=cur.lastrowid
         if item.device_id: con.execute("UPDATE devices SET mypv_device_id=?,manufacturer='my-PV',online_capable=1,updated_at=? WHERE id=?",(mid,now,item.device_id))
-    return {"id":mid,"created":True}
+    # Seed history immediately. Failure must not roll back a correctly saved device.
+    backfill=None;backfill_error=None
+    try:
+        today=datetime.now(ZoneInfo("Europe/Vienna")).date()
+        backfill=mypv_import_logdata(mid,today-timedelta(days=30),today+timedelta(days=1),"15m")
+    except Exception as exc:
+        backfill_error=str(exc)[:1000]
+        print(f"MYPV initial backfill id={mid} error={exc}",flush=True)
+    return {"id":mid,"created":True,"backfill":backfill,"backfill_error":backfill_error}
 
 @app.put("/api/v1/mypv/{mypv_id}")
 def api_mypv_update(mypv_id:int,item:MypvDeviceSave):
