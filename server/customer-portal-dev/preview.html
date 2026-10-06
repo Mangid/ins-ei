@@ -55,4 +55,35 @@ body{background:var(--tblr-body-bg)}
  .period-buttons{width:100%;display:grid!important;grid-template-columns:repeat(3,1fr)}
  .period-buttons button{padding-left:6px!important;padding-right:6px!important}
 }
+</style><style>
+/* Compact INS-EI information density */
+.preview-grid{align-items:start!important;grid-template-columns:repeat(auto-fit,minmax(280px,1fr))!important}
+.preview-grid>.card{align-self:start;height:auto!important;min-height:0!important}
+.preview-grid>.combo-card{grid-column:span 2}
+.preview-page .card>h2{font-size:1rem!important;padding:.75rem .85rem .35rem!important}
+.combo-live{grid-template-columns:repeat(auto-fit,minmax(125px,1fr))!important;gap:.5rem!important;padding:0 .85rem .75rem!important;margin:0!important}
+.live-tile{min-height:54px!important;padding:.55rem .7rem!important;border-radius:.4rem!important}
+.live-tile small{font-size:.7rem!important;line-height:1.15;margin-bottom:.2rem!important}
+.live-tile strong{font-size:1.05rem!important;line-height:1.2}
+.live-target{font-size:.68rem!important;margin-top:.15rem!important}
+.combo-history{padding:.65rem .85rem .8rem!important}
+.preview-graph .chartjs-wrap,.combo-history .chartjs-wrap{height:165px!important}
+#historyTitle{margin:1.1rem 0 .6rem!important}
+@media(min-width:1500px){
+ .preview-grid{grid-template-columns:repeat(4,minmax(0,1fr))!important}
+ .preview-grid>.combo-card{grid-column:span 2}
+}
+@media(min-width:2100px){
+ .preview-grid{grid-template-columns:repeat(5,minmax(0,1fr))!important}
+}
+@media(max-width:1100px){
+ .preview-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+ .preview-grid>.combo-card{grid-column:span 2}
+}
+@media(max-width:700px){
+ .preview-grid{grid-template-columns:1fr!important}
+ .preview-grid>.combo-card{grid-column:1}
+ .combo-live{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+}
+@media(max-width:420px){.combo-live{grid-template-columns:1fr!important}}
 </style></head><body data-bs-theme="dark"><div class="page"><main class="page-wrapper"><div class="container-fluid preview-page"><header><h1 id="ptitle">Dashboard</h1><p id="pdesc"></p><div class="preview-toolbar"><div class="devline">DEV · Dashboard Vorschau</div><div class="period-buttons"><button data-period="24h">24 h</button><button data-period="7d">7 Tage</button><button data-period="30d">30 Tage</button></div></div><nav id="dashboardTabs" class="dashboard-tabs"></nav></header><section id="dashboardContent"><div id="pcards" class="preview-grid"></div><h2 id="historyTitle">Verlauf</h2><div id="pgraphs" class="preview-graphs"></div></section></div></main></div><div id="chartModal" class="chart-modal" aria-hidden="true"><div class="chart-modal-shell"><div class="chart-modal-head"><div><small>Detailansicht</small><strong id="chartModalTitle">Diagramm</strong></div><button id="chartModalClose" type="button" aria-label="Schließen">×</button></div><div class="chart-modal-periods period-buttons"><button data-modal-period="24h">24 h</button><button data-modal-period="7d">7 Tage</button><button data-modal-period="30d">30 Tage</button></div><div class="chart-modal-body"><canvas id="chartModalCanvas"></canvas></div></div></div><script src="https://cdn.jsdelivr.net/npm/@tabler/core@1.6.1/dist/js/tabler.min.js"></script><script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js"></script><script src="/dev-portal/preview.js"></script></body></html>
