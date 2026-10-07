@@ -1,0 +1,12 @@
+services:
+  ins-ei-gateway:
+    build: .
+    container_name: ins-ei-gateway
+    restart: unless-stopped
+    volumes:
+      - ./config:/config:ro
+      - ./data:/data
+    environment:
+      INS_EI_CONFIG: /config/gateway.yaml
+      MQTT_USERNAME_FILE: /config/mqtt_username
+      MQTT_PASSWORD_FILE: /config/mqtt_password
