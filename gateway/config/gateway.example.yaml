@@ -1,0 +1,14 @@
+site_id: niki-home-gateway
+core_version: gateway-dev.1
+mqtt:
+  host: mqtt.ins-enertech.net
+  port: 8883
+  keepalive: 30
+state_interval_seconds: 5
+status_interval_seconds: 60
+plugins:
+  - type: mypv
+    adapter: ac_thor_9s
+    name: AC-THOR 9s @home
+    url: http://10.0.0.137/data.jsn
+    timeout_seconds: 3
